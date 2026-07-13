@@ -1,0 +1,57 @@
+---
+title: "User Guides"
+description: "How to use Accensa as a Merchant or verify receipts as an Agent Operator."
+---
+
+## For Merchants (Supply-side)
+
+Running your Accensa back-office locally takes under 15 minutes. It requires PostgreSQL, the Go Indexer, and the Next.js Dashboard.
+
+### 1. Database Setup
+Accensa requires a standard PostgreSQL instance to store parsed ledger data.
+```bash
+docker run --name pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres
+```
+
+### 2. Start the Indexer
+The Go Indexer polls the Stellar RPC and populates the database. Provide it with your merchant address and connection strings.
+```bash
+export DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+export STELLAR_RPC_URL=https://soroban-testnet.stellar.org
+export MERCHANT_ADDRESSES=G...
+go run main.go
+```
+
+### 3. Start the Dashboard
+The Next.js dashboard connects to the local Go Indexer API to visualize your revenue and receipts.
+```bash
+cd apps/web
+pnpm install
+pnpm dev
+```
+
+### Path A vs Path B
+- **Path A (Chain-Only):** If you run Accensa with zero integration to your x402 server, you will see total revenue, payers, and timelines based purely on chain data.
+- **Path B (Middleware Hook):** By adding the Accensa SDK hook to your server, your indexer attributes every chain settlement to a specific HTTP route, unlocking route-level revenue analytics.
+
+---
+
+## For Agent Operators (Demand-side)
+
+You do not need to run any infrastructure to verify an Accensa receipt provided by a merchant.
+
+### Verifying a Receipt
+When a merchant gives you a receipt, it includes the batch Merkle root, the specific leaf (your payment hash + metadata), and the Merkle proof. 
+
+You can mathematically verify this receipt off-chain by using the Accensa Node SDK:
+
+```typescript
+import { verifyReceipt } from '@accensa/sdk';
+
+const isValid = verifyReceipt(receipt, proof, batchRoot);
+if (!isValid) {
+  throw new Error("Invalid receipt signature or tampered metadata.");
+}
+```
+
+Alternatively, you can verify the receipt strictly on-chain by calling the `verify_receipt` view function on the `ReceiptAnchor` Soroban contract using any Stellar explorer or RPC.

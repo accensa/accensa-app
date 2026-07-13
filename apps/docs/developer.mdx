@@ -1,0 +1,65 @@
+---
+title: "Developer Guide"
+description: "SDK references and Indexer API structure for technical integrators."
+---
+
+## SDK Reference
+
+To unlock route-level analytics, you must integrate the Accensa SDK hook into your x402 acceptance middleware. The hook captures the transaction hash and the route metadata, securely transmitting it to your local indexer.
+
+### Express.js Integration
+
+```typescript
+import express from 'express';
+import { attachAccensaHook } from '@accensa/sdk';
+import { x402Middleware } from '@x402/express';
+
+const app = express();
+
+// The Accensa hook wraps the standard x402 middleware.
+app.use(attachAccensaHook(x402Middleware(), {
+  indexerUrl: process.env.ACCENSA_INDEXER_URL,
+  apiKey: process.env.HOOK_API_KEY
+}));
+
+app.get('/api/data', (req, res) => {
+  res.json({ data: "Premium payload" });
+});
+```
+
+## Indexer API Reference
+
+The Go indexer exposes a JSON REST API consumed by the dashboard. You can also query it directly.
+
+### `GET /api/payments`
+Returns all historically tracked payments, optionally joined with route data if the middleware hook is active.
+
+**Response Shape:**
+```json
+[
+  {
+    "tx_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+    "ledger": 12847294,
+    "amount": 0.001,
+    "payer": "GB3A...",
+    "timestamp": "2026-07-13T10:00:00Z",
+    "route": "/api/data",
+    "method": "GET"
+  }
+]
+```
+
+### `GET /api/routes`
+Returns aggregated revenue metrics organized by HTTP route.
+
+**Response Shape:**
+```json
+[
+  {
+    "route": "/api/data",
+    "method": "GET",
+    "total_revenue": 45.2,
+    "calls": 45200
+  }
+]
+```
