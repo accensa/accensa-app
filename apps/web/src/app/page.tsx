@@ -19,6 +19,7 @@ export default function Dashboard() {
     { tx_hash: "1f2e3d4c5b6a79887766554433221100ffeeddccbbaa9988776655443322110", amount: 500.00, payer: "GCBOB4T...9P0A", timestamp: "2026-07-13T12:05:00Z" }
   ]);
   const [total, setTotal] = useState(674.50);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
 
   // Removed fetch for hardcoded demo
 
@@ -76,7 +77,11 @@ export default function Dashboard() {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {payments.map((payment: Payment) => (
-                  <tr key={payment.tx_hash} className="hover:bg-white/[0.03] transition-colors group">
+                  <tr 
+                    key={payment.tx_hash} 
+                    onClick={() => setSelectedPayment(payment)}
+                    className="hover:bg-white/[0.03] transition-colors group cursor-pointer"
+                  >
                     <td className="px-8 py-5 font-mono text-emerald-300 group-hover:text-emerald-400 transition-colors truncate max-w-[200px]" title={payment.tx_hash}>
                       {payment.tx_hash.substring(0, 8)}...{payment.tx_hash.substring(payment.tx_hash.length - 6)}
                     </td>
@@ -109,6 +114,66 @@ export default function Dashboard() {
           </div>
         </section>
       </div>
+
+      {/* Transaction Details Modal */}
+      {selectedPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedPayment(null)}>
+          <div className="bg-[#111111] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-white/5">
+              <h3 className="text-lg font-semibold text-emerald-400">Transaction Details</h3>
+              <button onClick={() => setSelectedPayment(null)} className="text-gray-400 hover:text-white transition-colors">
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Transaction Hash</label>
+                <div className="font-mono text-sm text-gray-300 break-all bg-black/50 p-3 rounded-lg border border-white/5">
+                  {selectedPayment.tx_hash}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Amount Settled</label>
+                  <div className="text-2xl font-semibold text-emerald-400">
+                    ${selectedPayment.amount.toFixed(2)} <span className="text-sm font-normal text-gray-500">USDC</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Status</label>
+                  <div className="mt-1">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      Settled on Ledger
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Payer Address (From)</label>
+                <div className="font-mono text-sm text-gray-300 break-all">
+                  {selectedPayment.payer}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Timestamp</label>
+                <div className="text-sm text-gray-300">
+                  {new Date(selectedPayment.timestamp).toLocaleString()}
+                </div>
+              </div>
+              <div className="pt-4 border-t border-white/10">
+                <a 
+                  href={`https://stellar.expert/explorer/testnet/tx/${selectedPayment.tx_hash}`} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="block w-full text-center py-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors font-medium text-sm border border-emerald-500/20"
+                >
+                  View on Stellar Expert ↗
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
