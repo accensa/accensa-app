@@ -14,9 +14,9 @@ interface Payment {
 
 export default function Dashboard() {
   const [payments, setPayments] = useState<Payment[]>([
-    { tx_hash: "4f8a3c8e5d0b9f2a1c7e6d4b3a9f8e7d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7", amount: 150.00, payer: "GBBUYER...XYP4", timestamp: new Date(Date.now() - 60000).toISOString() },
-    { tx_hash: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f", amount: 24.50, payer: "GDALICE...QR6S", timestamp: new Date(Date.now() - 120000).toISOString() },
-    { tx_hash: "1f2e3d4c5b6a79887766554433221100ffeeddccbbaa9988776655443322110", amount: 500.00, payer: "GCBOB4T...9P0A", timestamp: new Date(Date.now() - 300000).toISOString() }
+    { tx_hash: "4f8a3c8e5d0b9f2a1c7e6d4b3a9f8e7d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7", amount: 150.00, payer: "GBBUYER...XYP4", timestamp: "2026-07-13T12:00:00Z" },
+    { tx_hash: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f", amount: 24.50, payer: "GDALICE...QR6S", timestamp: "2026-07-13T12:02:00Z" },
+    { tx_hash: "1f2e3d4c5b6a79887766554433221100ffeeddccbbaa9988776655443322110", amount: 500.00, payer: "GCBOB4T...9P0A", timestamp: "2026-07-13T12:05:00Z" }
   ]);
   const [total, setTotal] = useState(674.50);
 
