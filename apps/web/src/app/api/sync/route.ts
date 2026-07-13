@@ -1,11 +1,26 @@
 import { NextResponse } from 'next/server';
 import { Client } from 'pg';
 
-const SOROBAN_RPC = "https://soroban-testnet.stellar.org";
-const MERCHANT_CONTRACT = "CDP76EZKUOMRZMETU4CR276SHBMNBTIZDIM7GJEESTX3CJEXXBTTSWBV";
+const SOROBAN_RPC = process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
+
+// Contracts whose events we scan (ReceiptAnchor + RefundVault).
+const CONTRACT_IDS = [
+  process.env.NEXT_PUBLIC_RECEIPT_ANCHOR_ID,
+  process.env.NEXT_PUBLIC_REFUND_VAULT_ID,
+].filter((id): id is string => Boolean(id));
 
 export async function GET() {
-  const dbUrl = "postgresql://postgres:@Basirat031@db.ialomdzbhjzizojvbady.supabase.co:5432/postgres";
+  // Use the Supabase *session pooler* connection string in production:
+  // Vercel functions have no IPv6 route, and Supabase direct connections
+  // (db.<ref>.supabase.co) are IPv6-only.
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    return NextResponse.json({ error: "DATABASE_URL is not configured" }, { status: 500 });
+  }
+  if (CONTRACT_IDS.length === 0) {
+    return NextResponse.json({ error: "No contract IDs configured" }, { status: 500 });
+  }
+
   const client = new Client({ connectionString: dbUrl });
 
   try {
@@ -23,19 +38,19 @@ export async function GET() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         jsonrpc: "2.0", id: 2, method: "getEvents",
-        params: { startLedger: startLedger, filters: [{ type: "contract", contractIds: [MERCHANT_CONTRACT] }] }
+        params: { startLedger: startLedger, filters: [{ type: "contract", contractIds: CONTRACT_IDS }] }
       })
     });
     const eventsData = await eventsRes.json();
     const events = eventsData.result?.events || [];
 
     await client.connect();
-    
+
     let inserted = 0;
     for (const event of events) {
       const txHash = event.txHash || "unknown";
       const amount = 100.00;
-      const payer = "G..." + MERCHANT_CONTRACT.substring(MERCHANT_CONTRACT.length - 4);
+      const payer = "G..." + (event.contractId || "").slice(-4);
       const timestamp = new Date(event.ledgerClosedAt).toISOString();
 
       try {
