@@ -14,7 +14,7 @@
       "group": "Getting Started",
       "pages": [
         "introduction",
-        "mechanics"
+        "contracts-repo/docs/mechanics"
       ]
     },
     {
@@ -28,7 +28,7 @@
     {
       "group": "Reference",
       "pages": [
-        "contracts"
+        "contracts-repo/docs/contracts"
       ]
     }
   ]
