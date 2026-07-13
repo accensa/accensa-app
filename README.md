@@ -1,7 +1,6 @@
 # Accensa Dashboard and Indexer
 
 ![Stellar](https://img.shields.io/badge/stellar-x402-blue.svg)
-![Drips Wave](https://img.shields.io/badge/wave-active-success.svg)
 
 Accensa is the merchant back-office for x402 sellers on Stellar. This repository contains the Go indexer that reconstructs a seller's payment history from chain data, and the Next.js dashboard where a merchant sees revenue by route and proves payments.
 
@@ -32,8 +31,11 @@ To run locally:
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to pick up open issues.
 
-## Maintainers
-- Victor Adeleke
+## Contributors
+
+<a href="https://github.com/accensa/accensa-app/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=accensa/accensa-app" />
+</a>
 
 ## License
 MIT
