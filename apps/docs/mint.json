@@ -1,0 +1,35 @@
+{
+  "name": "Accensa",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "colors": {
+    "primary": "#3B82F6",
+    "light": "#60A5FA",
+    "dark": "#2563EB"
+  },
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        "introduction",
+        "mechanics"
+      ]
+    },
+    {
+      "group": "Guides",
+      "pages": [
+        "user-guides",
+        "developer",
+        "contributing"
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "contracts"
+      ]
+    }
+  ]
+}
