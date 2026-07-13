@@ -5,8 +5,15 @@ import { Inter } from 'next/font/google';
 
 const inter = Inter({ subsets: ['latin'] });
 
+interface Payment {
+  tx_hash: string;
+  amount: number;
+  payer: string;
+  timestamp: string;
+}
+
 export default function Dashboard() {
-  const [payments, setPayments] = useState([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [total, setTotal] = useState(0);
 
   // Fetch from the live Go indexer API
@@ -16,9 +23,9 @@ export default function Dashboard() {
         const apiUrl = process.env.NEXT_PUBLIC_INDEXER_URL || 'http://localhost:8080';
         const res = await fetch(`${apiUrl}/api/payments`);
         if (res.ok) {
-          const data = await res.json();
+          const data: Payment[] = await res.json();
           setPayments(data);
-          setTotal(data.reduce((acc: number, p: any) => acc + p.amount, 0));
+          setTotal(data.reduce((acc: number, p: Payment) => acc + p.amount, 0));
         }
       } catch (error) {
         console.error("Failed to fetch payments", error);
@@ -84,7 +91,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {payments.map((payment: any) => (
+                {payments.map((payment: Payment) => (
                   <tr key={payment.tx_hash} className="hover:bg-white/[0.03] transition-colors group">
                     <td className="px-8 py-5 font-mono text-blue-300 group-hover:text-blue-400 transition-colors truncate max-w-[200px]" title={payment.tx_hash}>
                       {payment.tx_hash.substring(0, 8)}...{payment.tx_hash.substring(payment.tx_hash.length - 6)}
