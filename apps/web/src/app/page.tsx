@@ -9,16 +9,26 @@ export default function Dashboard() {
   const [payments, setPayments] = useState([]);
   const [total, setTotal] = useState(0);
 
-  // In a real implementation, we would fetch from the Go indexer API
+  // Fetch from the live Go indexer API
   useEffect(() => {
-    // Mock data for UI scaffolding
-    const mockPayments = [
-      { id: '1', hash: 'fb73a...123', amount: 15.5, from: 'GBDX...A1B2', date: 'Just now' },
-      { id: '2', hash: 'a1b2c...456', amount: 100.0, from: 'GBDX...C3D4', date: '2 hours ago' },
-      { id: '3', hash: 'e5f6g...789', amount: 50.25, from: 'GBDX...E5F6', date: 'Yesterday' },
-    ];
-    setPayments(mockPayments);
-    setTotal(mockPayments.reduce((acc, p) => acc + p.amount, 0));
+    const fetchPayments = async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_INDEXER_URL || 'http://localhost:8080';
+        const res = await fetch(`${apiUrl}/api/payments`);
+        if (res.ok) {
+          const data = await res.json();
+          setPayments(data);
+          setTotal(data.reduce((acc: number, p: any) => acc + p.amount, 0));
+        }
+      } catch (error) {
+        console.error("Failed to fetch payments", error);
+      }
+    };
+    
+    fetchPayments();
+    // Poll every 5 seconds
+    const interval = setInterval(fetchPayments, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   return (
@@ -74,20 +84,20 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {payments.map((payment) => (
-                  <tr key={payment.id} className="hover:bg-white/[0.03] transition-colors group">
-                    <td className="px-8 py-5 font-mono text-blue-300 group-hover:text-blue-400 transition-colors">
-                      {payment.hash}
+                {payments.map((payment: any) => (
+                  <tr key={payment.tx_hash} className="hover:bg-white/[0.03] transition-colors group">
+                    <td className="px-8 py-5 font-mono text-blue-300 group-hover:text-blue-400 transition-colors truncate max-w-[200px]" title={payment.tx_hash}>
+                      {payment.tx_hash.substring(0, 8)}...{payment.tx_hash.substring(payment.tx_hash.length - 6)}
                     </td>
                     <td className="px-8 py-5">
-                      <span className="font-semibold text-lg">{payment.amount.toFixed(2)}</span>
+                      <span className="font-semibold text-lg">{Number(payment.amount).toFixed(2)}</span>
                       <span className="text-gray-500 ml-1 text-sm">USDC</span>
                     </td>
-                    <td className="px-8 py-5 font-mono text-gray-400 text-sm">
-                      {payment.from}
+                    <td className="px-8 py-5 font-mono text-gray-400 text-sm truncate max-w-[150px]" title={payment.payer}>
+                      {payment.payer.substring(0, 4)}...{payment.payer.substring(payment.payer.length - 4)}
                     </td>
                     <td className="px-8 py-5 text-gray-400 text-sm">
-                      {payment.date}
+                      {new Date(payment.timestamp).toLocaleString()}
                     </td>
                     <td className="px-8 py-5 text-right">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
