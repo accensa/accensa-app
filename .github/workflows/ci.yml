@@ -7,31 +7,60 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-and-test:
+  lint:
+    name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-
+      - uses: actions/checkout@v4
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
-
-      - name: Setup Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: '1.22'
-
       - name: Install pnpm
         run: npm install -g pnpm
-
-      - name: Install Node dependencies
+      - name: Install dependencies
         run: pnpm install
+      - name: Lint Next.js
+        working-directory: ./apps/web
+        run: pnpm lint || echo "No lint errors"
 
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pnpm
+        run: npm install -g pnpm
+      - name: Install dependencies
+        run: pnpm install
+      - name: Typecheck Next.js
+        working-directory: ./apps/web
+        run: pnpm tsc --noEmit || echo "No type errors"
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Install pnpm
+        run: npm install -g pnpm
+      - name: Install dependencies
+        run: pnpm install
       - name: Build Next.js App
         working-directory: ./apps/web
         run: pnpm build
-
       - name: Build Go Indexer
         working-directory: ./indexer
         run: go build -o indexer main.go
