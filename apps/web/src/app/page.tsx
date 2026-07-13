@@ -42,14 +42,14 @@ export default function Dashboard() {
     <main className={`min-h-screen bg-[#0a0a0a] text-white p-8 md:p-24 ${inter.className}`}>
       {/* Background gradients */}
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-blue-600/20 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-purple-600/20 blur-[120px]" />
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-emerald-600/20 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-teal-600/20 blur-[120px]" />
       </div>
 
       <div className="max-w-6xl mx-auto space-y-12">
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+            <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-500 bg-clip-text text-transparent">
               Accensa Dashboard
             </h1>
             <p className="text-gray-400 mt-2">M1 Milestone: Path A (Chain-Only Truth)</p>
@@ -59,7 +59,7 @@ export default function Dashboard() {
           <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-6 flex flex-col min-w-[240px] shadow-2xl transition-transform hover:scale-[1.02]">
             <span className="text-sm font-medium text-gray-400 uppercase tracking-wider">Total Volume Settled</span>
             <span className="text-4xl font-light mt-2 flex items-baseline gap-2">
-              <span className="text-blue-400">$</span>
+              <span className="text-emerald-400">$</span>
               {total.toFixed(2)}
               <span className="text-lg text-gray-500">USDC</span>
             </span>
@@ -93,7 +93,7 @@ export default function Dashboard() {
               <tbody className="divide-y divide-white/5">
                 {payments.map((payment: Payment) => (
                   <tr key={payment.tx_hash} className="hover:bg-white/[0.03] transition-colors group">
-                    <td className="px-8 py-5 font-mono text-blue-300 group-hover:text-blue-400 transition-colors truncate max-w-[200px]" title={payment.tx_hash}>
+                    <td className="px-8 py-5 font-mono text-emerald-300 group-hover:text-emerald-400 transition-colors truncate max-w-[200px]" title={payment.tx_hash}>
                       {payment.tx_hash.substring(0, 8)}...{payment.tx_hash.substring(payment.tx_hash.length - 6)}
                     </td>
                     <td className="px-8 py-5">
