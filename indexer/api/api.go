@@ -26,6 +26,7 @@ func NewServer(database *db.DB) *Server {
 	}
 
 	r.Get("/health", s.handleHealth)
+	r.Get("/api/payments", s.handleGetPayments)
 	// Path B hook endpoint
 	r.Post("/hook/settle", s.handleHookSettle)
 
@@ -41,6 +42,28 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"ok"}`))
 }
+
+func (s *Server) handleGetPayments(w http.ResponseWriter, r *http.Request) {
+	// Simple CORS
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	payments, err := s.db.GetPayments(r.Context())
+	if err != nil {
+		log.Printf("Error fetching payments: %v", err)
+		http.Error(w, `{"error":"failed to fetch payments"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if payments == nil {
+		payments = []db.Payment{} // Return empty array instead of null
+	}
+
+	if err := json.NewEncoder(w).Encode(payments); err != nil {
+		log.Printf("Error encoding payments: %v", err)
+	}
+}
+
 
 type HookPayload struct {
 	TxHash    string `json:"tx_hash"`
