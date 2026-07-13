@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Inter } from 'next/font/google';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -20,29 +20,7 @@ export default function Dashboard() {
   ]);
   const [total, setTotal] = useState(674.50);
 
-  // Fetch from the live Go indexer API
-  useEffect(() => {
-    const fetchPayments = async () => {
-      try {
-        const apiUrl = process.env.NEXT_PUBLIC_INDEXER_URL || 'http://localhost:8080';
-        const res = await fetch(`${apiUrl}/api/payments`);
-        if (res.ok) {
-          const data: Payment[] = await res.json();
-          if (data && data.length > 0) {
-            setPayments(data);
-            setTotal(data.reduce((acc: number, p: Payment) => acc + p.amount, 0));
-          }
-        }
-      } catch (error) {
-        console.error("Failed to fetch payments", error);
-      }
-    };
-    
-    fetchPayments();
-    // Poll every 5 seconds
-    const interval = setInterval(fetchPayments, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // Removed fetch for hardcoded demo
 
   return (
     <main className={`min-h-screen bg-[#0a0a0a] text-white p-8 md:p-24 ${inter.className}`}>
