@@ -18,7 +18,7 @@ The Go Indexer polls the Stellar RPC and populates the database. Provide it with
 ```bash
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 export STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-export MERCHANT_ADDRESSES=G...
+export MERCHANT_ADDRESS=G...
 go run main.go
 ```
 
@@ -43,14 +43,14 @@ You do not need to run any infrastructure to verify an Accensa receipt provided 
 ### Verifying a Receipt
 When a merchant gives you a receipt, it includes the batch Merkle root, the specific leaf (your payment hash + metadata), and the Merkle proof. 
 
-You can mathematically verify this receipt off-chain by using the Accensa Node SDK:
+You can mathematically verify this receipt off-chain by using the Accensa Node SDK. All three arguments are hex-encoded 32-byte hashes; the proof lists sibling hashes from leaf to root:
 
 ```typescript
 import { verifyReceipt } from '@accensa/sdk';
 
-const isValid = verifyReceipt(receipt, proof, batchRoot);
+const isValid = verifyReceipt(receiptLeaf, proof, batchRoot);
 if (!isValid) {
-  throw new Error("Invalid receipt signature or tampered metadata.");
+  throw new Error("Receipt does not match the anchored batch root.");
 }
 ```
 
