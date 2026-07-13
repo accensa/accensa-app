@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Inter } from 'next/font/google';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -12,16 +12,46 @@ interface Payment {
   timestamp: string;
 }
 
+// Shown only while no live data is available, labeled as demo data in the UI.
+const DEMO_PAYMENTS: Payment[] = [
+  { tx_hash: "4f8a3c8e5d0b9f2a1c7e6d4b3a9f8e7d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7", amount: 150.00, payer: "GBBUYER...XYP4", timestamp: "2026-07-13T12:00:00Z" },
+  { tx_hash: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f", amount: 24.50, payer: "GDALICE...QR6S", timestamp: "2026-07-13T12:02:00Z" },
+  { tx_hash: "1f2e3d4c5b6a79887766554433221100ffeeddccbbaa9988776655443322110", amount: 500.00, payer: "GCBOB4T...9P0A", timestamp: "2026-07-13T12:05:00Z" }
+];
+
+const POLL_INTERVAL_MS = 15_000;
+
 export default function Dashboard() {
-  const [payments, setPayments] = useState<Payment[]>([
-    { tx_hash: "4f8a3c8e5d0b9f2a1c7e6d4b3a9f8e7d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7", amount: 150.00, payer: "GBBUYER...XYP4", timestamp: "2026-07-13T12:00:00Z" },
-    { tx_hash: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f", amount: 24.50, payer: "GDALICE...QR6S", timestamp: "2026-07-13T12:02:00Z" },
-    { tx_hash: "1f2e3d4c5b6a79887766554433221100ffeeddccbbaa9988776655443322110", amount: 500.00, payer: "GCBOB4T...9P0A", timestamp: "2026-07-13T12:05:00Z" }
-  ]);
-  const [total, setTotal] = useState(674.50);
+  const [payments, setPayments] = useState<Payment[]>(DEMO_PAYMENTS);
+  const [live, setLive] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
 
-  // Removed fetch for hardcoded demo
+  const total = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const res = await fetch('/api/payments');
+        if (!res.ok) throw new Error(`indexer responded ${res.status}`);
+        const data: Payment[] = await res.json();
+        if (!cancelled && Array.isArray(data) && data.length > 0) {
+          setPayments(data);
+          setLive(true);
+        }
+      } catch {
+        // Keep whatever we have (demo data or last good fetch).
+      }
+    }
+
+    poll();
+    const timer = setInterval(poll, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   return (
     <main className={`min-h-screen bg-[#0a0a0a] text-white p-8 md:p-24 ${inter.className}`}>
@@ -55,12 +85,14 @@ export default function Dashboard() {
         <section className="bg-white/5 border border-white/10 backdrop-blur-lg rounded-3xl overflow-hidden shadow-2xl">
           <div className="px-8 py-6 border-b border-white/10 flex justify-between items-center">
             <h2 className="text-xl font-semibold">Recent Chain Settlements</h2>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
               <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                {live && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+                <span className={`relative inline-flex rounded-full h-3 w-3 ${live ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
               </span>
-              <span className="text-xs text-emerald-400 font-medium">Live Polling Active</span>
+              <span className={`text-xs font-medium ${live ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {live ? 'Live Polling Active' : 'Demo Data — awaiting indexer'}
+              </span>
             </div>
           </div>
           
