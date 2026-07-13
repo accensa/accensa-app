@@ -29,6 +29,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'developer',
         'user-guides',
+        'contributing',
       ],
     }
   ],
