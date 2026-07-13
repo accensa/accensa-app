@@ -1,4 +1,4 @@
 [submodule "apps/docs/docs/contracts-repo"]
 	path = apps/docs/docs/contracts-repo
 	url = https://github.com/accensa/accensa-contracts.git
-	branch = feat/implement-contracts
+	branch = main
