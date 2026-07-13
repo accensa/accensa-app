@@ -1,0 +1,28 @@
+---
+title: "Introduction"
+description: "The merchant back-office for x402 sellers on Stellar."
+---
+
+## What is Accensa?
+
+Accensa is a merchant back-office designed specifically for sellers operating on the x402 protocol via the Stellar network. It provides a missing layer of business operations without interfering with the direct payment path.
+
+It reconstructs a seller's payment history directly from on-chain data, anchors verifiable receipts for agent operators, and executes merchant-authorized refunds.
+
+## The Problem
+
+x402 (HTTP 402 over Stellar) facilitates agentic payments seamlessly. However, the seller experience ends the moment funds arrive at the `PAY_TO` address. This creates three critical operational gaps:
+
+1. **No Receipts:** A buyer paying for API access receives raw USDC transfers. There is no mapping of these transfers to specific routes or time periods.
+2. **No Refunds:** The x402 protocol defines a one-way transfer. If a merchant's service fails, there is no standardized way to refund the buyer.
+3. **No Audit Trails:** An agent operator cannot mathematically prove they paid for a specific service call. They only possess transaction hashes.
+
+## How It Works
+
+Accensa runs adjacent to your existing x402 facilitator. It never touches the payment flow or escrows funds. 
+
+1. **Payment Execution:** The AI agent hits your endpoint and pays the invoice via the standard x402 facilitator.
+2. **Chain Ingestion:** Your Accensa Indexer continually polls the Stellar RPC and logs the USDC transfer into your local database.
+3. **Revenue Aggregation:** Your Dashboard attributes the raw transfer to a specific HTTP route (if you use the server middleware hook).
+4. **Verifiable Anchoring:** On a scheduled cadence, the merchant's wallet signs a batch of observed payments and anchors the Merkle root to the `ReceiptAnchor` Soroban contract.
+5. **Refunds:** The merchant deposits a float to the `RefundVault` contract. When a refund is required, the merchant triggers a payout from the dashboard.
