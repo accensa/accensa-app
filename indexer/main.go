@@ -7,6 +7,7 @@ import (
 
 	"github.com/accensa/accensa-app/indexer/api"
 	"github.com/accensa/accensa-app/indexer/db"
+	"github.com/accensa/accensa-app/indexer/stellar"
 	"github.com/joho/godotenv"
 )
 
@@ -28,6 +29,15 @@ func main() {
 	if err := database.InitSchema(ctx); err != nil {
 		log.Fatalf("Failed to init schema: %v", err)
 	}
+
+	// Start the Stellar RPC poller in the background
+	rpcURL := os.Getenv("STELLAR_RPC_URL")
+	if rpcURL == "" {
+		rpcURL = "https://soroban-testnet.stellar.org"
+	}
+	merchantAddress := os.Getenv("MERCHANT_ADDRESS")
+	poller := stellar.NewPoller(database, rpcURL, merchantAddress)
+	go poller.Start(ctx)
 
 	server := api.NewServer(database)
 	port := os.Getenv("PORT")
