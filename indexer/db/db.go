@@ -87,3 +87,9 @@ func (db *DB) GetPayments(ctx context.Context) ([]Payment, error) {
 	}
 	return payments, nil
 }
+
+func (db *DB) InsertPayment(ctx context.Context, p Payment) error {
+	_, err := db.pool.Exec(ctx, "INSERT INTO payments (tx_hash, ledger, payer, amount, asset, ts) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (tx_hash) DO NOTHING",
+		p.TxHash, p.Ledger, p.Payer, p.Amount, p.Asset, p.Timestamp)
+	return err
+}

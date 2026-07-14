@@ -1,0 +1,16 @@
+{
+  "name": "@accensa/sdk",
+  "version": "0.1.0",
+  "description": "Middleware hook and receipt verification for Accensa, the merchant back-office for x402 sellers on Stellar",
+  "main": "index.ts",
+  "types": "index.ts",
+  "license": "MIT",
+  "peerDependencies": {
+    "express": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  }
+}
