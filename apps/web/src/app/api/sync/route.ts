@@ -59,13 +59,16 @@ export async function GET() {
           [txHash, amount, payer, timestamp]
         );
         inserted++;
-      } catch (err) {}
+      } catch (err) {
+        console.error(err);
+      }
     }
 
     return NextResponse.json({ success: true, events_found: events.length, new_inserts: inserted });
 
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   } finally {
     await client.end().catch(console.error);
   }

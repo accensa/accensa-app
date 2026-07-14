@@ -150,7 +150,14 @@ func (p *Poller) pollEvents(startLedger, endLedger uint64) {
 		txHash := event.Id
 		payer := "G" + event.ContractId[1:5] + "..." + event.ContractId[len(event.ContractId)-4:] // Mocked payer address for demo display
 		
-		err = p.db.InsertPayment(context.Background(), txHash, float64(10.00), payer, event.LedgerClosedAt)
+		err = p.db.InsertPayment(context.Background(), db.Payment{
+			TxHash:    txHash,
+			Ledger:    int64(event.Ledger),
+			Payer:     payer,
+			Amount:    10.00,
+			Asset:     "native",
+			Timestamp: event.LedgerClosedAt,
+		})
 		if err != nil {
 			log.Printf("Failed to save payment event to database: %v", err)
 		}

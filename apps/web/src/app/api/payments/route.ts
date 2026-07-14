@@ -15,8 +15,9 @@ export async function GET() {
       `SELECT tx_hash, amount, payer, timestamp FROM payments ORDER BY timestamp DESC LIMIT 100`
     );
     return NextResponse.json(result.rows);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   } finally {
     await client.end().catch(console.error);
   }
