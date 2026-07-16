@@ -17,3 +17,5 @@ jobs:
         run: npm install pg node-fetch@2
       - name: Run sync script
         run: node sync_github.js
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
