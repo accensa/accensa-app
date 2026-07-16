@@ -37,7 +37,7 @@ USE_SSH=true npm run deploy
 Not using SSH:
 
 ```bash
-GIT_USER=<Your GitHub username> npm run deploy
+GIT_USER=accensa npm run deploy
 ```
 
 If you are using GitHub Pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
