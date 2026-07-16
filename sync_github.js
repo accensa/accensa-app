@@ -4,7 +4,8 @@ const SOROBAN_RPC = "https://soroban-testnet.stellar.org";
 const MERCHANT_CONTRACT = "CDP76EZKUOMRZMETU4CR276SHBMNBTIZDIM7GJEESTX3CJEXXBTTSWBV";
 
 async function main() {
-  const dbUrl = "postgresql://postgres:@Basirat031@db.ialomdzbhjzizojvbady.supabase.co:5432/postgres";
+  // Use process.env.DATABASE_URL which should be set to the Supabase IPv4 connection pooler string
+  const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:%40Basirat031@db.ialomdzbhjzizojvbady.supabase.co:5432/postgres";
   const client = new Client({ connectionString: dbUrl });
 
   try {
