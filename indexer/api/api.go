@@ -41,7 +41,7 @@ func (s *Server) Start(port string) error {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 func (s *Server) handleGetPayments(w http.ResponseWriter, r *http.Request) {
@@ -105,5 +105,5 @@ func (s *Server) handleDemoInject(w http.ResponseWriter, r *http.Request) {
 	
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"demo injected"}`))
+	_, _ = w.Write([]byte(`{"status":"demo injected"}`))
 }
