@@ -4,3 +4,12 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# Build output
+*.tsbuildinfo
+
+# Compiled Go indexer binary
+/indexer/indexer
+
+# Deployment tooling
+.vercel/
