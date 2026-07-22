@@ -1,0 +1,49 @@
+name: Trigger Indexer Sync
+
+# Vercel Cron on the Hobby plan is limited to one run per day, which is too
+# coarse for a payments dashboard. This workflow just *calls* the deployed
+# /api/sync endpoint on a tighter schedule — all indexing logic lives in the
+# app, not here. vercel.json keeps a daily cron as a backstop.
+#
+# Required repository secrets:
+#   SYNC_URL      https://accensa-dashboard.vercel.app/api/sync
+#   CRON_SECRET   must match the CRON_SECRET set on the Vercel project
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+# Never let two syncs overlap; the later one wins.
+concurrency:
+  group: indexer-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call sync endpoint
+        env:
+          SYNC_URL: ${{ secrets.SYNC_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$SYNC_URL" ]; then
+            echo "SYNC_URL secret is not set"; exit 1
+          fi
+          # -sS keeps output quiet but still reports transport errors.
+          response=$(curl -sS --max-time 120 -w '\n%{http_code}' \
+            -H "Authorization: Bearer $CRON_SECRET" "$SYNC_URL")
+          body=$(printf '%s' "$response" | sed '$d')
+          code=$(printf '%s' "$response" | tail -n1)
+
+          echo "HTTP $code"
+          echo "$body"
+
+          if [ "$code" != "200" ]; then
+            echo "Sync failed with HTTP $code"; exit 1
+          fi
+          # The route returns {"success":false,...} on a handled error.
+          if printf '%s' "$body" | grep -q '"success":false'; then
+            echo "Sync reported failure"; exit 1
+          fi
