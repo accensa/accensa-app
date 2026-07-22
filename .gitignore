@@ -13,3 +13,9 @@ dist/
 
 # Deployment tooling
 .vercel/
+
+# This is a pnpm workspace; pnpm-lock.yaml is the only lockfile.
+# Stray npm/yarn lockfiles drift from it and change which package manager
+# Vercel detects for a project.
+package-lock.json
+yarn.lock
