@@ -76,7 +76,7 @@ export default function VerifyPage() {
       <div className="max-w-3xl mx-auto space-y-10">
         <header className="space-y-4">
           <Link href="/" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">
-            ← Dashboard
+            ← Accensa
           </Link>
           <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-500 bg-clip-text text-transparent">
             Verify a receipt
@@ -215,7 +215,14 @@ function Result({ result }: { result: VerifyResponse }) {
 
       {batch && (
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 space-y-3">
-          <p className="text-sm font-medium text-gray-300">Anchored batch #{batch.id}</p>
+          <p className="text-sm font-medium text-gray-300">
+            <Link
+              href={`/batches/${batch.id}`}
+              className="hover:text-emerald-300 transition-colors"
+            >
+              Anchored batch #{batch.id} →
+            </Link>
+          </p>
           <dl className="grid sm:grid-cols-2 gap-3 text-sm">
             <Detail label="Merkle root" mono>
               {batch.root}
