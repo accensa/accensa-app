@@ -58,8 +58,8 @@ of a cent, which is the only way verifiability survives micropayment economics.
                         │
           ┌─────────────┴──────────────┐
           ▼                            ▼
-   Go indexer (poller)           ReceiptAnchor
-   reads SAC transfers           anchors Merkle roots
+   /api/sync (indexer)           ReceiptAnchor
+   decodes SAC transfers         anchors Merkle roots
           │                            │
           ▼                            │
      PostgreSQL                        │
@@ -70,7 +70,7 @@ of a cent, which is the only way verifiability survives micropayment economics.
 
 | Component | Path | What it does |
 |---|---|---|
-| **Indexer** | [`indexer/`](indexer) | Go service polling Soroban RPC for SAC transfer events to the merchant address, persisting to PostgreSQL and serving them over HTTP. |
+| **Indexer** | [`apps/web/src/app/api/sync`](apps/web/src/app/api/sync) | Decodes Stellar Asset Contract `transfer` events addressed to the merchant and persists them to PostgreSQL. Runs on a schedule; tracks a ledger cursor so it never rescans or double-counts. |
 | **Dashboard** | [`apps/web/`](apps/web) | Next.js app showing payments, totals, and receipt verification. |
 | **SDK** | [`packages/sdk/`](packages/sdk) | `verifyReceipt()` for off-chain Merkle verification, and `attachAccensaHook()` middleware for route-level attribution. |
 | **Demo merchant** | [`apps/demo-merchant/`](apps/demo-merchant) | Minimal paid endpoint for exercising the flow end to end. |
@@ -105,7 +105,7 @@ for the commands.
 
 ### Prerequisites
 
-Node 22+, pnpm 9, Go 1.22+, and a PostgreSQL instance.
+Node 22+, pnpm 9, and a PostgreSQL instance.
 
 ### Run locally
 
@@ -113,20 +113,20 @@ Node 22+, pnpm 9, Go 1.22+, and a PostgreSQL instance.
 # 1. Database
 docker run --name pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres
 
-# 2. Indexer
-cd indexer
-export DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
-export MERCHANT_ADDRESS=GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6
-go run .
+# 2. Configure apps/web/.env.local
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+MERCHANT_ADDRESS=GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6
+STELLAR_RPC_URL=https://soroban-testnet.stellar.org
 
-# 3. Dashboard
+# 3. Dashboard (schema is created on first request)
 cd apps/web
 pnpm install
 pnpm dev
 ```
 
-The dashboard reads from the indexer at `/api/payments`. Until the indexer returns
-rows it renders clearly-labelled demo data, so the UI is never silently empty.
+Then trigger an index run with `curl localhost:3000/api/sync`, and the dashboard at
+`/` will show whatever settled to `MERCHANT_ADDRESS`. If nothing has, it says so —
+the dashboard never invents rows to fill space.
 
 ### Contract addresses
 
@@ -135,13 +135,16 @@ Testnet IDs are published in
 
 ## Testing
 
-CI runs ESLint, `tsc --noEmit`, `go vet`, `go test`, and builds both the Next.js app
-and the Go indexer on every push. Failures fail the build — no suppressed exit codes.
+CI runs ESLint, `tsc --noEmit`, the SDK and web test suites, and a production build
+on every push. Failures fail the build — no suppressed exit codes.
 
 ```bash
-cd apps/web && pnpm lint && pnpm tsc --noEmit
-cd indexer  && go vet ./... && go test ./...
+cd apps/web     && pnpm lint && pnpm tsc --noEmit && pnpm test
+cd packages/sdk && pnpm test
 ```
+
+The web suite covers SAC event decoding against a **real captured testnet event**,
+and the decimal arithmetic that keeps payment amounts off floating point.
 
 ## Contributing
 
