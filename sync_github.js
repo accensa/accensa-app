@@ -4,8 +4,16 @@ const SOROBAN_RPC = "https://soroban-testnet.stellar.org";
 const MERCHANT_CONTRACT = "CDP76EZKUOMRZMETU4CR276SHBMNBTIZDIM7GJEESTX3CJEXXBTTSWBV";
 
 async function main() {
-  // Use process.env.DATABASE_URL which should be set to the Supabase IPv4 connection pooler string
-  const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:%40Basirat031@db.ialomdzbhjzizojvbady.supabase.co:5432/postgres";
+  // DATABASE_URL must be supplied by the environment (a GitHub Actions secret in
+  // CI, a local export otherwise). There is deliberately no fallback: a default
+  // connection string committed here would be a published credential.
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    console.error(
+      "DATABASE_URL is not set. Export it locally, or configure it as a repository secret.",
+    );
+    process.exit(1);
+  }
   const client = new Client({ connectionString: dbUrl });
 
   try {

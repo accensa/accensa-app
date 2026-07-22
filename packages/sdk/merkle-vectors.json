@@ -1,0 +1,160 @@
+{
+  "$comment": "GENERATED FILE — do not edit by hand. Run packages/sdk/scripts/generate-vectors.mjs.",
+  "description": "Shared conformance vectors for Accensa receipt verification. Consumed by the TypeScript SDK and by the Soroban ReceiptAnchor contract tests, so both implementations are pinned to identical behaviour.",
+  "algorithm": {
+    "hash": "SHA-256",
+    "pairing": "sorted-pair: siblings are concatenated smaller-hash-first, so proofs carry no left/right position flags",
+    "oddNode": "an unpaired node at the end of a level is promoted unchanged",
+    "proofOrder": "leaf-to-root"
+  },
+  "onchain": {
+    "network": "testnet",
+    "contract": "CBHRJU7CF4XIFRNDITFHNQHABKBMFM2FYFHLGWN3JGSFYYCDSMDAWPRV",
+    "batchId": 1,
+    "root": "c6ccdcdb57896fa4999d9dea6a5ef40523d55e46cf32b621d7ea4a582d90e6ac",
+    "note": "The first two cases below are the batch anchored on-chain."
+  },
+  "cases": [
+    {
+      "name": "live testnet batch #1 — valid membership proof",
+      "leaf": "c476fc0553303ec4275bd4cb50ab7fa8182e343dbc4c721d7e2076fd77a5b56c",
+      "proof": [
+        "7ca64ee60e2b975f59f2a1f1cc1526d5b001a5c29f70291f316ba1c012a01bd1",
+        "1733fad16ada0c23d8cdaff52bea66bea308dddddcb79348842acef0065c9615"
+      ],
+      "root": "c6ccdcdb57896fa4999d9dea6a5ef40523d55e46cf32b621d7ea4a582d90e6ac",
+      "expected": true,
+      "note": "Anchored on-chain; verify_receipt returns true for these exact inputs."
+    },
+    {
+      "name": "live testnet batch #1 — forged leaf is rejected",
+      "leaf": "16b138aabc889c21114436424e13132bd8928d2c21b4ac5a9ac5198104efb42c",
+      "proof": [
+        "7ca64ee60e2b975f59f2a1f1cc1526d5b001a5c29f70291f316ba1c012a01bd1",
+        "1733fad16ada0c23d8cdaff52bea66bea308dddddcb79348842acef0065c9615"
+      ],
+      "root": "c6ccdcdb57896fa4999d9dea6a5ef40523d55e46cf32b621d7ea4a582d90e6ac",
+      "expected": false,
+      "note": "A receipt that was never in the batch cannot be proven into it."
+    },
+    {
+      "name": "single-leaf batch — empty proof",
+      "leaf": "5a22471eb3e4cb897aa470ac0f0e72b56cc6394adf856a310dc5eaa92af77b8a",
+      "proof": [],
+      "root": "5a22471eb3e4cb897aa470ac0f0e72b56cc6394adf856a310dc5eaa92af77b8a",
+      "expected": true,
+      "note": "Root equals the leaf; an empty proof must verify."
+    },
+    {
+      "name": "single-leaf batch — empty proof against wrong root",
+      "leaf": "5a22471eb3e4cb897aa470ac0f0e72b56cc6394adf856a310dc5eaa92af77b8a",
+      "proof": [],
+      "root": "f6c653d44a69c19a9b44fe542a7eba88eb4f548d28bf0cdfd40e6291293c2b70",
+      "expected": false
+    },
+    {
+      "name": "two-leaf batch — left leaf",
+      "leaf": "be169458dea8ed680e34387c9462d3793d4c4e68ad93785856eeed733a776ff5",
+      "proof": [
+        "0bda281dc490e2dfa2b6d5c7e99eaf45d56c21e8fe72055758c3c2c7de63c5ef"
+      ],
+      "root": "07c242b923591336d60e2db6a06a5d0ef616e54011094b03625051bb6cd1a2c5",
+      "expected": true
+    },
+    {
+      "name": "two-leaf batch — right leaf",
+      "leaf": "0bda281dc490e2dfa2b6d5c7e99eaf45d56c21e8fe72055758c3c2c7de63c5ef",
+      "proof": [
+        "be169458dea8ed680e34387c9462d3793d4c4e68ad93785856eeed733a776ff5"
+      ],
+      "root": "07c242b923591336d60e2db6a06a5d0ef616e54011094b03625051bb6cd1a2c5",
+      "expected": true
+    },
+    {
+      "name": "three-leaf batch — leaf 0",
+      "leaf": "90e97eba84cce7000a547c0ffb530b5ca34a1c4d0c703fbde03ba56c474a37fe",
+      "proof": [
+        "2c7a7906bd7927953fabde7d87af30921ee1a58b9e45f0979015fe0c87c9a526",
+        "9fb65b5a4be08d206e44518c0fb7bf0c568f641a5c401550e65bf27f2fa8bdf8"
+      ],
+      "root": "f2ce5eb24c9bead8184a3fc3bb1404ae4aa28e34e7046e829423dd787d1ca037",
+      "expected": true
+    },
+    {
+      "name": "three-leaf batch — leaf 2",
+      "leaf": "9fb65b5a4be08d206e44518c0fb7bf0c568f641a5c401550e65bf27f2fa8bdf8",
+      "proof": [
+        "bb7186cc99e35a3a9a3cd50aec1db0e97235989a904fc5ae82344b531dba1902"
+      ],
+      "root": "f2ce5eb24c9bead8184a3fc3bb1404ae4aa28e34e7046e829423dd787d1ca037",
+      "expected": true,
+      "note": "Promoted odd node: proof is one level shorter."
+    },
+    {
+      "name": "eight-leaf batch — leaf 0",
+      "leaf": "ed97784168d570df7aace1ee6f555289847eb9bcb26ba32f274ef1628f609a10",
+      "proof": [
+        "1c243fd9b0e3e4c524508d2c8c72dc2470cec74dd47965a091fbde0a9c72c994",
+        "9c7b4f656da6dcaf0e970a4f4eb02c96c9d9d82301cd6c234059e28d2a197f39",
+        "205ef8a44a1c7b8b3ab46a5e1628ea5489bbb97ce48a73966a332bc2a06e9bc0"
+      ],
+      "root": "3aa0080b225e9f7bbfacd4a506648ed95261166a0ba97c5b1c54d253e0bbcb4f",
+      "expected": true
+    },
+    {
+      "name": "eight-leaf batch — leaf 3",
+      "leaf": "a8e7ea557ed800ce9919b2b3e038cfca4893149b2a0365ca989055f96d04e21b",
+      "proof": [
+        "8b71ea560b0800a1101c2c734b6d02ada4002ff7582474c2c3becc7901c5ab02",
+        "747f58aaa64cb8a241dbd2b68fedd7f9947caa2fe962cae8398d91e88d1f1476",
+        "205ef8a44a1c7b8b3ab46a5e1628ea5489bbb97ce48a73966a332bc2a06e9bc0"
+      ],
+      "root": "3aa0080b225e9f7bbfacd4a506648ed95261166a0ba97c5b1c54d253e0bbcb4f",
+      "expected": true
+    },
+    {
+      "name": "eight-leaf batch — leaf 7",
+      "leaf": "623bf2617eed5cc178010519448936377c950ee496fa7fe80928744798432c3b",
+      "proof": [
+        "87af2a090a37b9a6d35a830be48cd5c2ddba626e364d912a36400d0fdcc41680",
+        "b0d187c460da414993183a92fbe3dac7c2d7e5904b28427edf8a83dd6e1ed9b0",
+        "be37499dbbefc96270eb10a7752a1629d5d59e608e639a67332af18ea283630c"
+      ],
+      "root": "3aa0080b225e9f7bbfacd4a506648ed95261166a0ba97c5b1c54d253e0bbcb4f",
+      "expected": true
+    },
+    {
+      "name": "valid proof against a different root is rejected",
+      "leaf": "a8e7ea557ed800ce9919b2b3e038cfca4893149b2a0365ca989055f96d04e21b",
+      "proof": [
+        "8b71ea560b0800a1101c2c734b6d02ada4002ff7582474c2c3becc7901c5ab02",
+        "747f58aaa64cb8a241dbd2b68fedd7f9947caa2fe962cae8398d91e88d1f1476",
+        "205ef8a44a1c7b8b3ab46a5e1628ea5489bbb97ce48a73966a332bc2a06e9bc0"
+      ],
+      "root": "c6ccdcdb57896fa4999d9dea6a5ef40523d55e46cf32b621d7ea4a582d90e6ac",
+      "expected": false
+    },
+    {
+      "name": "reordered proof is rejected",
+      "leaf": "a8e7ea557ed800ce9919b2b3e038cfca4893149b2a0365ca989055f96d04e21b",
+      "proof": [
+        "205ef8a44a1c7b8b3ab46a5e1628ea5489bbb97ce48a73966a332bc2a06e9bc0",
+        "747f58aaa64cb8a241dbd2b68fedd7f9947caa2fe962cae8398d91e88d1f1476",
+        "8b71ea560b0800a1101c2c734b6d02ada4002ff7582474c2c3becc7901c5ab02"
+      ],
+      "root": "3aa0080b225e9f7bbfacd4a506648ed95261166a0ba97c5b1c54d253e0bbcb4f",
+      "expected": false,
+      "note": "Proof order is leaf-to-root and is not commutative across levels."
+    },
+    {
+      "name": "truncated proof is rejected",
+      "leaf": "a8e7ea557ed800ce9919b2b3e038cfca4893149b2a0365ca989055f96d04e21b",
+      "proof": [
+        "8b71ea560b0800a1101c2c734b6d02ada4002ff7582474c2c3becc7901c5ab02",
+        "747f58aaa64cb8a241dbd2b68fedd7f9947caa2fe962cae8398d91e88d1f1476"
+      ],
+      "root": "3aa0080b225e9f7bbfacd4a506648ed95261166a0ba97c5b1c54d253e0bbcb4f",
+      "expected": false
+    }
+  ]
+}
