@@ -5,6 +5,11 @@
   "main": "index.ts",
   "types": "index.ts",
   "license": "MIT",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "gen:vectors": "node scripts/generate-vectors.mjs"
+  },
   "peerDependencies": {
     "express": ">=4"
   },
@@ -12,5 +17,8 @@
     "express": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
   }
 }
