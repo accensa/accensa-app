@@ -5,6 +5,10 @@
   "main": "index.ts",
   "types": "index.ts",
   "license": "MIT",
+  "exports": {
+    ".": "./index.ts",
+    "./merkle": "./merkle.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,6 +23,7 @@
     }
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "vitest": "^2.1.9"
   }
 }
