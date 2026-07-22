@@ -1,0 +1,72 @@
+{
+  "$comment": "Real Soroban RPC getEvents output from Stellar testnet, captured 2026-07-22. Do not hand-edit.",
+  "source": {
+    "network": "testnet",
+    "contract": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+    "rpc": "https://soroban-testnet.stellar.org"
+  },
+  "known": {
+    "txHash": "ec40459dc397b208d76b47bd2b961bdb34655c603d95ec03f4326511905aaa81",
+    "expected": {
+      "from": "GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6",
+      "to": "GD4C3LWGIXNDWC3G2UTIKXA4TN2KCBOCP5G6R6YT6WBHVDEP4D4GRMK4",
+      "asset": "native",
+      "stroops": "125000000",
+      "amount": "12.5000000"
+    }
+  },
+  "events": [
+    {
+      "txHash": "ec40459dc397b208d76b47bd2b961bdb34655c603d95ec03f4326511905aaa81",
+      "ledger": 3741196,
+      "ledgerClosedAt": "2026-07-22T12:35:40Z",
+      "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "topic": [
+        "AAAADwAAAAh0cmFuc2Zlcg==",
+        "AAAAEgAAAAAAAAAAgLVIwMxSuVCJntnbeW3kf3g5aIidL2QeIPNZ5GFCHvI=",
+        "AAAAEgAAAAAAAAAA+C2uxkXaOwtm1SaFXBybdKEFwn9N6PsT9YJ6jI/g+Gg=",
+        "AAAADgAAAAZuYXRpdmUAAA=="
+      ],
+      "value": "AAAACgAAAAAAAAAAAAAAAAdzWUA="
+    },
+    {
+      "txHash": "a21ea21aaeeb69d4f08215542474131bb6a150187dcd3b79c963ed88cc4a1c3c",
+      "ledger": 3741191,
+      "ledgerClosedAt": "2026-07-22T12:35:15Z",
+      "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "topic": [
+        "AAAADwAAAAh0cmFuc2Zlcg==",
+        "AAAAEgAAAAAAAAAAEH3Rayw4M0iCLoEe96rPFNGYim8AVHJU0z4ebYZW4Jw=",
+        "AAAAEgAAAAAAAAAAmepl6Grux407ezBDLqv2WSW3wtkxSNoCjeNIssgoYbE=",
+        "AAAADgAAAAZuYXRpdmUAAA=="
+      ],
+      "value": "AAAACgAAAAAAAAAAAAAAF0h26AA="
+    },
+    {
+      "txHash": "2a19fabf93f63ef8a61bddc729aaca0741b3f33a7b60a84b22a082519b5bac9d",
+      "ledger": 3741191,
+      "ledgerClosedAt": "2026-07-22T12:35:15Z",
+      "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "topic": [
+        "AAAADwAAAAh0cmFuc2Zlcg==",
+        "AAAAEgAAAAE8MBnMV0fzKC21RIIDEpvTdcKFsVUsuY0jPBq6dAjFNA==",
+        "AAAAEgAAAAFEWcJPGECM+j56YKlCymqsfUEV2jif6kewUK2AcYgZ0A==",
+        "AAAADgAAAAZuYXRpdmUAAA=="
+      ],
+      "value": "AAAACgAAAAAAAAAAAAAADSnT+og="
+    },
+    {
+      "txHash": "2a19fabf93f63ef8a61bddc729aaca0741b3f33a7b60a84b22a082519b5bac9d",
+      "ledger": 3741191,
+      "ledgerClosedAt": "2026-07-22T12:35:15Z",
+      "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "topic": [
+        "AAAADwAAAAh0cmFuc2Zlcg==",
+        "AAAAEgAAAAFEWcJPGECM+j56YKlCymqsfUEV2jif6kewUK2AcYgZ0A==",
+        "AAAAEgAAAAEl8kh0pLnF0UzqoEIL/qno3WlDz2kn+aM2ewPelDHZlQ==",
+        "AAAADgAAAAZuYXRpdmUAAA=="
+      ],
+      "value": "AAAACgAAAAAAAAAAAAAADSnT+og="
+    }
+  ]
+}
