@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@accensa/sdk": "workspace:^",
     "@stellar/stellar-sdk": "^16.0.1",
     "next": "16.2.10",
     "pg": "^8.22.0",
