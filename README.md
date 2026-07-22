@@ -7,7 +7,8 @@
     <img src="https://img.shields.io/badge/stellar-x402-blue.svg" alt="Stellar x402" />
   </p>
   <p>
-    <a href="https://accensa-dashboard.vercel.app"><strong>Live Dashboard</strong></a> ·
+    <a href="https://accensa-dashboard.vercel.app/verify"><strong>Verify a Receipt</strong></a> ·
+    <a href="https://accensa-dashboard.vercel.app/dashboard"><strong>Live Dashboard</strong></a> ·
     <a href="https://accensa-docs.vercel.app"><strong>Documentation</strong></a> ·
     <a href="https://github.com/accensa/accensa-contracts"><strong>accensa-contracts</strong></a>
   </p>
@@ -125,8 +126,11 @@ pnpm dev
 ```
 
 Then trigger an index run with `curl localhost:3000/api/sync`, and the dashboard at
-`/` will show whatever settled to `MERCHANT_ADDRESS`. If nothing has, it says so —
-the dashboard never invents rows to fill space.
+`/dashboard` will show whatever settled to `MERCHANT_ADDRESS`. If nothing has, it
+says so — the dashboard never invents rows to fill space.
+
+Routes: `/` is the landing page, `/dashboard` the merchant view, and `/verify` the
+public receipt verifier, which needs no account.
 
 ### Contract addresses
 

@@ -76,7 +76,7 @@ export default function VerifyPage() {
       <div className="max-w-3xl mx-auto space-y-10">
         <header className="space-y-4">
           <Link href="/" className="text-sm text-gray-500 hover:text-gray-300 transition-colors">
-            ← Dashboard
+            ← Accensa
           </Link>
           <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-500 bg-clip-text text-transparent">
             Verify a receipt
