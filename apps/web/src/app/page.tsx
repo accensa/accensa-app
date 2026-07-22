@@ -1,367 +1,297 @@
-'use client';
+import React from 'react';
+import Link from 'next/link';
+import { RECEIPT_ANCHOR_ID } from '@/lib/receipt-anchor';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Inter } from 'next/font/google';
-import { formatAmount, sumAmounts, assetLabel } from '@/lib/money';
+const REFUND_VAULT_ID =
+  process.env.NEXT_PUBLIC_REFUND_VAULT_ID ??
+  'CCMBM44EJUGD52G4LSMGHSXMAH2KSAQZX7VOYY4TTBF5BK4D7M4IHRQA';
 
-const inter = Inter({ subsets: ['latin'] });
+const explorer = (id: string) =>
+  `https://stellar.expert/explorer/testnet/contract/${id}`;
 
-interface Payment {
-  tx_hash: string;
-  ledger: number | null;
-  payer: string;
-  /** Decimal string, never a number — see src/lib/money.ts. */
-  amount: string;
-  asset: string | null;
-  ts: string;
-  route: string | null;
-  method: string | null;
-}
-
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'ready'; payments: Payment[]; fetchedAt: number }
-  | { status: 'error'; message: string };
-
-const POLL_INTERVAL_MS = 15_000;
-
-const explorerUrl = (hash: string) =>
-  `https://stellar.expert/explorer/testnet/tx/${hash}`;
-
-function truncate(value: string, head = 8, tail = 6) {
-  return value.length <= head + tail + 1
-    ? value
-    : `${value.slice(0, head)}…${value.slice(-tail)}`;
-}
-
-export default function Dashboard() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
-  const [selected, setSelected] = useState<Payment | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Bumped to trigger an out-of-band refetch (the Retry button).
-  const [reloadToken, setReloadToken] = useState(0);
-  const reload = useCallback(() => setReloadToken((n) => n + 1), []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function fetchPayments() {
-      try {
-        const res = await fetch('/api/payments', {
-          signal: controller.signal,
-          cache: 'no-store',
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `Indexer responded ${res.status}`);
-        }
-        const data: Payment[] = await res.json();
-        if (controller.signal.aborted) return;
-        setState({ status: 'ready', payments: data, fetchedAt: Date.now() });
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        // Surface the failure rather than silently showing invented data.
-        setState({
-          status: 'error',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Unable to reach the indexer',
-        });
-      }
-    }
-
-    void fetchPayments();
-    const timer = setInterval(fetchPayments, POLL_INTERVAL_MS);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [reloadToken]);
-
-  // Dismiss the details dialog with Escape, and move focus into it on open.
-  useEffect(() => {
-    if (!selected) return;
-    closeButtonRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelected(null);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [selected]);
-
-  const payments = state.status === 'ready' ? state.payments : [];
-  const total = sumAmounts(payments.map((p) => p.amount));
-  const assets = new Set(payments.map((p) => assetLabel(p.asset)));
-  const totalAsset = assets.size === 1 ? [...assets][0] : '';
-
+export default function Landing() {
   return (
-    <main
-      className={`min-h-screen bg-[#0a0a0a] text-white p-8 md:p-24 ${inter.className}`}
-    >
-      <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-emerald-600/20 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-teal-600/20 blur-[120px]" />
+    <main className="min-h-screen bg-[#0a0a0a] text-white">
+      <div className="fixed inset-0 overflow-hidden -z-10 pointer-events-none">
+        <div className="absolute top-[-15%] left-[-10%] w-[45%] h-[45%] rounded-full bg-emerald-600/20 blur-[140px]" />
+        <div className="absolute bottom-[-15%] right-[-10%] w-[45%] h-[45%] rounded-full bg-teal-600/20 blur-[140px]" />
       </div>
 
-      <div className="max-w-6xl mx-auto space-y-12">
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-emerald-400 to-teal-500 bg-clip-text text-transparent">
-              Accensa
-            </h1>
-            <p className="text-gray-400 mt-2">
-              Payments settled on Stellar, indexed from the ledger.
-            </p>
-          </div>
+      <Nav />
 
-          <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-6 flex flex-col min-w-[240px] shadow-2xl">
-            <span className="text-sm font-medium text-gray-400 uppercase tracking-wider">
-              Total settled
+      {/* Hero */}
+      <section className="px-6 pt-20 pb-24 md:pt-32 md:pb-32">
+        <div className="max-w-4xl mx-auto text-center space-y-8">
+          <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/10 text-emerald-300 text-xs font-medium">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" />
             </span>
-            <span className="text-4xl font-light mt-2 flex items-baseline gap-2">
-              {state.status === 'loading' ? (
-                <span className="inline-block h-9 w-32 rounded bg-white/10 animate-pulse" />
-              ) : (
-                <>
-                  {formatAmount(total)}
-                  {totalAsset && (
-                    <span className="text-lg text-gray-500">{totalAsset}</span>
-                  )}
-                </>
-              )}
+            Live on Stellar testnet
+          </p>
+
+          <h1 className="text-5xl md:text-6xl font-bold tracking-tight leading-[1.05]">
+            Prove every{' '}
+            <span className="bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+              x402 payment
             </span>
-          </div>
-        </header>
+            .
+          </h1>
 
-        <section className="bg-white/5 border border-white/10 backdrop-blur-lg rounded-3xl overflow-hidden shadow-2xl">
-          <div className="px-8 py-6 border-b border-white/10 flex justify-between items-center gap-4 flex-wrap">
-            <h2 className="text-xl font-semibold">Settlements</h2>
-            <StatusPill state={state} onRetry={reload} />
-          </div>
+          <p className="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
+            Agents prove they were charged correctly. Merchants refund without
+            becoming custodians. Receipts anchored on Stellar, verifiable by
+            anyone — no account required.
+          </p>
 
-          {state.status === 'loading' && <TableSkeleton />}
-
-          {state.status === 'error' && (
-            <div className="px-8 py-12 text-center space-y-3">
-              <p className="text-amber-400 font-medium">Could not load payments</p>
-              <p className="text-gray-500 text-sm max-w-md mx-auto">
-                {state.message}
-              </p>
-              <button
-                onClick={reload}
-                className="mt-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-sm hover:bg-white/10 transition-colors"
-              >
-                Retry
-              </button>
-            </div>
-          )}
-
-          {state.status === 'ready' && payments.length === 0 && (
-            <div className="px-8 py-16 text-center space-y-3">
-              <p className="text-gray-300 font-medium">No payments yet</p>
-              <p className="text-gray-500 text-sm max-w-md mx-auto">
-                Once a payment settles to this merchant address, the indexer picks
-                it up from the ledger and it appears here.
-              </p>
-            </div>
-          )}
-
-          {state.status === 'ready' && payments.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-white/5 text-gray-400 text-sm border-b border-white/10">
-                    <th className="px-8 py-4 font-medium">Transaction</th>
-                    <th className="px-8 py-4 font-medium">Amount</th>
-                    <th className="px-8 py-4 font-medium">Payer</th>
-                    <th className="px-8 py-4 font-medium">Route</th>
-                    <th className="px-8 py-4 font-medium">Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {payments.map((payment) => (
-                    <tr
-                      key={payment.tx_hash}
-                      onClick={() => setSelected(payment)}
-                      className="hover:bg-white/[0.03] transition-colors cursor-pointer"
-                    >
-                      <td className="px-8 py-5 font-mono text-emerald-300 text-sm">
-                        {truncate(payment.tx_hash)}
-                      </td>
-                      <td className="px-8 py-5">
-                        <span className="font-semibold text-lg">
-                          {formatAmount(payment.amount)}
-                        </span>
-                        <span className="text-gray-500 ml-1 text-sm">
-                          {assetLabel(payment.asset)}
-                        </span>
-                      </td>
-                      <td className="px-8 py-5 font-mono text-gray-400 text-sm">
-                        {truncate(payment.payer, 4, 4)}
-                      </td>
-                      <td className="px-8 py-5 text-gray-400 text-sm">
-                        {payment.route ? (
-                          <span className="font-mono">
-                            {payment.method && (
-                              <span className="text-gray-500 mr-1">
-                                {payment.method}
-                              </span>
-                            )}
-                            {payment.route}
-                          </span>
-                        ) : (
-                          <span className="text-gray-600">—</span>
-                        )}
-                      </td>
-                      <td className="px-8 py-5 text-gray-400 text-sm">
-                        {new Date(payment.ts).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </div>
-
-      {selected && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => setSelected(null)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="payment-details-title"
-            className="bg-[#111111] border border-white/10 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-white/5">
-              <h3
-                id="payment-details-title"
-                className="text-lg font-semibold text-emerald-400"
-              >
-                Payment details
-              </h3>
-              <button
-                ref={closeButtonRef}
-                onClick={() => setSelected(null)}
-                aria-label="Close payment details"
-                className="text-gray-400 hover:text-white transition-colors rounded px-2"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6 space-y-6">
-              <Field label="Transaction hash">
-                <span className="font-mono text-sm break-all">
-                  {selected.tx_hash}
-                </span>
-              </Field>
-              <div className="grid grid-cols-2 gap-6">
-                <Field label="Amount">
-                  <span className="text-2xl font-semibold text-emerald-400">
-                    {formatAmount(selected.amount)}{' '}
-                    <span className="text-sm font-normal text-gray-500">
-                      {assetLabel(selected.asset)}
-                    </span>
-                  </span>
-                </Field>
-                <Field label="Ledger">
-                  <span className="font-mono text-sm">{selected.ledger ?? '—'}</span>
-                </Field>
-              </div>
-              <Field label="Payer">
-                <span className="font-mono text-sm break-all">{selected.payer}</span>
-              </Field>
-              {selected.route && (
-                <Field label="Route">
-                  <span className="font-mono text-sm">
-                    {selected.method} {selected.route}
-                  </span>
-                </Field>
-              )}
-              <Field label="Settled at">
-                <span className="text-sm">
-                  {new Date(selected.ts).toLocaleString()}
-                </span>
-              </Field>
-              <div className="pt-4 border-t border-white/10">
-                <a
-                  href={explorerUrl(selected.tx_hash)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block w-full text-center py-2.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors font-medium text-sm border border-emerald-500/20"
-                >
-                  View on Stellar Expert ↗
-                </a>
-              </div>
-            </div>
+          <div className="flex flex-wrap gap-3 justify-center pt-2">
+            <Link
+              href="/verify"
+              className="px-6 py-3 rounded-lg bg-emerald-500 text-black font-semibold text-sm hover:bg-emerald-400 transition-colors"
+            >
+              Verify a receipt
+            </Link>
+            <Link
+              href="/dashboard"
+              className="px-6 py-3 rounded-lg border border-white/15 text-gray-200 font-medium text-sm hover:bg-white/5 transition-colors"
+            >
+              View the dashboard
+            </Link>
           </div>
         </div>
-      )}
+      </section>
+
+      {/* Problem */}
+      <Section title="The problem">
+        <p className="text-gray-400 leading-relaxed">
+          x402 turns any HTTP endpoint into a paid resource: an agent hits your
+          API, gets a <code className="text-emerald-300">402 Payment Required</code>,
+          pays, and retries. That works — but it leaves both sides without
+          recourse.
+        </p>
+        <div className="grid md:grid-cols-2 gap-4 pt-2">
+          <Card title="The agent cannot audit">
+            Its receipt comes from the seller&rsquo;s own API, attesting to the
+            seller&rsquo;s own behaviour. When an agent makes thousands of
+            sub-cent calls a day across dozens of vendors, &ldquo;trust the
+            seller&rsquo;s dashboard&rdquo; is not an auditing story.
+          </Card>
+          <Card title="The merchant cannot refund safely">
+            Manual refunds don&rsquo;t scale to per-request payments, and an
+            unbounded refund key over merchant float is exactly what a seller
+            does not want sitting in a web backend.
+          </Card>
+        </div>
+      </Section>
+
+      {/* How it works */}
+      <Section title="How it works">
+        <ol className="grid md:grid-cols-3 gap-4">
+          <Step n={1} title="Agent pays">
+            Payment settles on Stellar as a Stellar Asset Contract transfer.
+          </Step>
+          <Step n={2} title="Accensa indexes and anchors">
+            The indexer decodes transfers to your address, then anchors a Merkle
+            root of the batch on-chain.
+          </Step>
+          <Step n={3} title="Anyone verifies">
+            An agent checks its receipt against the anchored root — locally and
+            against the contract. No account, no trust in us.
+          </Step>
+        </ol>
+      </Section>
+
+      {/* Live proof */}
+      <Section title="Live, not a mockup">
+        <p className="text-gray-400 leading-relaxed">
+          Both contracts are deployed and initialized on Stellar testnet, and
+          batch #1 is anchored. You can verify a receipt against it right now —
+          and watch a forged one get rejected.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-3 pt-2">
+          <ContractCard name="ReceiptAnchor" id={RECEIPT_ANCHOR_ID} />
+          <ContractCard name="RefundVault" id={REFUND_VAULT_ID} />
+        </div>
+        <Link
+          href="/verify"
+          className="inline-block text-sm text-emerald-400 hover:text-emerald-300 transition-colors"
+        >
+          Try the verifier with a sample receipt →
+        </Link>
+      </Section>
+
+      {/* Two audiences */}
+      <Section title="Two sides, one ledger">
+        <div className="grid md:grid-cols-2 gap-4">
+          <Card title="For merchants">
+            See revenue reconstructed from chain data, attributed to the endpoint
+            that earned it, with refunds bounded by an on-chain policy instead of
+            a support inbox.
+            <Link
+              href="/dashboard"
+              className="block pt-3 text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              Open the dashboard →
+            </Link>
+          </Card>
+          <Card title="For agent operators">
+            Verify any receipt you were given, against the ledger, without an
+            account or a wallet. If the proof doesn&rsquo;t lead to the anchored
+            root, you know — and so does everyone else.
+            <Link
+              href="/verify"
+              className="block pt-3 text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              Verify a receipt →
+            </Link>
+          </Card>
+        </div>
+      </Section>
+
+      {/* Why Stellar */}
+      <Section title="Why Stellar">
+        <ul className="space-y-3 text-gray-400 leading-relaxed">
+          <Bullet label="Sub-cent fees">
+            make per-request agent payments viable at all. On most chains the
+            settlement fee exceeds the payment.
+          </Bullet>
+          <Bullet label="Batched anchoring">
+            amortises to near zero — one call covers an entire billing period, so
+            verifiability costs a fraction of a cent per receipt.
+          </Bullet>
+          <Bullet label="Native USDC">
+            means float and refunds settle in the asset merchants actually price
+            in, with no bridge.
+          </Bullet>
+          <Bullet label="Predictable fees">
+            let a merchant bound the cost of their refund policy in advance
+            rather than guessing at gas.
+          </Bullet>
+        </ul>
+      </Section>
+
+      {/* Get started */}
+      <Section title="Verify a receipt in your own code">
+        <p className="text-gray-400 leading-relaxed">
+          The SDK mirrors the contract exactly — sorted-pair SHA-256, so proofs
+          carry no position flags. Both implementations are pinned to the same
+          conformance vectors.
+        </p>
+        <pre className="mt-2 overflow-x-auto rounded-xl border border-white/10 bg-black/50 p-5 text-sm">
+          <code className="text-gray-300">{`import { verifyReceipt } from '@accensa/sdk/merkle';
+
+const ok = verifyReceipt(receiptHash, proof, anchoredRoot);
+if (!ok) throw new Error('Receipt is not in the anchored batch');`}</code>
+        </pre>
+      </Section>
+
+      <footer className="px-6 py-12 border-t border-white/5">
+        <div className="max-w-4xl mx-auto flex flex-wrap gap-x-6 gap-y-2 justify-center text-sm text-gray-500">
+          <Link href="/dashboard" className="hover:text-gray-300 transition-colors">
+            Dashboard
+          </Link>
+          <Link href="/verify" className="hover:text-gray-300 transition-colors">
+            Verify
+          </Link>
+          <a
+            href="https://accensa-docs.vercel.app"
+            className="hover:text-gray-300 transition-colors"
+          >
+            Documentation
+          </a>
+          <a
+            href="https://github.com/accensa"
+            className="hover:text-gray-300 transition-colors"
+          >
+            GitHub
+          </a>
+        </div>
+      </footer>
     </main>
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Nav() {
   return (
-    <div>
-      <span className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
-        {label}
-      </span>
-      <div className="text-gray-300">{children}</div>
+    <nav className="px-6 py-5 border-b border-white/5">
+      <div className="max-w-5xl mx-auto flex items-center justify-between">
+        <span className="text-lg font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+          Accensa
+        </span>
+        <div className="flex items-center gap-5 text-sm text-gray-400">
+          <Link href="/verify" className="hover:text-white transition-colors">
+            Verify
+          </Link>
+          <Link href="/dashboard" className="hover:text-white transition-colors">
+            Dashboard
+          </Link>
+          <a
+            href="https://github.com/accensa"
+            className="hover:text-white transition-colors"
+          >
+            GitHub
+          </a>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="px-6 py-14 border-t border-white/5">
+      <div className="max-w-4xl mx-auto space-y-4">
+        <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function Card({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 space-y-2">
+      <p className="font-medium text-gray-200">{title}</p>
+      <div className="text-sm text-gray-400 leading-relaxed">{children}</div>
     </div>
   );
 }
 
-function StatusPill({
-  state,
-  onRetry,
-}: {
-  state: LoadState;
-  onRetry: () => void;
-}) {
-  if (state.status === 'loading') {
-    return <span className="text-xs text-gray-500">Loading…</span>;
-  }
-  if (state.status === 'error') {
-    return (
-      <button
-        onClick={onRetry}
-        className="flex gap-2 items-center text-xs text-amber-400"
-      >
-        <span className="inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
-        Indexer unreachable — retry
-      </button>
-    );
-  }
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
-    <span className="flex gap-2 items-center text-xs text-emerald-400">
-      <span className="relative flex h-2.5 w-2.5">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+    <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 space-y-2">
+      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-500/15 text-emerald-300 text-sm font-semibold">
+        {n}
       </span>
-      Live · updated {new Date(state.fetchedAt).toLocaleTimeString()}
-    </span>
+      <p className="font-medium text-gray-200">{title}</p>
+      <p className="text-sm text-gray-400 leading-relaxed">{children}</p>
+    </li>
   );
 }
 
-function TableSkeleton() {
+function ContractCard({ name, id }: { name: string; id: string }) {
   return (
-    <div className="px-8 py-6 space-y-4" aria-hidden>
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="h-10 rounded bg-white/5 animate-pulse" />
-      ))}
-    </div>
+    <a
+      href={explorer(id)}
+      target="_blank"
+      rel="noreferrer"
+      className="block rounded-2xl border border-white/10 bg-white/[0.03] p-5 hover:border-emerald-500/30 transition-colors group"
+    >
+      <p className="text-sm font-medium text-gray-200 group-hover:text-emerald-300 transition-colors">
+        {name} ↗
+      </p>
+      <p className="font-mono text-xs text-gray-500 break-all mt-1">{id}</p>
+    </a>
+  );
+}
+
+function Bullet({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span className="text-emerald-400 shrink-0">—</span>
+      <span>
+        <strong className="text-gray-200 font-medium">{label}</strong> {children}
+      </span>
+    </li>
   );
 }
