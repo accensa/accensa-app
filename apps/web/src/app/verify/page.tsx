@@ -215,7 +215,14 @@ function Result({ result }: { result: VerifyResponse }) {
 
       {batch && (
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 space-y-3">
-          <p className="text-sm font-medium text-gray-300">Anchored batch #{batch.id}</p>
+          <p className="text-sm font-medium text-gray-300">
+            <Link
+              href={`/batches/${batch.id}`}
+              className="hover:text-emerald-300 transition-colors"
+            >
+              Anchored batch #{batch.id} →
+            </Link>
+          </p>
           <dl className="grid sm:grid-cols-2 gap-3 text-sm">
             <Detail label="Merkle root" mono>
               {batch.root}
