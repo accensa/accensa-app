@@ -37,12 +37,12 @@ const sidebars: SidebarsConfig = {
         {
           type: 'link',
           label: 'Mechanics',
-          href: 'https://github.com/accensa/accensa-contracts/blob/main/docs/mechanics.md',
+          href: 'https://github.com/accensa/accensa-contracts/blob/main/docs/mechanics.mdx',
         },
         {
           type: 'link',
           label: 'Contracts',
-          href: 'https://github.com/accensa/accensa-contracts/blob/main/docs/contracts.md',
+          href: 'https://github.com/accensa/accensa-contracts/blob/main/docs/contracts.mdx',
         },
         {
           type: 'link',
