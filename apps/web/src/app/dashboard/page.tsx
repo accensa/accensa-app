@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { PageContainer } from '@/components/page-container';
 import { RefundPanel } from '@/components/refund-panel';
+import { AnchorPanel } from '@/components/anchor-panel';
 import { useOnline } from '@/components/network-status';
 import { describeFailure, isAbortError } from '@/lib/network-status';
 
@@ -167,6 +168,8 @@ export default function Dashboard() {
             </span>
           </div>
         </header>
+
+        <AnchorPanel />
 
         {/* Data Table Section */}
         <section className="bg-white/50 dark:bg-white/5 backdrop-blur-2xl overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] transition-colors duration-300">
@@ -415,6 +418,14 @@ export default function Dashboard() {
                   className="flex items-center justify-center gap-1.5 w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 shadow-sm dark:shadow-none transition-all font-bold text-sm tracking-wide uppercase"
                 >
                   View on Explorer <ArrowUpRight className="w-4 h-4 opacity-70" />
+                </a>
+                <a
+                  href={`/api/receipts/${selected.tx_hash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 flex items-center justify-center gap-1.5 w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 shadow-sm dark:shadow-none transition-all font-bold text-sm tracking-wide uppercase"
+                >
+                  Fetch receipt proof
                 </a>
               </div>
 

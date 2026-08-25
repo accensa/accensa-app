@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { verifyReceipt } from './merkle';
+import { verifyReceipt, buildBatch, receiptLeaf } from './merkle';
 import vectors from './merkle-vectors.json';
 
 const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest();
@@ -72,6 +72,68 @@ describe('verifyReceipt — malformed input', () => {
 
   it('rejects an odd-length hex string', () => {
     expect(() => verifyReceipt('a'.repeat(63), [], VALID)).toThrow(/leaf/);
+  });
+});
+
+describe('buildBatch — proofs verify against the shared convention', () => {
+  const sha256hex = (label: string) =>
+    createHash('sha256').update(Buffer.from(label, 'utf8')).digest('hex');
+
+  it('matches the eight-leaf conformance root and proofs', () => {
+    const labels = Array.from({ length: 8 }, (_, i) => `bulk-receipt-${i}`);
+    const leaves = labels.map(sha256hex);
+    const batch = buildBatch(leaves);
+
+    expect(batch.root).toBe('3aa0080b225e9f7bbfacd4a506648ed95261166a0ba97c5b1c54d253e0bbcb4f');
+
+    const eightLeafCases = vectors.cases.filter((c) => c.name.startsWith('eight-leaf batch'));
+    expect(eightLeafCases.length).toBeGreaterThan(0);
+    for (const c of eightLeafCases) {
+      expect(batch.proofs[c.leaf]).toEqual(c.proof);
+      expect(verifyReceipt(c.leaf, batch.proofs[c.leaf], batch.root)).toBe(true);
+    }
+  });
+
+  it('matches the three-leaf (odd promotion) conformance root', () => {
+    const leaves = ['odd-1', 'odd-2', 'odd-3'].map(sha256hex);
+    const batch = buildBatch(leaves);
+    expect(batch.root).toBe('f2ce5eb24c9bead8184a3fc3bb1404ae4aa28e34e7046e829423dd787d1ca037');
+    expect(verifyReceipt(leaves[2], batch.proofs[leaves[2]], batch.root)).toBe(true);
+  });
+
+  it('returns an empty proof for a single-leaf batch, root equal to the leaf', () => {
+    const leaf = sha256hex('solo-receipt');
+    const batch = buildBatch([leaf]);
+    expect(batch.root).toBe(leaf);
+    expect(batch.proofs[leaf]).toEqual([]);
+    expect(verifyReceipt(leaf, batch.proofs[leaf], batch.root)).toBe(true);
+  });
+
+  it('throws on an empty input rather than inventing a zero root', () => {
+    expect(() => buildBatch([])).toThrow(/at least one leaf/);
+  });
+
+  it('rejects a malformed leaf rather than silently truncating', () => {
+    expect(() => buildBatch(['abcd'])).toThrow(/leaves\[0\]/);
+  });
+});
+
+describe('receiptLeaf — production preimage', () => {
+  it('is SHA-256 of the 32-byte transaction hash', () => {
+    const tx = 'a'.repeat(64);
+    const expected = createHash('sha256').update(Buffer.from(tx, 'hex')).digest('hex');
+    expect(receiptLeaf(tx)).toBe(expected);
+  });
+
+  it('normalises case and an optional 0x prefix so callers cannot fork the tree', () => {
+    const lower = 'ab'.repeat(32);
+    const upper = 'AB'.repeat(32);
+    expect(receiptLeaf(upper)).toBe(receiptLeaf(lower));
+    expect(receiptLeaf(`0x${lower}`)).toBe(receiptLeaf(lower));
+  });
+
+  it('rejects a value that is not 32 bytes', () => {
+    expect(() => receiptLeaf('abcd')).toThrow(/tx_hash/);
   });
 });
 

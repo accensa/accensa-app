@@ -9,7 +9,7 @@ import {
   type X402SettleResult,
 } from './settlement';
 
-export { verifyReceipt } from './merkle';
+export { verifyReceipt, buildBatch, receiptLeaf, type BatchInfo } from './merkle';
 export {
   SETTLEMENT_HEADER,
   parseSettlementHeader,

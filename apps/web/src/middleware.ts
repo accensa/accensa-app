@@ -25,7 +25,10 @@ export async function middleware(request: NextRequest) {
   // bytes plus a five-minute timestamp bound. Gating it here would 401 every legitimate
   // settlement report before its own verification ever ran.
   const isPublicApi =
-    path.startsWith('/api/verify') || path.startsWith('/api/auth') || path.startsWith('/api/hook/');
+    path.startsWith('/api/verify') ||
+    path.startsWith('/api/auth') ||
+    path.startsWith('/api/hook/') ||
+    path.startsWith('/api/receipts/');
   const isCronSync = path === '/api/sync' && request.method === 'GET';
   const isPrivateApi = path.startsWith('/api/') && !isPublicApi && !isCronSync;
   const isDashboard = path.startsWith('/dashboard');

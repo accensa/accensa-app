@@ -66,7 +66,10 @@ of a cent, which is the only way verifiability survives micropayment economics.
      PostgreSQL                        │
           │                            │
           ▼                            ▼
-   Next.js dashboard  ◀──verify_receipt(leaf, proof)
+   Next.js dashboard  ──anchor_batch──▶  ReceiptAnchor
+          │                            │
+          ▼                            ▼
+   GET /api/receipts/:txHash    verify_receipt(leaf, proof)
 ```
 
 | Component         | Path                                                     | What it does                                                                                                                                                                                 |

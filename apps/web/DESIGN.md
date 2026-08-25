@@ -22,8 +22,8 @@ To secure the dashboard and private API routes, we use a Stellar Wallet Auth mod
 
 ### Scope
 
-- **Public**: `/verify`, `POST /api/verify`, landing pages, docs.
-- **Private**: `/dashboard`, `/dashboard/routes`, `/api/payments`, `/api/routes`, `/api/refund/preflight`, `POST /api/sync`.
+- **Public**: `/verify`, `POST /api/verify`, `GET /api/receipts/:txHash`, landing pages, docs.
+- **Private**: `/dashboard`, `/dashboard/routes`, `/api/payments`, `/api/routes`, `/api/refund/preflight`, `POST /api/sync`, `/api/anchor/*`.
 - **Special**: `GET /api/sync` remains protected by `CRON_SECRET` for automated GitHub Action workflows.
 
 ### Session Handling

@@ -21,6 +21,7 @@ const sidebars: SidebarsConfig = {
       label: 'accensa-app',
       items: [
         'app/overview',
+        'app/receipt-leaves',
         'onboarding',
         'user-guides',
         {

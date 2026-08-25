@@ -1,5 +1,29 @@
 # `@accensa/sdk`
 
+This SDK enables merchant applications to report x402 payment settlements to an Accensa indexer,
+and to build and verify receipt Merkle trees.
+
+## Receipt leaves and `buildBatch`
+
+A production receipt leaf is `SHA-256` of the 32-byte Stellar transaction hash:
+
+```ts
+import { receiptLeaf, buildBatch, verifyReceipt } from '@accensa/sdk';
+
+const leaf = receiptLeaf(txHash); // hex-encoded 32-byte hash
+const batch = buildBatch([leaf /* more leaves, ledger order */]);
+verifyReceipt(leaf, batch.proofs[leaf], batch.root); // true
+```
+
+`buildBatch` is the real tree: sorted-pair SHA-256, odd nodes promoted, proofs
+in leaf-to-root order — the same convention as `ReceiptAnchor::verify_receipt`
+and the vectors in `merkle-vectors.json`. Those vectors pin the tree algorithm
+with UTF-8 fixture labels; they do not define the production preimage. The
+preimage is `receiptLeaf(tx_hash)` and is documented in
+[Receipt leaves](https://accensa.github.io/accensa-app/docs/app/receipt-leaves).
+
+---
+
 This SDK enables merchant applications to report x402 payment settlements to an Accensa indexer.
 
 ## Reporting Settlements

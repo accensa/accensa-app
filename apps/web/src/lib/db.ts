@@ -92,6 +92,37 @@ export async function ensureSchema(client: Client): Promise<void> {
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_ts ON payments(ts DESC);`);
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_route ON payments(route);`);
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_payer ON payments(payer);`);
+
+  // Mapping from an on-chain ReceiptAnchor batch to the payments that formed
+  // it. `selection_hash` is sha256 of the selected tx_hashes in ledger order,
+  // so submitting the same set twice hits this unique key instead of anchoring
+  // a second batch. `status` is what makes the gap between "the contract
+  // accepted the transaction" and "we wrote the proofs" recoverable:
+  //   previewed  — tree built, nothing submitted
+  //   submitted  — on-chain succeeded, proofs not yet persisted (retry this)
+  //   recorded   — payments carry batch_id + proof; serveable
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS receipt_batches (
+      selection_hash VARCHAR(64) PRIMARY KEY,
+      batch_id BIGINT UNIQUE,
+      root VARCHAR(64) NOT NULL,
+      count INT NOT NULL,
+      period_start BIGINT NOT NULL,
+      period_end BIGINT NOT NULL,
+      start_ledger BIGINT NOT NULL,
+      end_ledger BIGINT NOT NULL,
+      anchor_tx VARCHAR(64),
+      status VARCHAR(20) NOT NULL,
+      proofs JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS batch_id BIGINT;`);
+  await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_leaf VARCHAR(64);`);
+  await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_proof JSONB;`);
+  await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_batch_id ON payments(batch_id);`);
 }
 
 /**
