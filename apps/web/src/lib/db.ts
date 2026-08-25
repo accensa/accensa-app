@@ -92,6 +92,41 @@ export async function ensureSchema(client: Client): Promise<void> {
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_ts ON payments(ts DESC);`);
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_route ON payments(route);`);
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_payer ON payments(payer);`);
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id BIGSERIAL PRIMARY KEY,
+      payment_tx_hash VARCHAR(64) NOT NULL,
+      url TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      attempts INT NOT NULL DEFAULT 0,
+      last_status_code INT,
+      last_error TEXT,
+      next_retry_at TIMESTAMPTZ,
+      delivered_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (payment_tx_hash, url)
+    );
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS webhook_attempts (
+      id BIGSERIAL PRIMARY KEY,
+      delivery_id BIGINT NOT NULL REFERENCES webhook_deliveries(id) ON DELETE CASCADE,
+      attempt_number INT NOT NULL,
+      status_code INT,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
+     ON webhook_deliveries (next_retry_at) WHERE status = 'pending';`,
+  );
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries (status);`,
+  );
 }
 
 /**

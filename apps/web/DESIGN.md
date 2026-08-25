@@ -24,7 +24,7 @@ To secure the dashboard and private API routes, we use a Stellar Wallet Auth mod
 
 - **Public**: `/verify`, `POST /api/verify`, landing pages, docs.
 - **Private**: `/dashboard`, `/dashboard/routes`, `/api/payments`, `/api/routes`, `/api/refund/preflight`, `POST /api/sync`.
-- **Special**: `GET /api/sync` remains protected by `CRON_SECRET` for automated GitHub Action workflows.
+- **Special**: `GET /api/sync` and `GET /api/webhooks/deliver` remain protected by `CRON_SECRET` for automated GitHub Action workflows. Webhook delivery is a separate path from indexing so a merchant endpoint cannot stall the ledger cursor.
 
 ### Session Handling
 

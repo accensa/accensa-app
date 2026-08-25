@@ -26,7 +26,8 @@ export async function middleware(request: NextRequest) {
   // settlement report before its own verification ever ran.
   const isPublicApi =
     path.startsWith('/api/verify') || path.startsWith('/api/auth') || path.startsWith('/api/hook/');
-  const isCronSync = path === '/api/sync' && request.method === 'GET';
+  const isCronSync =
+    (path === '/api/sync' || path === '/api/webhooks/deliver') && request.method === 'GET';
   const isPrivateApi = path.startsWith('/api/') && !isPublicApi && !isCronSync;
   const isDashboard = path.startsWith('/dashboard');
 
@@ -54,7 +55,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Enforce CRON_SECRET for GET /api/sync
+  // Enforce CRON_SECRET for GET /api/sync and GET /api/webhooks/deliver
   if (isCronSync) {
     const authHeader = request.headers.get('authorization');
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {

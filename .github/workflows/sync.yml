@@ -91,6 +91,15 @@ jobs:
               echo "::warning::Cursor fell outside RPC retention; $skipped ledgers skipped."
             fi
 
+            echo "Delivering queued payment webhooks..."
+            webhook_url="${SYNC_URL%/sync}/webhooks/deliver"
+            webhook_response=$(curl -sS --max-time 30 -w '\n%{http_code}' \
+              -H "Authorization: Bearer $CRON_SECRET" "$webhook_url" || echo "curl failed")
+            webhook_body=$(printf '%s' "$webhook_response" | sed '$d')
+            webhook_code=$(printf '%s' "$webhook_response" | tail -n1)
+            echo "webhook HTTP $webhook_code"
+            echo "$webhook_body"
+
             echo "Sleeping for 5 minutes..."
             sleep 300
           done

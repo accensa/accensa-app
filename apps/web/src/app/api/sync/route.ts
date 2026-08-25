@@ -9,6 +9,7 @@ import {
 } from '@/lib/db';
 import { sweepLedgerRange, EVENTS_PAGE_LIMIT, type EventPage } from '@/lib/event-pager';
 import { cooldownRemaining } from '@/lib/sync-status';
+import { enqueueWebhookDelivery, payloadFromRow } from '@/lib/webhooks';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -186,8 +187,10 @@ async function runSync(merchant: string, opts: { cooldownMs?: number } = {}) {
         //
         // Only ledger-owned columns are written. route, method, request_id and
         // hook_reported_at belong to the merchant's report and are left alone.
-        const res = await client.query(
-          `INSERT INTO payments (tx_hash, ledger, payer, amount, asset, ts)
+        await client.query('BEGIN');
+        try {
+          const res = await client.query(
+            `INSERT INTO payments (tx_hash, ledger, payer, amount, asset, ts)
   VALUES ($1, $2, $3, $4::numeric, $5, $6::timestamptz)
   ON CONFLICT (tx_hash) DO UPDATE
   SET ledger = EXCLUDED.ledger,
@@ -196,36 +199,28 @@ async function runSync(merchant: string, opts: { cooldownMs?: number } = {}) {
   asset = EXCLUDED.asset,
   ts = EXCLUDED.ts
   WHERE payments.ledger IS NULL RETURNING *`,
-          [
-            transferEvent.txHash,
-            transferEvent.ledger,
-            transferEvent.from,
-            transferEvent.amount, // string - never a float
-            transferEvent.asset,
-            transferEvent.ledgerClosedAt,
-          ],
-        );
-        if (res.rowCount && res.rowCount > 0 && process.env.WEBHOOK_URL) {
-          const payment = res.rows[0];
-          const timeoutMs = 2000;
-          for (let i = 0; i < 3; i++) {
-            try {
-              const controller = new AbortController();
-              const id = setTimeout(() => controller.abort(), timeoutMs);
-              const webhookRes = await fetch(process.env.WEBHOOK_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payment),
-                signal: controller.signal,
-              });
-              clearTimeout(id);
-              if (webhookRes.ok || webhookRes.status < 500) break;
-            } catch {
-              // A webhook the merchant cannot receive must not stall indexing.
-            }
+            [
+              transferEvent.txHash,
+              transferEvent.ledger,
+              transferEvent.from,
+              transferEvent.amount, // string - never a float
+              transferEvent.asset,
+              transferEvent.ledgerClosedAt,
+            ],
+          );
+          if (res.rowCount && res.rowCount > 0 && process.env.WEBHOOK_URL) {
+            await enqueueWebhookDelivery(
+              client,
+              payloadFromRow(res.rows[0] as Record<string, unknown>),
+              process.env.WEBHOOK_URL,
+            );
           }
+          await client.query('COMMIT');
+          inserted += res.rowCount ?? 0;
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw error;
         }
-        inserted += res.rowCount ?? 0;
       }
 
       // The sweep only ever reports whole windows, so this is safe whether or

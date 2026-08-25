@@ -130,6 +130,38 @@ Then trigger an index run with `curl localhost:3000/api/sync`, and the dashboard
 `/dashboard` will show whatever settled to `MERCHANT_ADDRESS`. If nothing has, it
 says so — the dashboard never invents rows to fill space.
 
+### Payment webhooks (`WEBHOOK_URL`)
+
+Set `WEBHOOK_URL` to receive a `POST` for each newly indexed payment. The
+indexer **does not wait on your endpoint**. Each insert writes a
+`webhook_deliveries` row in the same database transaction; a separate job at
+`GET /api/webhooks/deliver` (same `CRON_SECRET` bearer as `/api/sync`) ships
+the payload. A host that sleeps, 500s, or rate-limits cannot stall the ledger
+cursor — that is how 207 ledgers were lost the last time indexing blocked on
+something that was not the chain.
+
+**Retry policy.** Up to 8 attempts over 24 hours. Exponential backoff with 25%
+jitter, capped at one hour. 5xx, 429, and transport errors are retried; other
+4xx are not. A `429` honours `Retry-After` (delta-seconds or HTTP-date). After
+the window the row is `failed` and is listed on the dashboard.
+
+**Signature.** Ed25519 over the exact UTF-8 body bytes, the same scheme as
+settlement reporting.
+
+| Header                  | Value                                         |
+| ----------------------- | --------------------------------------------- |
+| `Content-Type`          | `application/json`                            |
+| `X-Signature`           | hex-encoded Ed25519 signature of the raw body |
+| `X-Accensa-Timestamp`   | Unix seconds at sign time                     |
+| `X-Accensa-Delivery-Id` | `webhook_deliveries.id`                       |
+
+`WEBHOOK_SIGNING_KEY` is a 32-byte Ed25519 private key as hex. Without it,
+queued deliveries fail closed rather than going out unsigned. Verify with the
+matching public key over the raw request body, then parse JSON.
+
+Body fields: `tx_hash`, `ledger`, `payer`, `amount`, `asset`, `ts`, `route`,
+`method`.
+
 Routes: `/` is the landing page, `/dashboard` the merchant view, and `/verify` the
 public receipt verifier, which needs no account.
 
