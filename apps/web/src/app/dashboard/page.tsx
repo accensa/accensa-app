@@ -205,7 +205,10 @@ export default function Dashboard() {
             )}
 
             {state.status === 'ready' && payments.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-[400px] text-center space-y-4 px-6">
+              <div
+                data-testid="dashboard-empty"
+                className="flex flex-col items-center justify-center h-[400px] text-center space-y-4 px-6"
+              >
                 <div className="w-12 h-12 bg-emerald-400 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-2 animate-pulse">
                   ●
                 </div>
@@ -284,7 +287,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Desktop View */}
-                <div className="hidden md:block overflow-x-auto">
+                <div className="hidden md:block overflow-x-auto" data-testid="payments-table">
                   <table className="w-full text-left border-collapse whitespace-nowrap">
                     <thead>
                       <tr className="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest border-b border-slate-100 dark:border-white/5 bg-white dark:bg-[#04090f]/50 transition-colors duration-300">
