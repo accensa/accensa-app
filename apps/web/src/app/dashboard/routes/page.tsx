@@ -191,7 +191,7 @@ export default function RoutesPage() {
   );
 }
 
-function RouteTable({
+export function RouteTable({
   breakdown,
   asset,
 }: {
@@ -210,13 +210,24 @@ function RouteTable({
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
+        <caption className="sr-only">Revenue by route breakdown</caption>
         <thead>
           <tr className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 text-left">
-            <th className="pb-3 pr-4">Route</th>
-            <th className="pb-3 pr-4 text-right">Calls</th>
-            <th className="pb-3 pr-4 text-right">Revenue</th>
-            <th className="pb-3 pr-4 text-right">Average</th>
-            <th className="pb-3 w-1/4">Share</th>
+            <th scope="col" className="pb-3 pr-4">
+              Route
+            </th>
+            <th scope="col" className="pb-3 pr-4 text-right">
+              Calls
+            </th>
+            <th scope="col" className="pb-3 pr-4 text-right">
+              Revenue
+            </th>
+            <th scope="col" className="pb-3 pr-4 text-right">
+              Average
+            </th>
+            <th scope="col" className="pb-3 w-1/4">
+              Share
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -261,9 +272,9 @@ function RouteTable({
                 {row.average === null ? '—' : formatAmount(row.average)}
               </td>
               <td className="py-3">
-                <span className="sr-only">{Math.round(row.share * 100)}%</span>
+                <span className="sr-only">{`${Math.round(row.share * 100)}%`}</span>
                 <span
-                  aria-hidden
+                  aria-hidden="true"
                   className="block h-2 bg-slate-100 dark:bg-white/5"
                   title={`${Math.round(row.share * 100)}% of settled revenue in this asset`}
                 >
