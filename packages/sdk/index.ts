@@ -8,6 +8,7 @@ import {
   type Settlement,
   type X402SettleResult,
 } from './settlement';
+import { AccensaAuthError, AccensaError, AccensaNetworkError } from './src/errors';
 
 export { verifyReceipt } from './merkle';
 export {
@@ -23,11 +24,18 @@ export {
 /** Strict, typed Order and Product fetches against the Accensa indexer. */
 export {
   AccensaClient,
-  AccensaError,
   type AccensaClientOptions,
   type OrdersPage,
   type ProductsPage,
 } from './src/client';
+/** Typed error classes for the failure modes consumers actually branch on. */
+export {
+  AccensaError,
+  AccensaAuthError,
+  AccensaNetworkError,
+  AccensaContractError,
+  type AccensaErrorOptions,
+} from './src/errors';
 /** Strict mappers from the indexer's wire rows to Order/Product. */
 export {
   orderFromWire,
@@ -151,7 +159,7 @@ export async function reportSettlement(
 
   const doFetch = opts.fetchImpl ?? globalThis.fetch;
   if (typeof doFetch !== 'function') {
-    report(new Error('No fetch implementation available'), body);
+    report(new AccensaNetworkError('No fetch implementation available'), body);
     return false;
   }
 
@@ -182,21 +190,46 @@ export async function reportSettlement(
       // Browser/Edge has no node:crypto. Fail loudly rather than skip signing:
       // an unsigned report is rejected with 401 by the hook anyway, and a
       // silent no-op here would look like a delivered report that never landed.
-      throw new Error('Ed25519 signing requires Node.js crypto in this version');
+      throw new AccensaError('Ed25519 signing requires Node.js crypto in this version');
     }
 
-    const response = await doFetch(`${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Signature': signatureHex,
-      },
-      body: payload,
-      signal: controller.signal,
-    });
+    const url = `${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`;
+    let response: globalThis.Response;
+    try {
+      response = await doFetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Signature': signatureHex,
+        },
+        body: payload,
+        signal: controller.signal,
+      });
+    } catch (cause) {
+      // Timeouts abort the request, which surfaces here as an AbortError.
+      report(
+        new AccensaNetworkError(`Failed to reach the Accensa indexer at ${SETTLE_ENDPOINT}`, {
+          url,
+          cause,
+        }),
+        body,
+      );
+      return false;
+    }
 
     if (!response.ok) {
-      report(new Error(`Accensa returned ${response.status} for ${settlement.txHash}`), body);
+      // A 401/403 means the report itself was rejected, not that the network
+      // is down — classify it so callers can distinguish the two.
+      const error =
+        response.status === 401 || response.status === 403
+          ? new AccensaAuthError(`Accensa returned ${response.status} for ${settlement.txHash}`, {
+              status: response.status,
+              path: SETTLE_ENDPOINT,
+            })
+          : new AccensaError(`Accensa returned ${response.status} for ${settlement.txHash}`, {
+              status: response.status,
+            });
+      report(error, body);
       return false;
     }
     return true;

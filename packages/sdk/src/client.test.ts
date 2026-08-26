@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AccensaClient, AccensaError } from './client';
+import {
+  AccensaClient,
+  AccensaAuthError,
+  AccensaContractError,
+  AccensaError,
+  AccensaNetworkError,
+} from './client';
 
 const TX_HASH = 'a'.repeat(64);
 const PAYER = 'G' + 'A'.repeat(55);
@@ -160,17 +166,75 @@ describe('AccensaClient — request plumbing', () => {
     expect(fetchImpl.mock.calls[0][1]?.headers).toEqual({ Authorization: 'Bearer secret' });
   });
 
-  it('throws AccensaError with the status on a non-2xx response', async () => {
-    const fetchImpl = vi.fn<typeof fetch>(
-      async () => new globalThis.Response(null, { status: 401 }),
-    );
+  it('throws AccensaAuthError with status and path on 401/403', async () => {
+    for (const status of [401, 403]) {
+      const fetchImpl = vi.fn<typeof fetch>(async () => new globalThis.Response(null, { status }));
 
-    await expect(client(fetchImpl).listOrders()).rejects.toBeInstanceOf(AccensaError);
-    await expect(client(fetchImpl).listOrders()).rejects.toMatchObject({ status: 401 });
+      await expect(client(fetchImpl).listOrders()).rejects.toBeInstanceOf(AccensaAuthError);
+      // Auth errors are still catchable as the base class.
+      await expect(client(fetchImpl).listOrders()).rejects.toBeInstanceOf(AccensaError);
+      await expect(client(fetchImpl).listOrders()).rejects.toMatchObject({
+        status,
+        path: '/api/payments',
+      });
+    }
   });
 
-  it('throws a clear error when a malformed row comes back', async () => {
+  it('throws a plain AccensaError with the status for other non-2xx responses', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new globalThis.Response(null, { status: 500 }),
+    );
+
+    const error = await client(fetchImpl)
+      .listOrders()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AccensaError);
+    expect(error).not.toBeInstanceOf(AccensaAuthError);
+    expect((error as AccensaError).status).toBe(500);
+  });
+
+  it('wraps a rejected fetch in AccensaNetworkError with the URL and cause', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+
+    const error = await client(fetchImpl)
+      .listOrders()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AccensaNetworkError);
+    const networkError = error as AccensaNetworkError;
+    expect(networkError.url).toBe('https://accensa.test/api/payments');
+    expect(String(networkError.cause)).toContain('ECONNREFUSED');
+  });
+
+  it('throws AccensaNetworkError when there is no fetch implementation', async () => {
+    vi.stubGlobal('fetch', undefined);
+    const c = new AccensaClient({ indexerUrl: 'https://accensa.test' });
+    const error = await c.listOrders().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AccensaNetworkError);
+    expect(String(error)).toContain('No fetch implementation');
+    vi.unstubAllGlobals();
+  });
+
+  it('throws AccensaContractError when a malformed row comes back', async () => {
     const fetchImpl = jsonFetch({ payments: [{ amount: '1000' }] });
-    await expect(client(fetchImpl).listOrders()).rejects.toThrow(/row at index 0/);
+    const error = await client(fetchImpl)
+      .listOrders()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AccensaContractError);
+    expect((error as AccensaContractError).index).toBe(0);
+    expect(String(error)).toContain('row at index 0');
+  });
+
+  it('throws AccensaContractError when the indexer returns a non-JSON body', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new globalThis.Response('<html>not json</html>', { status: 200 }),
+    );
+
+    const error = await client(fetchImpl)
+      .listOrders()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AccensaContractError);
+    expect(String(error)).toContain('non-JSON');
   });
 });

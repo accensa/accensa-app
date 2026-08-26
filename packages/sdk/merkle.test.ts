@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
+import { AccensaContractError } from './src/errors';
 import { verifyReceipt } from './merkle';
 import vectors from './merkle-vectors.json';
 
@@ -51,14 +52,17 @@ describe('verifyReceipt — sorted-pair convention', () => {
 
 describe('verifyReceipt — malformed input', () => {
   it('rejects a leaf that is not 32 bytes', () => {
+    expect(() => verifyReceipt('abcd', [], VALID)).toThrow(AccensaContractError);
     expect(() => verifyReceipt('abcd', [], VALID)).toThrow(/leaf/);
   });
 
   it('rejects a proof entry that is not 32 bytes', () => {
+    expect(() => verifyReceipt(VALID, ['abcd'], VALID)).toThrow(AccensaContractError);
     expect(() => verifyReceipt(VALID, ['abcd'], VALID)).toThrow(/proof/);
   });
 
   it('rejects a root that is not 32 bytes', () => {
+    expect(() => verifyReceipt(VALID, [], 'abcd')).toThrow(AccensaContractError);
     expect(() => verifyReceipt(VALID, [], 'abcd')).toThrow(/root/);
   });
 
@@ -67,10 +71,12 @@ describe('verifyReceipt — malformed input', () => {
     // so a value like this would otherwise decode to 1 byte and compare short.
     const sneaky = 'ab' + 'zz' + 'a'.repeat(60);
     expect(sneaky).toHaveLength(64);
+    expect(() => verifyReceipt(sneaky, [], VALID)).toThrow(AccensaContractError);
     expect(() => verifyReceipt(sneaky, [], VALID)).toThrow(/leaf/);
   });
 
   it('rejects an odd-length hex string', () => {
+    expect(() => verifyReceipt('a'.repeat(63), [], VALID)).toThrow(AccensaContractError);
     expect(() => verifyReceipt('a'.repeat(63), [], VALID)).toThrow(/leaf/);
   });
 });

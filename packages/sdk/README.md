@@ -63,3 +63,38 @@ Prefer the raw mappers when you hold a response body yourself
 `productFromWire`, and `productsFromResponse` parse an `unknown` JSON value
 into the strict types. The `Order` and `Product` types are also re-exported
 from the package root, and available directly from `@accensa/sdk/types`.
+
+## Error Handling
+
+Every error the SDK throws extends the base `AccensaError`, so a single
+`instanceof AccensaError` catch handles the whole SDK surface. The subclasses
+discriminate the failure modes you actually branch on:
+
+| Class                  | Thrown when                                                                                                 | Metadata         |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------- |
+| `AccensaAuthError`     | The indexer rejected the credential (HTTP 401/403).                                                         | `status`, `path` |
+| `AccensaNetworkError`  | The indexer could not be reached — `fetch` failed, timed out, or is unavailable.                            | `url`, `cause`   |
+| `AccensaContractError` | The indexer (or a receipt) violated the wire contract: a malformed row, a non-JSON body, a bad Merkle hash. | `index`          |
+| `AccensaError`         | The base class; also thrown directly for other non-2xx statuses (e.g. 500).                                 | `status`         |
+
+```ts
+import { AccensaClient, AccensaAuthError, AccensaNetworkError } from '@accensa/sdk';
+
+const accensa = new AccensaClient({ indexerUrl: 'https://accensa-dashboard.vercel.app' });
+
+try {
+  const { orders } = await accensa.listOrders();
+} catch (error) {
+  if (error instanceof AccensaAuthError) {
+    // The credential is stale — refresh and retry; the request itself was fine.
+    console.error(`auth failed: ${error.status} on ${error.path}`);
+  } else if (error instanceof AccensaNetworkError) {
+    // Nothing wrong with the request — back off and retry.
+    console.error(`could not reach ${error.url}`, error.cause);
+  } else {
+    throw error;
+  }
+}
+```
+
+The error classes are also available from `@accensa/sdk/errors`.

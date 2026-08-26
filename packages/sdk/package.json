@@ -16,6 +16,7 @@
   },
   "exports": {
     ".": "./index.ts",
+    "./errors": "./src/errors.ts",
     "./merkle": "./merkle.ts",
     "./types": "./src/types/index.ts"
   },

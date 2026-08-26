@@ -9,6 +9,9 @@ import {
   attachAccensaHook,
   reportSettlement,
   toSettleHookPayload,
+  AccensaAuthError,
+  AccensaError,
+  AccensaNetworkError,
   type Settlement,
 } from './index';
 
@@ -134,17 +137,31 @@ describe('reportSettlement', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe(`https://accensa.test${SETTLE_ENDPOINT}`);
   });
 
-  it('reports a non-2xx response as a failure without throwing', async () => {
+  it('reports a 401 as an AccensaAuthError without throwing', async () => {
     const onError = vi.fn();
     const fetchImpl = vi.fn(async () => new globalThis.Response(null, { status: 401 }));
 
     await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
-    expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
-    expect(String(onError.mock.calls[0][0])).toContain('401');
+    const reported = onError.mock.calls[0][0];
+    expect(reported).toBeInstanceOf(AccensaAuthError);
+    expect(reported).toBeInstanceOf(AccensaError);
+    expect(reported).toMatchObject({ status: 401, path: SETTLE_ENDPOINT });
+    expect(String(reported)).toContain('401');
     // The payload comes back with the error so a caller can retry or log it.
     const payload = onError.mock.calls[0][1];
     const expected = toSettleHookPayload(settlement);
     expect(payload).toEqual({ ...expected, reported_at: payload.reported_at });
+  });
+
+  it('reports a non-auth non-2xx response as a plain AccensaError', async () => {
+    const onError = vi.fn();
+    const fetchImpl = vi.fn(async () => new globalThis.Response(null, { status: 500 }));
+
+    await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
+    const reported = onError.mock.calls[0][0];
+    expect(reported).toBeInstanceOf(AccensaError);
+    expect(reported).not.toBeInstanceOf(AccensaAuthError);
+    expect(reported).toMatchObject({ status: 500 });
   });
 
   it('resolves false in a runtime with no fetch at all', async () => {
@@ -154,8 +171,20 @@ describe('reportSettlement', () => {
     const onError = vi.fn();
 
     await expect(reportSettlement(settlement, opts({ onError }))).resolves.toBe(false);
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(AccensaNetworkError);
     expect(String(onError.mock.calls[0][0])).toContain('No fetch implementation');
     vi.unstubAllGlobals();
+  });
+
+  it('wraps a rejected fetch in AccensaNetworkError with the URL and cause', async () => {
+    const onError = vi.fn();
+    const fetchImpl = failingFetch('ECONNREFUSED');
+
+    await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
+    const reported = onError.mock.calls[0][0] as AccensaNetworkError;
+    expect(reported).toBeInstanceOf(AccensaNetworkError);
+    expect(reported.url).toBe(`https://accensa.test${SETTLE_ENDPOINT}`);
+    expect(String(reported.cause)).toContain('ECONNREFUSED');
   });
 
   it('uses global fetch when no implementation is injected', async () => {
@@ -206,7 +235,11 @@ describe('reportSettlement — network timeout', () => {
 
     expect(result).toBe(false);
     expect(onError).toHaveBeenCalledOnce();
-    expect((onError.mock.calls[0][0] as Error).name).toBe('AbortError');
+    // The abort surfaces as a network error carrying the AbortError as cause.
+    const reported = onError.mock.calls[0][0] as AccensaNetworkError;
+    expect(reported).toBeInstanceOf(AccensaNetworkError);
+    expect(reported.cause).toBeInstanceOf(DOMException);
+    expect((reported.cause as DOMException).name).toBe('AbortError');
   });
 
   it('passes an abort signal to fetch', async () => {
