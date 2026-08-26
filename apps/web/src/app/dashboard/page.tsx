@@ -285,11 +285,7 @@ export default function Dashboard() {
 
                 {/* Desktop View */}
                 <div className="hidden md:block overflow-x-auto">
-                  <PaymentsTable
-                    payments={payments}
-                    refunded={refunded}
-                    onSelect={setSelected}
-                  />
+                  <PaymentsTable payments={payments} refunded={refunded} onSelect={setSelected} />
                 </div>
               </>
             )}

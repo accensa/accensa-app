@@ -5,6 +5,7 @@
 The current payment indexer architecture uses PostgreSQL UPSERT operations that destroy historical state changes, violating audit trail requirements for compliance and deep analytics. When payment records are updated—either by the sync job indexing new transfer events or by settlement hooks attributing routes—the previous state is irrecoverably overwritten, making it impossible to reconstruct the timeline of changes or verify data integrity over time.
 
 This bug affects two critical write paths:
+
 1. **Indexer UPSERT** (`apps/web/src/app/api/sync/route.ts`): Overwrites payment rows when re-indexing or updating ledger data
 2. **Settlement Hook UPSERT** (`recordSettlement` in `apps/web/src/lib/db.ts`): Overwrites attribution fields when webhooks fire multiple times
 

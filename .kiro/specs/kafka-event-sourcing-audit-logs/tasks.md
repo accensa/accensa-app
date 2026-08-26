@@ -1,6 +1,7 @@
 # Implementation Plan: Kafka Event Sourcing for Audit Logs
 
 ## Overview
+
 This implementation plan addresses the audit trail bug by introducing Kafka-based event sourcing. The plan follows the exploratory bugfix workflow: explore the bug with tests, preserve existing behavior, implement the fix with event sourcing, and validate the solution.
 
 ---
@@ -14,33 +15,33 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
   - **NOTE**: These tests encode the expected behavior - they will validate the fix when they pass after implementation
   - **GOAL**: Surface counterexamples demonstrating that UPSERT operations destroy audit history
   - **Scoped PBT Approach**: Scope properties to concrete failing cases (duplicate indexer processing, webhook retries)
-  
+
   **Test 1.1: Indexer Double-Process Loses History**
   - Test: Insert payment via sync job with `tx_hash="abc123"`, `amount="100"`
   - Then: Re-process same `tx_hash` with `amount="200"` (simulating ledger reorg)
   - Assert: Query PostgreSQL for both amount values (100 and 200)
   - Expected on UNFIXED code: FAILS - only amount="200" exists, previous value lost
   - From Bug Condition: `isBugCondition(operation)` where `operation.type='UPSERT' AND existingRow(tx_hash) IS NOT NULL`
-  
+
   **Test 1.2: Webhook Retry Loses Attribution History**
   - Test: Insert settlement attribution with `tx_hash="def456"`, `route="route-v1"`
   - Then: Receive duplicate webhook with `route="route-v2"`, newer timestamp
   - Assert: Query PostgreSQL for both route values (route-v1 and route-v2)
   - Expected on UNFIXED code: FAILS - only route="route-v2" exists, previous attribution lost
   - From Bug Condition: Settlement hook UPSERT destroys previous `route`, `method`, `hook_reported_at` fields
-  
+
   **Test 1.3: Concurrent Update Loses State**
   - Test: Simulate indexer and webhook updating same `tx_hash` simultaneously
   - Assert: Both updates are preserved in audit trail
   - Expected on UNFIXED code: FAILS - last writer wins, one update is lost
   - From Bug Condition: No event log exists, only final state in PostgreSQL
-  
+
   **Test 1.4: Audit Timeline Query Fails**
   - Test: Query `payments` table for complete state history of `tx_hash="ghi789"`
   - Assert: Retrieve chronological list of all state changes
   - Expected on UNFIXED code: FAILS - no history columns or audit trail exist
   - From Bug Condition: Single-row-per-txHash constraint makes historical states impossible
-  
+
   - Run tests on UNFIXED code (before Kafka event sourcing implemented)
   - **EXPECTED OUTCOME**: All tests FAIL (this confirms the bug exists)
   - Document counterexamples found (specific cases where audit history is lost)
@@ -57,42 +58,42 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
   - Observe behavior on UNFIXED code for non-buggy operations (reads, first-time inserts)
   - Write property-based tests capturing observed behavior patterns
   - Property-based testing generates many test cases for stronger guarantees
-  
+
   **Test 2.1: API Query Response Format Preserved**
   - Observe: Query `/api/payments` on unfixed code, record response structure
   - Property: For all query parameters, response format matches observed structure
   - Test: Generate random query params (pagination, filters), verify response format unchanged
   - Expected on UNFIXED code: PASSES (establishes baseline)
   - From Preservation Requirements: 3.1 - "/api/payments endpoint MUST return payment records in current format"
-  
+
   **Test 2.2: Dashboard Display Behavior Preserved**
   - Observe: Dashboard renders payment list correctly on unfixed code
   - Property: For all payment states, dashboard display matches observed behavior
   - Test: Generate random payment data, verify dashboard rendering unchanged
   - Expected on UNFIXED code: PASSES (establishes baseline)
   - From Preservation Requirements: 3.2 - "Dashboard payment display MUST show latest state using existing query patterns"
-  
+
   **Test 2.3: First-Time Insert Behavior Preserved**
   - Observe: First-time payment insert creates new row correctly on unfixed code
   - Property: For all new `tx_hash` values (no existing row), insert creates row with correct fields
   - Test: Generate random new payments, verify row creation matches observed behavior
   - Expected on UNFIXED code: PASSES (establishes baseline)
   - From Preservation Requirements: 3.5 - "First-time payment indexing MUST create new row in payments table"
-  
+
   **Test 2.4: Sync State Cursor Preservation**
   - Observe: `sync_state` table updates correctly after sync job on unfixed code
   - Property: For all ledger ranges processed, cursor advances as observed
   - Test: Run sync job with random ledger ranges, verify cursor behavior unchanged
   - Expected on UNFIXED code: PASSES (establishes baseline)
   - From Preservation Requirements: 3.7 - "Sync job MUST update sync_state to record progress"
-  
+
   **Test 2.5: Analytics Query Compatibility Preserved**
   - Observe: Existing analytics queries against `payments` table work on unfixed code
   - Property: For all SELECT queries, results match observed output
   - Test: Run sample analytics queries, verify results unchanged after adding event sourcing
   - Expected on UNFIXED code: PASSES (establishes baseline)
   - From Preservation Requirements: 3.6 - "Database schema queries MUST support current payments table structure"
-  
+
   - Run all preservation tests on UNFIXED code
   - **EXPECTED OUTCOME**: All tests PASS (confirms baseline behavior to preserve)
   - Mark task complete when tests are written, run, and passing on unfixed code
@@ -112,14 +113,14 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Create dead letter queue topic: `stellar.payments.events.dlq`
     - Store credentials securely (Vercel environment variables)
     - _Requirements: 2.1, 2.2_
-  
+
   - [ ] 3.2 Add event offset tracking table to database
     - Run migration to create `event_offsets` table
     - Schema: `event_id UUID PRIMARY KEY, topic VARCHAR(255), partition INT, offset BIGINT, processed_at TIMESTAMPTZ`
     - Add index: `idx_event_offsets_topic_partition` on `(topic, partition, offset DESC)`
     - Purpose: Track processed events for idempotency in projection worker
     - _Requirements: 2.6_
-  
+
   - [ ] 3.3 Configure Railway project for projection worker
     - Create Railway project, connect to GitHub repo
     - Set monorepo path: `services/projection-worker`
@@ -127,7 +128,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Configure health check endpoint: `/health`
     - Set resource limits: 1 CPU, 512MB RAM (initial allocation)
     - _Requirements: 2.6_
-  
+
   - [ ] 3.4 Add Kafka credentials to Vercel
     - Add environment variables to all Vercel environments (production, preview, development)
     - Variables: `UPSTASH_KAFKA_REST_URL`, `UPSTASH_KAFKA_REST_USERNAME`, `UPSTASH_KAFKA_REST_PASSWORD`
@@ -150,7 +151,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: Event schemas encode complete state changes as per expectedBehavior(result)_
     - _Preservation: Schema includes all existing payment fields to preserve query compatibility_
     - _Requirements: 2.1, 2.2, 2.3_
-  
+
   - [ ] 4.2 Implement Kafka producer wrapper
     - File: `apps/web/src/lib/kafka-producer.ts` (new)
     - Wrap Upstash Kafka HTTP REST API for producing events
@@ -163,7 +164,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: Events successfully published to Kafka with all required fields_
     - _Preservation: Producer does not modify existing sync/settlement logic flow_
     - _Requirements: 2.1, 2.2_
-  
+
   - [ ] 4.3 Implement circuit breaker for Kafka availability
     - File: `apps/web/src/lib/kafka-producer.ts` (extend)
     - Track consecutive Kafka failures in memory (per-instance counter)
@@ -196,7 +197,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: For C(X) inputs (duplicate tx_hash), event appended before projection update_
     - _Preservation: First-time inserts (¬C(X)) continue creating new rows as before_
     - _Requirements: 2.1, 2.2, 2.3, 3.3, 3.7_
-  
+
   - [ ] 5.2 Add error handling for Kafka failures
     - On Kafka publish failure: Log error with transaction details
     - Do NOT advance ledger cursor in `sync_state`
@@ -208,7 +209,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: Sync job pauses safely until Kafka recovers_
     - _Preservation: Existing cursor logic ensures resumption works correctly_
     - _Requirements: 2.1_
-  
+
   - [ ] 5.3 Add Kafka availability logging and metrics
     - Log Kafka publish latency (p50, p99, p999)
     - Log circuit breaker state transitions
@@ -236,7 +237,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: For C(X) inputs (duplicate webhook), event appended before attribution update_
     - _Preservation: Webhook validation and signature verification logic unchanged_
     - _Requirements: 2.1, 2.2, 2.3, 3.4_
-  
+
   - [ ] 6.2 Add idempotency for webhook retries
     - Check if `eventId` already exists in Kafka (based on deterministic UUID from request_id)
     - If event already published, skip Kafka write but proceed with PostgreSQL update
@@ -246,7 +247,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: Duplicate webhooks produce single event, correct final state_
     - _Preservation: Webhook idempotency behavior unchanged from user perspective_
     - _Requirements: 2.6_
-  
+
   - [ ] 6.3 Add error handling for Kafka failures
     - On Kafka publish failure: Log error with webhook details
     - Return 500 status to x402 webhook sender
@@ -272,7 +273,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Add graceful shutdown handler (SIGTERM): commit offset, drain in-flight messages
     - Add health check HTTP server: `/health` endpoint returns consumer status
     - _Requirements: 2.6_
-  
+
   - [ ] 7.2 Implement event processing logic
     - Pattern match on event type: `TransferObserved` or `PaymentAttributed`
     - For `TransferObserved`: UPSERT `payments` table with transfer data
@@ -283,7 +284,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: For all events (C(X) and ¬C(X)), projection matches event log state_
     - _Preservation: Final state in payments table matches pre-event-sourcing behavior_
     - _Requirements: 2.5, 2.6, 3.1, 3.2_
-  
+
   - [ ] 7.3 Implement idempotency checking
     - Before processing event: Query `event_offsets` table for `eventId`
     - If `eventId` exists: Skip event processing (already applied)
@@ -294,7 +295,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: Duplicate events (network retries, offset reset) produce same projection state_
     - _Preservation: Final payment state consistent regardless of event replay_
     - _Requirements: 2.6_
-  
+
   - [ ] 7.4 Implement offset commit strategy
     - Commit Kafka offset only AFTER successful PostgreSQL transaction
     - If PostgreSQL write fails: Do NOT commit offset
@@ -305,7 +306,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: All events eventually processed, no gaps in event log consumption_
     - _Preservation: Projection worker failures do not corrupt payment state_
     - _Requirements: 2.6_
-  
+
   - [ ] 7.5 Implement dead letter queue for failed events
     - On PostgreSQL write failure: Retry with exponential backoff (10 attempts max)
     - After 10 failures: Publish event to DLQ topic `stellar.payments.events.dlq`
@@ -317,7 +318,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: Most events processed successfully, failures isolated and alerted_
     - _Preservation: Projection worker continues operating during partial failures_
     - _Requirements: 2.6_
-  
+
   - [ ] 7.6 Deploy projection worker to Railway
     - Create Dockerfile with Node.js + KafkaJS dependencies
     - Configure environment variables from Railway dashboard
@@ -347,7 +348,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: After backfill, all historical payments have corresponding events in Kafka_
     - _Preservation: Backfill does not modify existing payments table rows_
     - _Requirements: 2.5_
-  
+
   - [ ] 8.2 Run backfill script against production database
     - Run locally or in CI job (no timeout constraints)
     - Use read-only database connection initially (dry-run mode)
@@ -355,7 +356,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Monitor Upstash for rate limits or errors
     - Estimated time: ~10 seconds per 1000 rows with batch publishing
     - _Requirements: 2.5_
-  
+
   - [ ] 8.3 Validate backfill completeness
     - Query Kafka topic: Count total events published
     - Query PostgreSQL: Count total rows in `payments` table
@@ -383,7 +384,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: Event log becomes sole write path, audit history preserved_
     - _Preservation: Projection worker maintains same final state as direct writes_
     - _Requirements: 2.1, 2.5_
-  
+
   - [ ] 9.2 Remove direct PostgreSQL writes from settlement hook
     - File: `apps/web/src/lib/db.ts` (function: `recordSettlement`)
     - Delete existing UPSERT/UPDATE statement (keep only `publishEvent` call)
@@ -394,7 +395,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: Settlement attribution preserved in event log_
     - _Preservation: Final attribution state matches direct write behavior_
     - _Requirements: 2.1, 2.5_
-  
+
   - [ ] 9.3 Deploy cut-over changes to production
     - Deploy to Vercel production environment (atomic deploy)
     - Monitor sync job for 1 hour: Verify no errors, events publishing successfully
@@ -403,7 +404,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Check `/api/payments` endpoint: Verify queries returning correct data
     - Rollback plan ready: Revert to Phase 5/6 code (re-enable direct PostgreSQL writes)
     - _Requirements: 2.1, 2.5, 2.6_
-  
+
   - [ ] 9.4 Monitor for 24 hours post-deployment
     - Track Kafka publish latency (p99 should be <50ms)
     - Track projection worker lag (should be <100 messages)
@@ -428,7 +429,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Purpose: Safety net for projection rebuild validation
     - _Preservation: Backup preserves current payment state for comparison_
     - _Requirements: 2.5_
-  
+
   - [ ] 10.2 Reset projection worker to replay all events
     - Stop projection worker (Railway dashboard: pause service)
     - Reset consumer group offset to "earliest" (Upstash console or CLI)
@@ -439,7 +440,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Bug_Condition: Tests that event log is sufficient source of truth for all C(X) and ¬C(X) states_
     - _Expected_Behavior: Payments table rebuilt to match pre-truncate state_
     - _Requirements: 2.5_
-  
+
   - [ ] 10.3 Monitor projection replay progress
     - Track consumer lag in Upstash dashboard (should decrease monotonically)
     - Track `event_offsets` table growth (should match total events in Kafka)
@@ -447,7 +448,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Estimated time: ~5 minutes per 10,000 events at 50 events/second processing rate
     - Alert if replay stalls (lag not decreasing for 5 minutes)
     - _Requirements: 2.5, 2.6_
-  
+
   - [ ] 10.4 Validate rebuilt payments table matches backup
     - After replay complete (lag = 0): Compare `payments` and `payments_backup`
     - Run SQL: `SELECT tx_hash FROM payments EXCEPT SELECT tx_hash FROM payments_backup;` (should return 0 rows)
@@ -460,7 +461,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - _Expected_Behavior: Replayed projection matches original state, proving event sourcing correctness_
     - _Preservation: Final state matches pre-event-sourcing behavior exactly_
     - _Requirements: 2.5_
-  
+
   - [ ] 10.5 Delete backup table after validation
     - If projection rebuild validated successfully: Drop `payments_backup` table
     - Document validation results in migration log
@@ -477,33 +478,33 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
   - **IMPORTANT**: Re-run the SAME tests from Phase 1 - do NOT write new tests
   - The tests from Phase 1 encode the expected behavior
   - When these tests pass, it confirms the expected behavior is satisfied
-  
+
   **Test 11.1: Indexer Double-Process Preserves History**
   - Re-run: Insert payment via sync job with `tx_hash="abc123"`, `amount="100"`
   - Then: Re-process same `tx_hash` with `amount="200"`
   - Assert: Query Kafka events for `tx_hash="abc123"`, retrieve both amount values (100 and 200)
   - Expected on FIXED code: PASSES - both states preserved in event log
   - Validates: Bug Condition fix - UPSERT no longer destroys audit history
-  
+
   **Test 11.2: Webhook Retry Preserves Attribution History**
   - Re-run: Insert settlement attribution with `tx_hash="def456"`, `route="route-v1"`
   - Then: Receive duplicate webhook with `route="route-v2"`
   - Assert: Query Kafka events, retrieve both route values (route-v1 and route-v2)
   - Expected on FIXED code: PASSES - both attributions preserved in event log
   - Validates: Settlement hook no longer overwrites previous attribution
-  
+
   **Test 11.3: Concurrent Update Preserves Both States**
   - Re-run: Simulate indexer and webhook updating same `tx_hash` simultaneously
   - Assert: Query Kafka events, verify both updates recorded with correct timestamps
   - Expected on FIXED code: PASSES - both updates preserved in event log
   - Validates: Event log captures all state changes regardless of timing
-  
+
   **Test 11.4: Audit Timeline Query Succeeds**
   - Re-run: Query Kafka events for complete state history of `tx_hash="ghi789"`
   - Assert: Retrieve chronological list of all state changes
   - Expected on FIXED code: PASSES - complete audit trail available
   - Validates: Event log provides full historical audit capability
-  
+
   - Run all tests on FIXED code (after event sourcing implementation)
   - **EXPECTED OUTCOME**: All tests PASS (confirms bug is fixed)
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
@@ -513,32 +514,32 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
   - **Property 2: Preservation** - Existing Read Operations and Query Behavior
   - **IMPORTANT**: Re-run the SAME tests from Phase 2 - do NOT write new tests
   - Run all preservation property tests from Phase 2
-  
+
   **Test 12.1: API Query Response Format Unchanged**
   - Re-run: Query `/api/payments` with random parameters
   - Assert: Response format matches observed baseline from Phase 2
   - Expected on FIXED code: PASSES (no API breaking changes)
-  
+
   **Test 12.2: Dashboard Display Behavior Unchanged**
   - Re-run: Render dashboard with random payment data
   - Assert: Display matches observed baseline from Phase 2
   - Expected on FIXED code: PASSES (no UI regressions)
-  
+
   **Test 12.3: First-Time Insert Behavior Unchanged**
   - Re-run: Insert new payments (¬C(X) inputs)
   - Assert: Row creation matches observed baseline from Phase 2
   - Expected on FIXED code: PASSES (first inserts still work correctly)
-  
+
   **Test 12.4: Sync State Cursor Behavior Unchanged**
   - Re-run: Run sync job, verify cursor advances correctly
   - Assert: Cursor behavior matches observed baseline from Phase 2
   - Expected on FIXED code: PASSES (sync cursor logic preserved)
-  
+
   **Test 12.5: Analytics Query Compatibility Unchanged**
   - Re-run: Execute analytics queries against `payments` table
   - Assert: Results match observed baseline from Phase 2
   - Expected on FIXED code: PASSES (schema compatibility maintained)
-  
+
   - **EXPECTED OUTCOME**: All tests PASS (confirms no regressions)
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7_
 
@@ -556,7 +557,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Track DLQ message count (events sent to dead letter queue)
     - Dashboard tools: Upstash console + custom Grafana/Datadog integration
     - _Requirements: 2.1, 2.6_
-  
+
   - [ ] 13.2 Configure alerts for critical failures
     - Alert 1: Kafka unavailable for >5 minutes (circuit breaker open)
     - Alert 2: Projection worker lag >1000 messages for >10 minutes
@@ -565,7 +566,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Alert 5: Projection worker unhealthy (health check failing for >5 minutes)
     - Alert delivery: Slack webhook + PagerDuty for P0 incidents
     - _Requirements: 2.1, 2.6_
-  
+
   - [ ] 13.3 Document operational runbooks
     - Runbook 1: "Kafka Down" - Steps to verify outage, rollback plan, escalation path
     - Runbook 2: "Projection Worker Crashed" - Steps to restart, verify offset, check DLQ
@@ -574,7 +575,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
     - Runbook 5: "Event Log Corruption" - Steps to validate event integrity, rebuild projection
     - Store in project wiki or Notion documentation
     - _Requirements: 2.5, 2.6_
-  
+
   - [ ] 13.4 Train team on event sourcing concepts
     - Workshop: Event sourcing fundamentals (immutability, projections, replay)
     - Workshop: Kafka consumer group management (offsets, rebalancing, scaling)
@@ -602,6 +603,7 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
 ## Notes
 
 **Critical Ordering**: This task list follows the bugfix workflow:
+
 1. **Explore** (Phase 1): Write tests that FAIL on unfixed code to demonstrate the bug
 2. **Preserve** (Phase 2): Write tests that PASS on unfixed code to capture existing behavior
 3. **Implement** (Phases 3-10): Build event sourcing infrastructure and cut over
@@ -613,7 +615,8 @@ This implementation plan addresses the audit trail bug by introducing Kafka-base
 
 **Rollback Safety**: Each phase has a rollback plan. If issues arise, revert to previous phase and investigate. Never proceed with known failures.
 
-**Performance Targets**: 
+**Performance Targets**:
+
 - Kafka publish latency: <50ms p99
 - Sync throughput degradation: <5% (from 100 to ≥95 ledgers/second)
 - API query latency: Unchanged (<100ms p99)

@@ -27,11 +27,12 @@ The architecture accounts for Vercel's serverless constraints: Kafka runs as a m
 The bug manifests when the sync job or settlement hook updates a payment record that already exists in the database. The PostgreSQL `UPSERT` operation (`ON CONFLICT ... DO UPDATE`) overwrites the previous state, destroying audit history.
 
 **Formal Specification:**
+
 ```
 FUNCTION isBugCondition(operation)
   INPUT: operation of type DatabaseWrite
   OUTPUT: boolean
-  
+
   RETURN operation.type IN ['UPSERT', 'UPDATE']
          AND operation.table == 'payments'
          AND existingRow(operation.tx_hash) IS NOT NULL
@@ -54,6 +55,7 @@ END FUNCTION
 ### Preservation Requirements
 
 **Unchanged Behaviors:**
+
 - `/api/payments` endpoint MUST return payment records in current format (query against `payments` table)
 - Dashboard payment display MUST show latest state using existing query patterns
 - Sync job Stellar RPC polling logic MUST remain unchanged (same filters, pagination, ledger cursor)
@@ -158,6 +160,7 @@ Assuming our root cause analysis is correct:
 **Purpose**: Wrap Upstash Kafka HTTP API for event appending from Vercel serverless functions.
 
 **Implementation**:
+
 - HTTP-based Kafka producer using Upstash REST API (no persistent connections needed)
 - Event schema with versioning: `{ type, version, timestamp, payload, metadata }`
 - Retry logic with exponential backoff (3 attempts, 100ms/200ms/400ms delays)
@@ -172,6 +175,7 @@ Assuming our root cause analysis is correct:
 **Function**: `runSync` (within the event processing loop)
 
 **Specific Changes**:
+
 1. **Before UPSERT**: Call `await publishEvent({ type: 'TransferObserved', payload: transferEvent })`
 2. **After Kafka Success**: Proceed with existing PostgreSQL UPSERT (now writes to projection)
 3. **On Kafka Failure**: Do NOT write to PostgreSQL; return error response with `success: false`
@@ -185,6 +189,7 @@ Assuming our root cause analysis is correct:
 **Function**: `recordSettlement`
 
 **Specific Changes**:
+
 1. **Before UPSERT/UPDATE**: Call `await publishEvent({ type: 'PaymentAttributed', payload: { txHash, route, method, requestId, reportedAt } })`
 2. **After Kafka Success**: Proceed with existing PostgreSQL logic
 3. **On Kafka Failure**: Throw error to return 500 to webhook sender (x402 will retry)
@@ -198,6 +203,7 @@ Assuming our root cause analysis is correct:
 **Purpose**: Type-safe event schema with versioning support.
 
 **Schemas**:
+
 ```typescript
 type TransferObservedV1 = {
   type: 'TransferObserved';
@@ -243,6 +249,7 @@ type PaymentAttributedV1 = {
 **Purpose**: Long-running Node.js service consuming Kafka events and updating PostgreSQL.
 
 **Implementation**:
+
 - Consumer group: `payment-projection-group`
 - Consumes from `stellar.payments.events` topic
 - Processes events in order per partition (Kafka guarantees)
@@ -258,6 +265,7 @@ type PaymentAttributedV1 = {
 **File**: `apps/web/src/lib/db.ts` (modify `ensureSchema`)
 
 **New Schema**:
+
 ```sql
 CREATE TABLE IF NOT EXISTS event_offsets (
   event_id UUID PRIMARY KEY,
@@ -266,7 +274,7 @@ CREATE TABLE IF NOT EXISTS event_offsets (
   offset BIGINT NOT NULL,
   processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_event_offsets_topic_partition 
+CREATE INDEX IF NOT EXISTS idx_event_offsets_topic_partition
   ON event_offsets(topic, partition, offset DESC);
 ```
 
@@ -279,6 +287,7 @@ CREATE INDEX IF NOT EXISTS idx_event_offsets_topic_partition
 **Purpose**: One-time script to seed Kafka with events from existing PostgreSQL rows.
 
 **Implementation**:
+
 - Read all rows from `payments` table ordered by `ts ASC`
 - For each row, synthesize a `TransferObserved` event
 - Set `timestamp` to row's `ts` field (preserves chronology)
@@ -293,6 +302,7 @@ CREATE INDEX IF NOT EXISTS idx_event_offsets_topic_partition
 **File**: `apps/web/src/lib/kafka-producer.ts`
 
 **Implementation**:
+
 - Track consecutive Kafka failures in memory (per-instance counter)
 - After 5 consecutive failures, enter "open" state for 60 seconds
 - In open state, fail immediately without attempting Kafka publish
@@ -313,12 +323,14 @@ The testing strategy follows a two-phase approach: first, surface counterexample
 **Test Plan**: Write tests that create a payment row, update it via UPSERT, then query PostgreSQL for historical states. Run these tests on the UNFIXED code to observe that previous values are irrecoverable.
 
 **Test Cases**:
+
 1. **Indexer Double-Process Test**: Insert payment via sync job, re-process same transfer with different `amount`. Query for both values. (will fail on unfixed code - only latest `amount` exists)
 2. **Webhook Retry Test**: Insert attribution via settlement hook, receive duplicate webhook with different `route`. Query for both routes. (will fail on unfixed code - only latest `route` exists)
 3. **Concurrent Update Test**: Simulate indexer and webhook updating same `tx_hash` simultaneously. Verify one update is lost. (will fail on unfixed code - last writer wins)
 4. **Audit Timeline Test**: Query `payments` table for state history of a `tx_hash`. (will fail on unfixed code - no history columns exist)
 
 **Expected Counterexamples**:
+
 - Previous payment states cannot be retrieved from PostgreSQL
 - Possible causes: UPSERT semantics, no event log, single-row-per-txHash constraint
 
@@ -327,14 +339,15 @@ The testing strategy follows a two-phase approach: first, surface counterexample
 **Goal**: Verify that for all inputs where the bug condition holds (updating existing payment), the fixed system appends events to Kafka and allows state reconstruction.
 
 **Pseudocode:**
+
 ```
 FOR ALL operation WHERE isBugCondition(operation) DO
   // Perform the operation (UPSERT)
   result := operation.execute()
-  
+
   // Verify event was appended to Kafka
   ASSERT eventExists(operation.tx_hash, operation.eventType)
-  
+
   // Verify previous state can be reconstructed
   events := fetchEventsForTxHash(operation.tx_hash)
   ASSERT events.length >= 2  // Original + Update
@@ -348,6 +361,7 @@ END FOR
 **Goal**: Verify that for all inputs where the bug condition does NOT hold (read operations, new payment inserts), the fixed system produces the same result as the original system.
 
 **Pseudocode:**
+
 ```
 FOR ALL operation WHERE NOT isBugCondition(operation) DO
   // Operations like: SELECT queries, first-time insert, sync_state updates
@@ -356,6 +370,7 @@ END FOR
 ```
 
 **Testing Approach**: Property-based testing is recommended for preservation checking because:
+
 - It generates many test cases automatically across the input domain (different query patterns, payment configurations)
 - It catches edge cases that manual unit tests might miss (null fields, concurrent reads, paginated queries)
 - It provides strong guarantees that behavior is unchanged for all non-buggy inputs
@@ -363,6 +378,7 @@ END FOR
 **Test Plan**: Observe behavior on UNFIXED code first for read queries and first-time inserts, then write property-based tests capturing that behavior.
 
 **Test Cases**:
+
 1. **API Query Preservation**: Observe that `/api/payments` returns correct format on unfixed code, then verify same response format after fix with event sourcing active
 2. **Dashboard Display Preservation**: Observe that dashboard renders payment list correctly on unfixed code, verify same rendering after fix
 3. **First Insert Preservation**: Observe that first-time payment insert creates row correctly on unfixed code, verify same behavior after fix (event appended + row created)
@@ -400,6 +416,7 @@ END FOR
 **Why Managed Service**: Vercel functions are stateless and short-lived (60s max). Running Kafka brokers requires long-running processes, persistent storage, and ZooKeeper coordination. Self-hosted Kafka on Vercel is architecturally impossible.
 
 **Why Upstash Kafka**:
+
 - **Serverless-friendly**: HTTP REST API for producing (no persistent TCP connections required)
 - **Per-request pricing**: No idle cluster costs; pay only for messages produced/consumed
 - **Low latency**: <50ms p99 publish latency from Vercel us-east-1 to Upstash us-east-1
@@ -407,11 +424,13 @@ END FOR
 - **Managed operations**: No broker management, partition rebalancing handled automatically
 
 **Alternatives Rejected**:
+
 - **Confluent Cloud**: More expensive ($1.00/GB ingress, $0.10/GB egress), overkill for this use case
 - **AWS MSK**: Requires VPC, minimum $2.50/hour broker costs even when idle
 - **Self-hosted**: Operationally complex, requires separate infrastructure
 
 **Configuration**:
+
 - Topic: `stellar.payments.events`
 - Partitions: 3 (allows 3 parallel projection workers for scale)
 - Retention: 7 days (sufficient for backfill and debugging; older events archived to S3 if needed)
@@ -422,6 +441,7 @@ END FOR
 **Why Separate Service**: Projection workers must run continuously to consume Kafka events and update PostgreSQL. Vercel functions are invocation-based with 60s timeout. Long-running consumers don't fit the serverless model.
 
 **Why Railway**:
+
 - **Hobby-friendly pricing**: $5/month base, generous resource limits
 - **Persistent processes**: Deploy from GitHub, runs indefinitely
 - **Zero-config PostgreSQL**: Already using Supabase, just needs `DATABASE_URL`
@@ -429,11 +449,13 @@ END FOR
 - **Graceful deploys**: Rolling restart with health checks, no message loss
 
 **Alternatives**:
+
 - **Fly.io**: Similar pricing, good global edge deployment (overkill for single-region Kafka)
 - **Render**: Free tier available but spins down after 15min idle (unacceptable for consumer)
 - **Vercel Background Functions (Beta)**: Not yet GA, unknown pricing, max 5min runtime (too short)
 
 **Deployment**:
+
 - Dockerfile with Node.js + KafkaJS consumer
 - Environment: `UPSTASH_KAFKA_URL`, `UPSTASH_KAFKA_USERNAME`, `UPSTASH_KAFKA_PASSWORD`, `DATABASE_URL`
 - Health check endpoint: `/health` (returns 200 if consumer is connected and processing)
@@ -441,17 +463,20 @@ END FOR
 
 ### 3. Event Schema: JSON with Versioning
 
-**Why JSON**: 
+**Why JSON**:
+
 - Human-readable for debugging (can inspect events in Upstash console)
 - Universal tooling support (any Kafka client can parse)
 - Schema evolution friendly (add optional fields without breaking consumers)
 
 **Why Not Avro/Protobuf**:
+
 - Adds complexity (schema registry, code generation)
 - Overkill for this event volume (estimated <1000 events/day)
 - JSON compression in Kafka already efficient (~70% reduction)
 
 **Versioning Strategy**:
+
 - Every event has `version` field (starts at 1)
 - Breaking changes increment version (e.g., `TransferObservedV2`)
 - Projection worker handles all versions (pattern match on `version` field)
@@ -464,6 +489,7 @@ END FOR
 **Solution**: Dual-write period with backfill script
 
 **Steps**:
+
 1. **Deploy Event Producers** (no backfill yet): Sync job and settlement hook start appending events to Kafka. PostgreSQL UPSERTs continue as before. Both systems write independently.
 2. **Deploy Projection Worker** (offset at "latest"): Worker consumes only NEW events (ignores historical rows). PostgreSQL still being written by producers directly.
 3. **Run Backfill Script** (offline, idempotent): Script reads all `payments` rows, synthesizes events, publishes to Kafka with historical timestamps. Uses deterministic UUIDs so re-runs are safe.
@@ -483,11 +509,13 @@ END FOR
 **Solution**: Two-level idempotency
 
 **Level 1: Event-Level (Within Kafka)**
+
 - Each event gets unique `eventId` (UUID v4) when produced
 - Kafka deduplication (producer idempotence) prevents duplicate publishes in same session
 - Producers use transactional publishes (all-or-nothing: event written OR error returned)
 
 **Level 2: Processing-Level (Projection Worker)**
+
 - Before processing event, check `event_offsets` table for `eventId`
 - If exists, skip event (already processed)
 - After successful PostgreSQL write, insert `eventId` into `event_offsets` with topic/partition/offset
@@ -502,13 +530,15 @@ END FOR
 
 **Added Kafka Write**: <50ms per event (Upstash REST API p99 latency)
 
-**Estimated New Throughput**: 
+**Estimated New Throughput**:
+
 - Assume 1 transfer per 100 ledgers (typical testnet rate)
 - 1000 transfers → 1000 Kafka writes → 1000 * 50ms = 50 seconds Kafka overhead
 - Total time: 55s (current) + 50s (Kafka) = 105 seconds for 100,000 ledgers
 - **Throughput drops from 100 to ~95 ledgers/second** (5% reduction)
 
 **Mitigation**:
+
 - Batch Kafka publishes (write 10 events per HTTP request) → reduces overhead to 5 seconds
 - Parallel Kafka writes (don't await between events) → reduces overhead to <10 seconds
 - **Final throughput: ~98 ledgers/second** (2% reduction, acceptable)
@@ -518,6 +548,7 @@ END FOR
 ### 7. Error Handling: Fail-Safe with Alerts
 
 **Scenario 1: Kafka Unavailable During Sync**
+
 - Producer retry fails after 3 attempts
 - Circuit breaker opens, sync job returns `success: false`
 - GitHub Actions workflow marks run as failed, sends alert
@@ -525,18 +556,21 @@ END FOR
 - **Result**: No data loss, temporary sync pause until Kafka recovers
 
 **Scenario 2: Kafka Unavailable During Webhook**
+
 - Producer retry fails, settlement hook returns 500
 - x402 retries webhook after exponential backoff (1min, 5min, 15min)
 - When Kafka recovers, retry succeeds, event appended
 - **Result**: No data loss, attribution delayed but eventually consistent
 
 **Scenario 3: Projection Worker Crashes**
+
 - Consumer group rebalances to remaining worker (if scaled) or restarts
 - Offset committed only after successful PostgreSQL write, so no events lost
 - Unprocessed events re-consumed from last committed offset
 - **Result**: No data loss, projection lag increases temporarily
 
 **Scenario 4: PostgreSQL Unavailable During Projection**
+
 - Worker retries PostgreSQL write with exponential backoff (10 attempts max)
 - After 10 failures, moves event to dead letter queue (DLQ)
 - Continues processing other events (doesn't block entire stream)
@@ -544,6 +578,7 @@ END FOR
 - **Result**: Most events still processed, failing events isolated for manual resolution
 
 **Scenario 5: Duplicate Event Despite Idempotency**
+
 - Defensive: projection worker logs warning but does NOT fail
 - PostgreSQL transaction ensures `event_offsets` insert + `payments` update are atomic
 - If `eventId` already in `event_offsets`, transaction rolls back (UNIQUE constraint violation caught)
@@ -551,6 +586,7 @@ END FOR
 - **Result**: No data corruption, duplicate event silently skipped
 
 **Dead Letter Queue Configuration**:
+
 - Topic: `stellar.payments.events.dlq`
 - Retention: 30 days (long enough for manual investigation)
 - Consumer: Manual admin script to inspect/replay failed events
@@ -559,6 +595,7 @@ END FOR
 ## Deployment Plan
 
 ### Phase 1: Infrastructure Setup (Week 1)
+
 1. Create Upstash Kafka cluster (us-east-1, 3 partitions, 7-day retention)
 2. Create topic: `stellar.payments.events` with compression enabled
 3. Create Railway project, connect GitHub repo (monorepo path: `services/projection-worker`)
@@ -567,6 +604,7 @@ END FOR
 6. Run `ensureSchema` migration to create `event_offsets` table
 
 ### Phase 2: Event Producers (Week 2)
+
 1. Implement `kafka-producer.ts` with Upstash HTTP client
 2. Implement `events.ts` with TypeScript event schemas
 3. Modify `apps/web/src/app/api/sync/route.ts` to append `TransferObserved` events
@@ -575,6 +613,7 @@ END FOR
 6. Verify events appearing in Upstash console, PostgreSQL still being written directly
 
 ### Phase 3: Projection Worker (Week 3)
+
 1. Implement `services/projection-worker/index.ts` with KafkaJS consumer
 2. Implement event processing logic (pattern match on event type, update PostgreSQL)
 3. Implement idempotency check (query `event_offsets` before processing)
@@ -583,6 +622,7 @@ END FOR
 6. Verify worker processing live events, PostgreSQL being updated by both producer and worker
 
 ### Phase 4: Backfill Migration (Week 4)
+
 1. Implement `migrations/backfill-kafka-events.ts` script
 2. Run locally against production database (read-only operation)
 3. Publish synthetic events to Kafka with historical timestamps
@@ -590,6 +630,7 @@ END FOR
 5. Monitor Upstash for any errors or rate limits
 
 ### Phase 5: Cut Over to Event Sourcing (Week 5)
+
 1. Remove direct PostgreSQL writes from sync job (delete UPSERT, keep only `publishEvent`)
 2. Remove direct PostgreSQL writes from settlement hook (delete UPSERT, keep only `publishEvent`)
 3. Deploy to Vercel production (atomic deploy, rollback plan ready)
@@ -598,6 +639,7 @@ END FOR
 6. If stable: proceed to Phase 6
 
 ### Phase 6: Rebuild Projection from Events (Week 6)
+
 1. Create backup of `payments` table (`CREATE TABLE payments_backup AS SELECT * FROM payments`)
 2. Stop projection worker (Railway dashboard: pause service)
 3. Reset consumer group offset to "earliest" (Upstash console or CLI)
@@ -609,6 +651,7 @@ END FOR
 9. If match: delete `payments_backfill` table, mark migration complete
 
 ### Phase 7: Monitoring and Alerts (Ongoing)
+
 1. Add Upstash Kafka metrics to dashboard (producer throughput, consumer lag, error rate)
 2. Set up alerts: Kafka unavailable, projection lag >1000, DLQ message received
 3. Document runbooks for common failure scenarios (Kafka down, worker crash, backfill retry)
@@ -617,6 +660,7 @@ END FOR
 ## Open Questions and Tradeoffs
 
 ### Kafka Retention vs. Compliance Requirements
+
 **Question**: Is 7-day Kafka retention sufficient for audit compliance?
 
 **Tradeoff**: Longer retention (30/90 days) increases Upstash storage costs (~$0.10/GB/month). For compliance, may need to archive events to S3 after 7 days.
@@ -624,6 +668,7 @@ END FOR
 **Recommendation**: Start with 7 days, implement S3 archival if compliance requires multi-year history.
 
 ### Projection Worker Scaling
+
 **Question**: When do we need multiple projection workers?
 
 **Tradeoff**: Single worker is simpler (no coordination), but becomes bottleneck if event rate exceeds 100/sec. Multiple workers require partition-level parallelism (worker 1 processes partition 0, worker 2 processes partition 1, etc.).
@@ -631,6 +676,7 @@ END FOR
 **Recommendation**: Start with 1 worker, scale to 3 workers (one per partition) if lag consistently exceeds 1000 messages.
 
 ### Event Schema Evolution
+
 **Question**: How do we handle breaking changes to event schemas (e.g., rename `payer` to `sender`)?
 
 **Tradeoff**: Version bumps (V1 → V2) require projection worker to handle both versions. Adding translation logic increases complexity.
@@ -638,6 +684,7 @@ END FOR
 **Recommendation**: Avoid breaking changes. Use additive changes (add `sender`, keep `payer` for backwards compatibility). Deprecate old fields after 90 days.
 
 ### Backfill Synthetic Events
+
 **Question**: Should backfilled events have `synthetic: true` metadata, or look identical to live events?
 
 **Tradeoff**: Flagging as synthetic makes debugging easier (know which events are historical) but complicates replay logic (projection worker must ignore flag).
@@ -645,6 +692,7 @@ END FOR
 **Recommendation**: Add `synthetic: true` to metadata for observability, but projection worker treats synthetic/live events identically.
 
 ### PostgreSQL as Event Store Alternative
+
 **Question**: Why not use PostgreSQL's append-only table instead of Kafka?
 
 **Tradeoff**: PostgreSQL can store events (INSERT-only table), but lacks Kafka's stream processing features (consumer groups, partition parallelism, offset management). Also adds write amplification (write to events table + write to payments table).
@@ -652,6 +700,7 @@ END FOR
 **Recommendation**: Kafka is purpose-built for event streaming. PostgreSQL should only hold the materialized projection.
 
 ### Circuit Breaker Timeout
+
 **Question**: Is 60 seconds the right circuit breaker timeout?
 
 **Tradeoff**: Shorter timeout (30s) fails faster but may trip unnecessarily during transient Kafka issues. Longer timeout (5min) reduces false positives but delays error detection.
