@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import type { VerifyResponse } from '../api/verify/route';
 import { PageContainer } from '@/components/page-container';
+import { CopyButton } from '@/components/copy-button';
 
 const SAMPLE = {
   batchId: '1',
@@ -303,7 +304,7 @@ export function Result({
             />
             <Detail label="Period End" value={new Date(batch.periodEnd * 1000).toLocaleString()} />
             <div className="sm:col-span-2">
-              <Detail label="Merkle Root" value={batch.root} mono />
+              <Detail label="Merkle Root" value={batch.root} mono copyable />
             </div>
           </div>
         </div>
@@ -377,12 +378,25 @@ function Field({
   );
 }
 
-function Detail({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Detail({
+  label,
+  value,
+  mono,
+  copyable,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  copyable?: boolean;
+}) {
   return (
     <div>
-      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1 transition-colors duration-300">
-        {label}
-      </p>
+      <div className="flex justify-between items-center mb-1">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 transition-colors duration-300">
+          {label}
+        </p>
+        {copyable && <CopyButton value={value} label={label} />}
+      </div>
       <p
         className={`transition-colors duration-300 ${mono ? 'text-slate-900 dark:text-white font-mono text-sm bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-transparent px-3 py-2 break-all' : 'text-slate-900 dark:text-white font-medium text-lg'}`}
       >

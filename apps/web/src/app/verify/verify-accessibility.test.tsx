@@ -80,4 +80,32 @@ describe('Verify page accessibility', () => {
     expect(html).toContain('sr-only">Verdict: </span>');
     expect(html).toContain('Proof Rejected');
   });
+
+  it('renders copy button for the batch Merkle root with accessible label', () => {
+    const resultRef = { current: null };
+    const html = renderToString(
+      <Result
+        result={{
+          verified: true,
+          disagreement: false,
+          contract: 'CC...',
+          local: { ok: true },
+          onchain: { ok: true },
+          batch: {
+            id: 1,
+            count: 42,
+            periodStart: 1700000000,
+            periodEnd: 1700003600,
+            root: 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+          },
+        }}
+        resultRef={resultRef}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Copy Merkle Root"');
+    expect(html).toContain('abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+  });
 });

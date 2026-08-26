@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { PageContainer } from '@/components/page-container';
 import { RefundPanel } from '@/components/refund-panel';
+import { CopyButton } from '@/components/copy-button';
 import { useOnline } from '@/components/network-status';
 import { describeFailure, isAbortError } from '@/lib/network-status';
 
@@ -295,79 +296,113 @@ export default function Dashboard() {
 
       {/* Modal Dialog */}
       {selected && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#04090f]/40 dark:bg-black/80 backdrop-blur-sm transition-colors duration-300"
-          onClick={() => setSelected(null)}
-        >
-          <div
-            className="bg-white/40 dark:bg-white/5 backdrop-blur-2xl border border-slate-200 dark:border-white/10 w-full max-w-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_0_50px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] animate-in zoom-in-95 duration-200 transition-colors duration-300 max-h-[90vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 md:px-8 md:py-6 border-b border-slate-200/60 dark:border-white/20 flex justify-between items-center bg-slate-50 dark:bg-[#0a111a] transition-colors duration-300 shrink-0">
-              <h3 className="text-lg font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">
-                Payment Details
-              </h3>
-              <button
-                onClick={() => setSelected(null)}
-                className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6 md:p-8 space-y-6 md:space-y-8 overflow-y-auto">
-              <Field label="Transaction Hash">
-                <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-400 dark:border-emerald-500/20 px-4 py-3 font-mono text-xs text-emerald-600 dark:text-emerald-400 break-all transition-colors duration-300">
-                  {selected.tx_hash}
-                </div>
-              </Field>
-              <div className="grid grid-cols-2 gap-8">
-                <Field label="Amount">
-                  <span className="text-3xl font-black tracking-tighter text-slate-900 dark:text-white transition-colors duration-300">
-                    {formatAmount(selected.amount)}{' '}
-                    <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 transition-colors duration-300">
-                      {assetLabel(selected.asset)}
-                    </span>
-                  </span>
-                </Field>
-                <Field label="Ledger">
-                  <span className="font-mono text-slate-500 dark:text-slate-300 text-lg transition-colors duration-300">
-                    {selected.ledger ?? '-'}
-                  </span>
-                </Field>
-              </div>
-              <Field label="Payer">
-                <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300 break-all transition-colors duration-300">
-                  {selected.payer}
-                </div>
-              </Field>
-              <Field label="Timestamp">
-                <span className="text-slate-600 dark:text-slate-300 transition-colors duration-300">
-                  {new Date(selected.ts).toLocaleString()}
-                </span>
-              </Field>
-
-              <div className="pt-6 mt-6 border-t border-slate-100 dark:border-white/10 transition-colors duration-300">
-                <a
-                  href={explorerUrl(selected.tx_hash)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-center gap-1.5 w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 shadow-sm dark:shadow-none transition-all font-bold text-sm tracking-wide uppercase"
-                >
-                  View on Explorer <ArrowUpRight className="w-4 h-4 opacity-70" />
-                </a>
-              </div>
-
-              <div className="pt-6 mt-6 border-t border-slate-100 dark:border-white/10 transition-colors duration-300">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">
-                  Refund
-                </p>
-                <RefundPanel payment={selected} onRefunded={markRefunded} />
-              </div>
-            </div>
-          </div>
-        </div>
+        <PaymentModal
+          selected={selected}
+          onClose={() => setSelected(null)}
+          refunded={refunded}
+          onRefunded={markRefunded}
+        />
       )}
     </main>
+  );
+}
+
+export function PaymentModal({
+  selected,
+  onClose,
+  refunded,
+  onRefunded,
+}: {
+  selected: Payment;
+  onClose: () => void;
+  refunded: ReadonlySet<string>;
+  onRefunded: (tx_hash: string) => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#04090f]/40 dark:bg-black/80 backdrop-blur-sm transition-colors duration-300"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white/40 dark:bg-white/5 backdrop-blur-2xl border border-slate-200 dark:border-white/10 w-full max-w-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_0_50px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] animate-in zoom-in-95 duration-200 transition-colors duration-300 max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 md:px-8 md:py-6 border-b border-slate-200/60 dark:border-white/20 flex justify-between items-center bg-slate-50 dark:bg-[#0a111a] transition-colors duration-300 shrink-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">
+              Payment Details
+            </h3>
+            {refunded.has(selected.tx_hash) && (
+              <span
+                className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest border border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 align-middle"
+                title="Refunded from the vault in this session"
+              >
+                Refunded
+              </span>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-white transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-6 md:p-8 space-y-6 md:space-y-8 overflow-y-auto">
+          <Field
+            label="Transaction Hash"
+            action={<CopyButton value={selected.tx_hash} label="Transaction Hash" />}
+          >
+            <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-400 dark:border-emerald-500/20 px-4 py-3 font-mono text-xs text-emerald-600 dark:text-emerald-400 break-all transition-colors duration-300">
+              {selected.tx_hash}
+            </div>
+          </Field>
+          <div className="grid grid-cols-2 gap-8">
+            <Field label="Amount">
+              <span className="text-3xl font-black tracking-tighter text-slate-900 dark:text-white transition-colors duration-300">
+                {formatAmount(selected.amount)}{' '}
+                <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 transition-colors duration-300">
+                  {assetLabel(selected.asset)}
+                </span>
+              </span>
+            </Field>
+            <Field label="Ledger">
+              <span className="font-mono text-slate-500 dark:text-slate-300 text-lg transition-colors duration-300">
+                {selected.ledger ?? '-'}
+              </span>
+            </Field>
+          </div>
+          <Field label="Payer" action={<CopyButton value={selected.payer} label="Payer Address" />}>
+            <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300 break-all transition-colors duration-300">
+              {selected.payer}
+            </div>
+          </Field>
+          <Field label="Timestamp">
+            <span className="text-slate-600 dark:text-slate-300 transition-colors duration-300">
+              {new Date(selected.ts).toLocaleString()}
+            </span>
+          </Field>
+
+          <div className="pt-6 mt-6 border-t border-slate-100 dark:border-white/10 transition-colors duration-300">
+            <a
+              href={explorerUrl(selected.tx_hash)}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center justify-center gap-1.5 w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 shadow-sm dark:shadow-none transition-all font-bold text-sm tracking-wide uppercase"
+            >
+              View on Explorer <ArrowUpRight className="w-4 h-4 opacity-70" />
+            </a>
+          </div>
+
+          <div className="pt-6 mt-6 border-t border-slate-100 dark:border-white/10 transition-colors duration-300">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">
+              Refund
+            </p>
+            <RefundPanel payment={selected} onRefunded={onRefunded} />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -457,12 +492,23 @@ export function PaymentsTable({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  action,
+  children,
+}: {
+  label: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="space-y-2">
-      <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest transition-colors duration-300">
-        {label}
-      </span>
+      <div className="flex justify-between items-center">
+        <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest transition-colors duration-300">
+          {label}
+        </span>
+        {action}
+      </div>
       <div>{children}</div>
     </div>
   );
