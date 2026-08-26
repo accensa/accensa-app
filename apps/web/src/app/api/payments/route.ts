@@ -22,7 +22,16 @@ export interface PaymentsResponse {
   payments: PaymentRow[];
   /** Null until the indexer has run at least once. */
   sync: SyncState | null;
+  /** Opaque keyset cursor for the next page; null when the list is exhausted. */
   next_cursor?: string | null;
+  /** Total number of indexed payments for this merchant. */
+  total: number;
+  /** Sum of every payment amount, as a decimal string. */
+  total_amount: string;
+  /** Raw asset when every payment is in one asset, else null. */
+  total_asset: string | null;
+  /** ceil(total / limit); 0 when there are no payments. */
+  total_pages: number;
 }
 
 export async function GET(request: Request) {
@@ -44,9 +53,27 @@ export async function GET(request: Request) {
     limit = parsed;
   }
 
+  // Page-based (offset) pagination, e.g. ?page=2&limit=50. Absent means page 1,
+  // which keeps every existing no-parameter caller (the routes page, the SDK's
+  // first page) on exactly the behaviour they had.
+  const pageParam = searchParams.get('page');
+  let page = 1;
+  if (pageParam !== null) {
+    const parsed = Number.parseFloat(pageParam);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      return NextResponse.json({ error: 'page must be an integer >= 1' }, { status: 400 });
+    }
+    page = parsed;
+  }
+
+  // Cursor-based (keyset) pagination, used by @accensa/sdk. The two schemes are
+  // mutually exclusive: a request cannot offset and keyset at the same time.
   const cursor = searchParams.get('cursor');
   let parsedCursor: { ts: string; txHash: string } | null = null;
   if (cursor) {
+    if (pageParam !== null) {
+      return NextResponse.json({ error: 'page and cursor cannot be combined' }, { status: 400 });
+    }
     try {
       const decoded = Buffer.from(cursor, 'base64').toString('utf8');
       const parts = decoded.split('|');
@@ -63,6 +90,8 @@ export async function GET(request: Request) {
     }
   }
 
+  const offset = (page - 1) * limit;
+
   try {
     const merchant = await withClient((client) => getMerchantFromRequest(client, request));
     if (!merchant) {
@@ -72,7 +101,17 @@ export async function GET(request: Request) {
     const { rows, sync } = await withMerchantClient(merchant.id, async (client) => {
       await ensureSchema(client);
 
-      let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
+      // Window functions evaluate over the full filtered row set before LIMIT
+      // and OFFSET are applied, so one query returns both the page and the
+      // aggregates the dashboard header needs (total count, sum, single-asset
+      // detection via min = max).
+      let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method,
+                         COUNT(*) OVER() AS total,
+                         COALESCE(SUM(amount) OVER(), 0) AS total_amount,
+                         CASE WHEN MIN(COALESCE(asset, 'native')) OVER() =
+                                   MAX(COALESCE(asset, 'native')) OVER()
+                              THEN MIN(COALESCE(asset, 'native')) OVER() END AS total_asset
+                  FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
       const params: (string | number)[] = [merchant.id];
       if (parsedCursor) {
         query += ` AND (ts < $${params.length + 1} OR (ts = $${params.length + 1} AND tx_hash < $${params.length + 2}))`;
@@ -82,9 +121,21 @@ export async function GET(request: Request) {
       query += ` ORDER BY ts DESC, tx_hash DESC LIMIT $${params.length + 1}`;
       params.push(limit);
 
+      if (!parsedCursor) {
+        query += ` OFFSET $${params.length + 1}`;
+        params.push(offset);
+      }
+
       const result = await client.query(query, params);
       return { rows: result.rows, sync: await getSyncState(client, merchant.id) };
     });
+
+    // The fake databases in tests do not return the window columns; tolerate
+    // their absence so aggregate handling is uniform.
+    const total = rows.length > 0 ? Number(rows[0].total ?? 0) : 0;
+    const totalAmount = rows.length > 0 ? String(rows[0].total_amount ?? 0) : '0';
+    const totalAsset = rows.length > 0 ? (rows[0].total_asset ?? null) : null;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
 
     const next_cursor =
       rows.length === limit
@@ -106,6 +157,10 @@ export async function GET(request: Request) {
       })),
       sync,
       next_cursor,
+      total,
+      total_amount: totalAmount,
+      total_asset: totalAsset,
+      total_pages: totalPages,
     };
     return NextResponse.json(body);
   } catch (error: unknown) {

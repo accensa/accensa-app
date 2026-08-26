@@ -1,16 +1,19 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { formatAmount, sumAmounts, assetLabel } from '@/lib/money';
 import { describeSync, type SyncState } from '@/lib/sync-status';
 import { CSV_BOM, paymentsCsvFilename, paymentsToCsv } from '@/lib/payments-csv';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import useSWR from 'swr';
 import { ArrowUpRight } from 'lucide-react';
 import { PageContainer } from '@/components/page-container';
 import { RefundPanel } from '@/components/refund-panel';
 import { CopyButton } from '@/components/copy-button';
 import { useOnline } from '@/components/network-status';
-import { describeFailure, isAbortError } from '@/lib/network-status';
+import { describeFailure } from '@/lib/network-status';
+import { Pagination } from '@/components/pagination';
 
 interface Payment {
   tx_hash: string;
@@ -25,11 +28,35 @@ interface Payment {
 
 type LoadState =
   | { status: 'loading' }
-  | { status: 'ready'; payments: Payment[]; fetchedAt: number; sync: SyncState | null }
+  | { status: 'ready'; payments: Payment[]; sync: SyncState | null }
   | { status: 'error'; message: string };
 
+/** A page of payments as `/api/payments` returns them. */
+interface PaymentsResponse {
+  payments: Payment[];
+  sync: SyncState | null;
+  /** Total indexed payments for the merchant; server-side aggregate. */
+  total?: number;
+  /** Sum of every payment amount; server-side aggregate. */
+  total_amount?: string;
+  /** Raw asset when every payment is in one asset; server-side aggregate. */
+  total_asset?: string | null;
+  /** ceil(total / limit); absent on older deploys. */
+  total_pages?: number;
+}
+
+/** Chunk size for the transaction history. */
+const PAGE_SIZE = 50;
 const POLL_INTERVAL_MS = 15_000;
 const explorerUrl = (hash: string) => `https://stellar.expert/explorer/testnet/tx/${hash}`;
+
+const paymentsUrl = (page: number) => `/api/payments?limit=${PAGE_SIZE}&page=${page}`;
+
+async function fetchPaymentsPage(url: string): Promise<PaymentsResponse> {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `Error ${res.status}`);
+  return res.json();
+}
 
 function truncate(value: string, head = 8, tail = 6) {
   return value.length <= head + tail + 1 ? value : `${value.slice(0, head)}…${value.slice(-tail)}`;
@@ -58,11 +85,9 @@ function saveRefundedToStorage(refunded: ReadonlySet<string>): void {
   }
 }
 
-export default function Dashboard() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
+export function Dashboard() {
   const [selected, setSelected] = useState<Payment | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const [reloadToken, setReloadToken] = useState(0);
   // Refunds issued in this session. The indexer does not watch RefundVault
   // events yet, so a refund is otherwise invisible until someone opens the
   // payment again and the contract is re-read.
@@ -73,44 +98,56 @@ export default function Dashboard() {
   );
   const online = useOnline();
 
-  const reload = useCallback(() => setReloadToken((n) => n + 1), []);
+  // The current page lives in the URL (?page=2) so it survives reloads and can
+  // be linked to; searchParams is the single source of truth, and `goToPage`
+  // writes a new URL that the router re-renders this component with.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const pageParam = Number(searchParams.get('page') ?? '1');
+  const page = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
 
-  // `online` is a dependency, not just a guard: polling stops while the browser
-  // has no connection - every request would fail and overwrite a good table with
-  // an error - and reconnecting re-runs the effect, which refetches immediately
-  // rather than waiting out the remainder of a 15s tick.
-  useEffect(() => {
-    if (!online) return;
-    const controller = new AbortController();
-    async function fetchPayments() {
-      try {
-        const res = await fetch('/api/payments', { signal: controller.signal, cache: 'no-store' });
-        if (!res.ok)
-          throw new Error((await res.json().catch(() => ({}))).error ?? `Error ${res.status}`);
-        const data = await res.json();
-        // Tolerate both shapes: the endpoint used to return a bare array, and
-        // a deploy can briefly serve an older build to an already-open tab.
-        const payments: Payment[] = Array.isArray(data) ? data : (data.payments ?? []);
-        const sync: SyncState | null = Array.isArray(data) ? null : (data.sync ?? null);
-        if (!controller.signal.aborted) {
-          setState({ status: 'ready', payments, fetchedAt: Date.now(), sync });
-        }
-      } catch (error) {
-        // Re-read navigator.onLine here rather than closing over `online`: the
-        // connection can drop between the request going out and it failing,
-        // and that is exactly the case worth naming correctly.
-        if (!controller.signal.aborted && !isAbortError(error)) {
-          setState({ status: 'error', message: describeFailure(error, navigator.onLine) });
-        }
-      }
-    }
-    void fetchPayments();
-    const timer = setInterval(fetchPayments, POLL_INTERVAL_MS);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [reloadToken, online]);
+  const goToPage = useCallback(
+    (next: number) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next <= 1) params.delete('page');
+      else params.set('page', String(next));
+      router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ''}`, {
+        scroll: false,
+      });
+    },
+    [router, pathname, searchParams],
+  );
+
+  // SWR caches each ?page=N response keyed by URL, so paging back to a visited
+  // page is instant. The 15s poll keeps only the visible page fresh, and the
+  // `online` gate means a disconnected browser stops requesting (every request
+  // would fail and replace a good table with an error); reconnecting turns the
+  // key back on, which refetches immediately rather than waiting out a tick.
+  const { data, error, mutate } = useSWR<PaymentsResponse>(
+    online ? paymentsUrl(page) : null,
+    fetchPaymentsPage,
+    { refreshInterval: POLL_INTERVAL_MS, keepPreviousData: true },
+  );
+
+  // Refresh on demand (retry, or after a manual sync).
+  const reload = useCallback(() => {
+    void mutate();
+  }, [mutate]);
+
+  const state: LoadState = error
+    ? { status: 'error', message: describeFailure(error, navigator.onLine) }
+    : !data
+      ? { status: 'loading' }
+      : { status: 'ready', payments: data.payments, sync: data.sync ?? null };
+
+  const payments: Payment[] = data?.payments ?? [];
+  const totalPages = data?.total_pages ?? 0;
+
+  // Prefetch the next page into SWR's cache as soon as this one is known, so
+  // clicking Next is instant. Renders nothing; the cache is the whole point.
+  const hasNext = totalPages > page;
+  useSWR(hasNext ? paymentsUrl(page + 1) : null, fetchPaymentsPage);
 
   useEffect(() => {
     if (!selected) return;
@@ -120,10 +157,17 @@ export default function Dashboard() {
     return () => document.removeEventListener('keydown', onKey);
   }, [selected]);
 
-  const payments = state.status === 'ready' ? state.payments : [];
-  const total = sumAmounts(payments.map((p) => p.amount));
-  const assets = new Set(payments.map((p) => assetLabel(p.asset)));
-  const totalAsset = assets.size === 1 ? [...assets][0] : '';
+  // The header total covers every payment, not just the visible page, so the
+  // number does not shrink when the merchant pages forward. Older deploys that
+  // lack the server-side aggregates fall back to summing what is on screen.
+  let total = sumAmounts(payments.map((p) => p.amount));
+  let totalAsset = '';
+  const pageAssets = new Set(payments.map((p) => assetLabel(p.asset)));
+  if (pageAssets.size === 1) totalAsset = [...pageAssets][0];
+  if (data?.total_amount != null) {
+    total = data.total_amount;
+    totalAsset = data.total_asset ? assetLabel(data.total_asset) : '';
+  }
 
   return (
     <main className="min-h-screen text-slate-600 dark:text-slate-200 font-sans selection:bg-slate-200 dark:selection:bg-white/10 transition-colors duration-300 bg-grid p-6 md:p-12 lg:p-20 pt-28 md:pt-32 lg:pt-32">
@@ -205,7 +249,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {state.status === 'ready' && payments.length === 0 && (
+            {state.status === 'ready' && payments.length === 0 && (data?.total ?? 0) === 0 && (
               <div className="flex flex-col items-center justify-center h-[400px] text-center space-y-4 px-6">
                 <div className="w-12 h-12 bg-emerald-400 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-2 animate-pulse">
                   ●
@@ -216,6 +260,24 @@ export default function Dashboard() {
                 <p className="text-slate-500 dark:text-slate-400 text-sm max-w-sm">
                   Payments settled to this merchant address will appear here automatically.
                 </p>
+              </div>
+            )}
+
+            {state.status === 'ready' && payments.length === 0 && (data?.total ?? 0) > 0 && (
+              <div className="flex flex-col items-center justify-center h-[400px] text-center space-y-4 px-6">
+                <p className="text-xl font-black tracking-tighter text-slate-900 dark:text-white">
+                  No payments on this page
+                </p>
+                <p className="text-slate-500 dark:text-slate-400 text-sm max-w-sm">
+                  The list has {(data?.total ?? 0).toLocaleString()} payments. Jump back to the
+                  first page to see the newest ones.
+                </p>
+                <button
+                  onClick={() => goToPage(1)}
+                  className="mt-2 px-6 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 transition-colors shadow-sm dark:shadow-none"
+                >
+                  Back to first page
+                </button>
               </div>
             )}
 
@@ -291,6 +353,12 @@ export default function Dashboard() {
               </>
             )}
           </div>
+
+          {state.status === 'ready' && totalPages > 1 && (
+            <div className="px-8 py-5 border-t border-slate-100 dark:border-white/5 bg-white/30 dark:bg-black/30 backdrop-blur-xl transition-colors duration-300">
+              <Pagination page={page} totalPages={totalPages} onPageChange={goToPage} />
+            </div>
+          )}
         </section>
       </PageContainer>
 
@@ -388,7 +456,7 @@ export function PaymentModal({
               href={explorerUrl(selected.tx_hash)}
               target="_blank"
               rel="noreferrer"
-               className="flex items-center justify-center gap-1.5 w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-sm dark:shadow-none transition-all font-bold text-sm tracking-wide uppercase"
+              className="flex items-center justify-center gap-1.5 w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-sm dark:shadow-none transition-all font-bold text-sm tracking-wide uppercase"
             >
               View on Explorer <ArrowUpRight className="w-4 h-4 opacity-70" />
             </a>
@@ -530,9 +598,9 @@ function StatusPill({ state, onRetry }: { state: LoadState; onRetry: () => void 
         <span className="w-2 h-2 bg-red-500" /> Retry Connection
       </button>
     );
-  // Deliberately reports the indexer's timestamp, not state.fetchedAt. The poll
-  // succeeding says nothing about how current the data behind it is, and the
-  // sync job lands every 1-3 hours in practice.
+  // Deliberately reports the indexer's timestamp, not when the poll last
+  // succeeded. The poll succeeding says nothing about how current the data
+  // behind it is, and the sync job lands every 1-3 hours in practice.
   const { level, age, detail } = describeSync(state.sync);
 
   const tone = {
@@ -690,9 +758,8 @@ function SyncNowButton({ onSynced }: { onSynced: () => void }) {
 /**
  * Downloads the payment history the table is showing as a CSV file.
  *
- * Exports what is on screen rather than re-fetching: /api/payments is already
- * the whole set the dashboard has (newest 100), and re-requesting would mean
- * the file could disagree with the rows the merchant was looking at.
+ * Exports what is on screen rather than re-fetching every page: the file then
+ * always matches the rows the merchant was looking at, whatever page that is.
  *
  * Serialization lives in lib/payments-csv so it can be tested without a DOM;
  * this only turns the text into a download.
@@ -755,5 +822,19 @@ function TableSkeleton() {
         />
       ))}
     </div>
+  );
+}
+
+/**
+ * The page reads the current page from the URL (?page=2) via useSearchParams,
+ * which must sit inside a Suspense boundary during prerendering — otherwise the
+ * production build fails. The dashboard itself is wrapped below; the modal and
+ * table exports stay named so tests can import them directly.
+ */
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <Dashboard />
+    </Suspense>
   );
 }
