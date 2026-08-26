@@ -75,6 +75,17 @@ export default function VerifyPage() {
   const [proof, setProof] = useState('');
   const [state, setState] = useState<State>({ status: 'idle' });
 
+  const resultRef = React.useRef<HTMLDivElement>(null);
+  const errorRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (state.status === 'done') {
+      resultRef.current?.focus();
+    } else if (state.status === 'error') {
+      errorRef.current?.focus();
+    }
+  }, [state.status]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setState({ status: 'checking' });
@@ -124,6 +135,11 @@ export default function VerifyPage() {
             locally from the proof, and independently by the contract.
           </p>
         </header>
+
+        {/* In-progress status live region for screen readers */}
+        <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+          {state.status === 'checking' && 'Verification in progress. Please wait...'}
+        </div>
 
         <div className="bg-white/50 dark:bg-white/5 backdrop-blur-2xl p-6 md:p-12 shadow-[0_8px_30px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] transition-colors duration-300">
           <div className="flex flex-wrap gap-4 mb-8">
@@ -187,6 +203,7 @@ export default function VerifyPage() {
             <button
               type="submit"
               disabled={state.status === 'checking'}
+              aria-busy={state.status === 'checking'}
               className="w-full px-8 py-5 bg-emerald-600 dark:bg-emerald-500 text-white dark:text-black font-black text-lg uppercase tracking-wider hover:bg-emerald-600 dark:hover:bg-emerald-400 disabled:opacity-50 transition-all shadow-md shadow-emerald-600/20 dark:shadow-[0_0_20px_rgba(16,185,129,0.2)]"
             >
               {state.status === 'checking' ? 'Processing...' : 'Verify Cryptographic Proof'}
@@ -195,14 +212,23 @@ export default function VerifyPage() {
         </div>
 
         {state.status === 'error' && (
-          <div className="border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-[#0a111a] p-6 flex gap-4 items-start shadow-sm dark:shadow-none transition-colors duration-300">
-            <div className="w-8 h-8 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+          <div
+            ref={errorRef}
+            tabIndex={-1}
+            role="alert"
+            aria-live="assertive"
+            className="outline-none focus:ring-2 focus:ring-red-500 border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-[#0a111a] p-6 flex gap-4 items-start shadow-sm dark:shadow-none transition-colors duration-300"
+          >
+            <div
+              aria-hidden="true"
+              className="w-8 h-8 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0"
+            >
               ✕
             </div>
             <div>
-              <p className="text-red-700 dark:text-red-400 font-bold transition-colors duration-300">
+              <h2 className="text-red-700 dark:text-red-400 font-bold transition-colors duration-300">
                 Verification Error
-              </p>
+              </h2>
               <p className="text-red-600 dark:text-red-400/80 text-sm mt-1 transition-colors duration-300">
                 {state.message}
               </p>
@@ -210,31 +236,46 @@ export default function VerifyPage() {
           </div>
         )}
 
-        {state.status === 'done' && <Result result={state.result} />}
+        {state.status === 'done' && <Result result={state.result} resultRef={resultRef} />}
       </PageContainer>
     </main>
   );
 }
 
-function Result({ result }: { result: VerifyResponse }) {
+export function Result({
+  result,
+  resultRef,
+}: {
+  result: VerifyResponse;
+  resultRef?: React.RefObject<HTMLDivElement | null>;
+}) {
   const { local, onchain, verified, batch } = result;
 
   return (
     <div className="space-y-6 mt-12 animate-in fade-in slide-in-from-bottom-4 duration-300">
       <div
-        className={` border p-6 md:p-12 transition-colors duration-300 ${verified ? 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-[#0a111a] shadow-lg shadow-emerald-600/10 dark:shadow-[0_0_50px_rgba(16,185,129,0.1)]' : 'border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-[#0a111a] shadow-lg shadow-red-600/10 dark:shadow-[0_0_50px_rgba(239,68,68,0.1)]'}`}
+        ref={resultRef}
+        tabIndex={-1}
+        role="region"
+        aria-label="Verification verdict"
+        aria-live="polite"
+        className={`outline-none focus:ring-2 focus:ring-emerald-500 border p-6 md:p-12 transition-colors duration-300 ${verified ? 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-[#0a111a] shadow-lg shadow-emerald-600/10 dark:shadow-[0_0_50px_rgba(16,185,129,0.1)]' : 'border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-[#0a111a] shadow-lg shadow-red-600/10 dark:shadow-[0_0_50px_rgba(239,68,68,0.1)]'}`}
       >
         <div className="flex items-center gap-4 mb-4">
           <div
+            aria-hidden="true"
             className={`w-12 h-12 flex items-center justify-center text-xl font-bold transition-colors duration-300 ${verified ? 'bg-emerald-600 dark:bg-emerald-500 text-white dark:text-black' : 'bg-red-600 dark:bg-red-500 text-white dark:text-black'}`}
           >
             {verified ? '✓' : '✕'}
           </div>
-          <p
-            className={`text-3xl font-black tracking-tight transition-colors duration-300 ${verified ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}
-          >
-            {verified ? 'Proof Verified' : 'Proof Rejected'}
-          </p>
+          <div>
+            <h2
+              className={`text-3xl font-black tracking-tight transition-colors duration-300 ${verified ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}
+            >
+              <span className="sr-only">Verdict: </span>
+              {verified ? 'Proof Verified' : 'Proof Rejected'}
+            </h2>
+          </div>
         </div>
         <p className="text-slate-600 dark:text-slate-400 text-lg transition-colors duration-300">
           {verified
@@ -293,9 +334,12 @@ function CheckCard({
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest border transition-colors duration-300 ${result.ok ? 'bg-emerald-50 dark:bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' : 'bg-red-50 dark:bg-red-500/5 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20'}`}
         >
           {result.ok ? (
-            <span className="w-1.5 h-1.5 bg-emerald-500 dark:bg-emerald-400 animate-pulse" />
+            <span
+              aria-hidden="true"
+              className="w-1.5 h-1.5 bg-emerald-500 dark:bg-emerald-400 animate-pulse"
+            />
           ) : (
-            <span className="w-1.5 h-1.5 bg-red-500 dark:bg-red-400" />
+            <span aria-hidden="true" className="w-1.5 h-1.5 bg-red-500 dark:bg-red-400" />
           )}
           <span>{result.ok ? 'Valid' : 'Failed'}</span>
         </div>
