@@ -20,6 +20,27 @@ export {
   type X402SettleResult,
 } from './settlement';
 
+/** Strict, typed Order and Product fetches against the Accensa indexer. */
+export {
+  AccensaClient,
+  AccensaError,
+  type AccensaClientOptions,
+  type OrdersPage,
+  type ProductsPage,
+} from './src/client';
+/** Strict mappers from the indexer's wire rows to Order/Product. */
+export {
+  orderFromWire,
+  ordersFromResponse,
+  productFromWire,
+  productsFromResponse,
+  type OrdersResponse,
+  type ProductsResponse,
+} from './src/mapping';
+/** The strict Order and Product types themselves. */
+export type { Order, OrderMetadata } from './src/types/order';
+export type { Product, ProductMetadata } from './src/types/product';
+
 /**
  * This package deliberately ships no paywall middleware.
  *
