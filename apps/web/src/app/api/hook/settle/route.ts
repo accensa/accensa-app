@@ -1,8 +1,56 @@
 import { NextResponse } from 'next/server';
-import { withClient, ensureSchema, recordSettlement } from '@/lib/db';
+import { withClient, withMerchantClient, ensureSchema, recordSettlement } from '@/lib/db';
 import { parseSettlementReport } from '@/lib/settlement-report';
+import { listMerchants, type Merchant } from '@/lib/merchants';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Finds which configured merchant signed this report.
+ *
+ * The wire payload carries no merchant identifier — changing it would break
+ * every existing `@accensa/sdk` integration mid-flight. Instead, the
+ * signature itself is the identity: each merchant's `public_key_hex` is tried
+ * in turn, and whichever one verifies is who reported it. With a small number
+ * of merchants per deployment this is cheap, and it means onboarding a new
+ * merchant's settlement reporting needs no SDK or wire-format change, only a
+ * new `merchants` row.
+ */
+async function verifyingMerchant(
+  merchants: Merchant[],
+  raw: string,
+  signatureHex: string,
+): Promise<Merchant | null> {
+  const crypto = await import('node:crypto');
+  let signature: Buffer;
+  try {
+    signature = Buffer.from(signatureHex, 'hex');
+  } catch {
+    return null;
+  }
+
+  for (const merchant of merchants) {
+    if (!merchant.publicKeyHex) continue;
+    try {
+      const keyBuffer = Buffer.from(merchant.publicKeyHex, 'hex');
+      const publicKey = crypto.createPublicKey({
+        key: Buffer.concat([
+          Buffer.from('302a300506032b6570032100', 'hex'), // SubjectPublicKeyInfo Ed25519 header
+          keyBuffer,
+        ]),
+        format: 'der',
+        type: 'spki',
+      });
+      if (crypto.verify(null, Buffer.from(raw, 'utf8'), publicKey, signature)) {
+        return merchant;
+      }
+    } catch {
+      // A malformed key for one merchant must not block checking the rest.
+      continue;
+    }
+  }
+  return null;
+}
 
 /**
  * Records route attribution reported by an x402 seller.
@@ -11,17 +59,12 @@ export const dynamic = 'force-dynamic';
  * route that was paid for. That mapping exists only in the seller's process, so
  * it has to be reported rather than indexed. This is consequently the only
  * write path into `payments` that is not derived from the ledger, which is why
- * it fails closed: without MERCHANT_PUBLIC_KEY configured the endpoint refuses to
- * accept anything at all.
+ * it fails closed: unless some merchant's signing key verifies the report, the
+ * endpoint refuses to accept anything at all.
  *
  * Ledger-owned fields (ledger, amount, asset, ts) are never written here.
  */
 export async function POST(request: Request) {
-  const publicKeyHex = process.env.MERCHANT_PUBLIC_KEY;
-  if (!publicKeyHex) {
-    return NextResponse.json({ error: 'Settlement reporting is not configured' }, { status: 503 });
-  }
-
   const signature = request.headers.get('x-signature');
   if (!signature) {
     return NextResponse.json({ error: 'Missing X-Signature header' }, { status: 401 });
@@ -38,29 +81,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Request body must be text/json' }, { status: 400 });
   }
 
-  try {
-    const crypto = await import('node:crypto');
-    const keyBuffer = Buffer.from(publicKeyHex, 'hex');
-    const publicKey = crypto.createPublicKey({
-      key: Buffer.concat([
-        Buffer.from('302a300506032b6570032100', 'hex'), // SubjectPublicKeyInfo Ed25519 header
-        keyBuffer,
-      ]),
-      format: 'der',
-      type: 'spki',
-    });
+  const merchant = await withClient(async (client) => {
+    await ensureSchema(client);
+    const merchants = await listMerchants(client);
+    return await verifyingMerchant(merchants, raw, signature);
+  });
 
-    const isValid = crypto.verify(
-      null,
-      Buffer.from(raw, 'utf8'),
-      publicKey,
-      Buffer.from(signature, 'hex'),
-    );
-    if (!isValid) {
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
-    }
-  } catch (err) {
-    return NextResponse.json({ error: 'Signature verification failed' }, { status: 401 });
+  if (!merchant) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 
   let body: unknown;
@@ -76,9 +104,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { matchedExistingPayment } = await withClient(async (client) => {
+    const { matchedExistingPayment } = await withMerchantClient(merchant.id, async (client) => {
       await ensureSchema(client);
-      return recordSettlement(client, parsed.report);
+      return recordSettlement(client, merchant.id, parsed.report);
     });
 
     return NextResponse.json({

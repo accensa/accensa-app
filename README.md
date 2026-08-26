@@ -163,6 +163,22 @@ transfers the indexer has not reached yet are staged and completed on the next r
 
 [`apps/demo-merchant/`](apps/demo-merchant) is a working example.
 
+### Tenancy model
+
+One deployment now supports **multiple merchants**. Each merchant is a row in the
+`merchants` table (`address`, and optionally a settlement-reporting `public_key_hex`,
+`asset_contract_ids`, `refund_vault_id`, and `webhook_url` that override the
+deployment-wide env vars). `payments` and the indexer's ledger cursor
+(`sync_state`) are scoped by `merchant_id`, enforced both by application-level query
+scoping and by Postgres row-level security as a second line of defence — see
+[DESIGN.md](DESIGN.md) for the full design.
+
+Upgrading an existing single-merchant deployment needs no action: the migration
+(`migrations/003_multi_merchant.sql`, applied automatically) backfills one `merchants`
+row from `MERCHANT_ADDRESS`/`MERCHANT_PUBLIC_KEY` and every existing payment onto it.
+Onboarding another merchant means inserting one more row into `merchants`, not
+standing up another deployment.
+
 ### Contract addresses
 
 Testnet IDs are published in

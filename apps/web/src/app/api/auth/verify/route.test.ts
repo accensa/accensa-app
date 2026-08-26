@@ -4,17 +4,23 @@ import { POST } from './route';
 
 const MERCHANT_KEYPAIR = Keypair.random();
 const MERCHANT_ADDRESS = MERCHANT_KEYPAIR.publicKey();
+const MERCHANT_ID = 7;
 
-const { mockConsumeNonce, mockCreateSession, mockWithClient, mockEnsureSchema } = vi.hoisted(
-  () => ({
-    mockConsumeNonce: vi.fn(),
-    mockCreateSession: vi.fn().mockResolvedValue(undefined),
-    mockWithClient: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => {
-      return fn({});
-    }),
-    mockEnsureSchema: vi.fn().mockResolvedValue(undefined),
+const {
+  mockConsumeNonce,
+  mockCreateSession,
+  mockWithClient,
+  mockEnsureSchema,
+  mockGetMerchantByAddress,
+} = vi.hoisted(() => ({
+  mockConsumeNonce: vi.fn(),
+  mockCreateSession: vi.fn().mockResolvedValue(undefined),
+  mockWithClient: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => {
+    return fn({});
   }),
-);
+  mockEnsureSchema: vi.fn().mockResolvedValue(undefined),
+  mockGetMerchantByAddress: vi.fn(),
+}));
 
 vi.mock('@/lib/auth', () => ({
   createSession: mockCreateSession,
@@ -24,6 +30,10 @@ vi.mock('@/lib/db', () => ({
   withClient: mockWithClient,
   ensureSchema: mockEnsureSchema,
   consumeNonce: mockConsumeNonce,
+}));
+
+vi.mock('@/lib/merchants', () => ({
+  getMerchantByAddress: mockGetMerchantByAddress,
 }));
 
 function buildChallenge(nonce: string, passphrase = Networks.TESTNET) {
@@ -63,9 +73,11 @@ function buildMultiOpTransaction(nonce: string, passphrase = Networks.TESTNET) {
 describe('/api/auth/verify POST', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.MERCHANT_ADDRESS = MERCHANT_ADDRESS;
     process.env.STELLAR_NETWORK_PASSPHRASE = Networks.TESTNET;
     mockConsumeNonce.mockResolvedValue(true);
+    mockGetMerchantByAddress.mockImplementation(async (_client: unknown, address: string) =>
+      address === MERCHANT_ADDRESS ? { id: MERCHANT_ID, address: MERCHANT_ADDRESS } : null,
+    );
   });
 
   const makeRequest = (body: unknown) =>
@@ -85,7 +97,7 @@ describe('/api/auth/verify POST', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.success).toBe(true);
-    expect(mockConsumeNonce).toHaveBeenCalledWith(expect.anything(), nonce);
+    expect(mockConsumeNonce).toHaveBeenCalledWith(expect.anything(), nonce, MERCHANT_ID);
     expect(mockCreateSession).toHaveBeenCalledWith(MERCHANT_ADDRESS);
   });
 
@@ -165,12 +177,24 @@ describe('/api/auth/verify POST', () => {
     expect(data.error).toBe('Challenge expired or invalid');
   });
 
-  test('returns 500 when MERCHANT_ADDRESS is not configured', async () => {
-    delete process.env.MERCHANT_ADDRESS;
-    const res = await POST(makeRequest({ xdr: 'anything' }));
-    expect(res.status).toBe(500);
+  test('rejects a source account with no matching merchant', async () => {
+    const unknownKeypair = Keypair.random();
+    const nonce = 'g'.repeat(64);
+    const now = Math.floor(Date.now() / 1000);
+    const tx = new TransactionBuilder(new Account(unknownKeypair.publicKey(), '0'), {
+      fee: '100',
+      networkPassphrase: Networks.TESTNET,
+      timebounds: { minTime: now - 60, maxTime: now + 300 },
+    })
+      .addOperation(Operation.manageData({ name: 'Accensa Auth', value: nonce }))
+      .build();
+    tx.sign(unknownKeypair);
+
+    const res = await POST(makeRequest({ xdr: tx.toXDR() }));
+
+    expect(res.status).toBe(401);
     const data = await res.json();
-    expect(data.error).toBe('MERCHANT_ADDRESS not configured');
+    expect(data.error).toBe('Invalid source account');
   });
 
   test('returns 400 when xdr is missing', async () => {

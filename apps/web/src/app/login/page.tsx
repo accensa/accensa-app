@@ -27,8 +27,9 @@ export default function LoginPage() {
         }
       }
 
-      // Fetch challenge
-      const res = await fetch('/api/auth/challenge');
+      // Fetch challenge, naming which merchant is logging in — the challenge
+      // transaction's source account has to be chosen before it can be built.
+      const res = await fetch(`/api/auth/challenge?address=${encodeURIComponent(status.address)}`);
       if (!res.ok) {
         const { error } = await res.json();
         throw new Error(error || 'Failed to fetch auth challenge');

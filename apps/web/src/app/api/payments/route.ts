@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { withClient, ensureSchema, getSyncState } from '@/lib/db';
+import { withClient, withMerchantClient, ensureSchema, getSyncState } from '@/lib/db';
+import { getMerchantFromRequest } from '@/lib/merchants';
 import { isHash32 } from '@/lib/receipt-anchor';
 import type { SyncState } from '@/lib/sync-status';
 
@@ -63,13 +64,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { rows, sync } = await withClient(async (client) => {
+    const merchant = await withClient((client) => getMerchantFromRequest(client, request));
+    if (!merchant) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { rows, sync } = await withMerchantClient(merchant.id, async (client) => {
       await ensureSchema(client);
 
-      let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method FROM payments WHERE ts IS NOT NULL`;
-      const params: (string | number)[] = [];
+      let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
+      const params: (string | number)[] = [merchant.id];
       if (parsedCursor) {
-        query += ` AND (ts < $1 OR (ts = $1 AND tx_hash < $2))`;
+        query += ` AND (ts < $${params.length + 1} OR (ts = $${params.length + 1} AND tx_hash < $${params.length + 2}))`;
         params.push(parsedCursor.ts, parsedCursor.txHash);
       }
 
@@ -77,7 +83,7 @@ export async function GET(request: Request) {
       params.push(limit);
 
       const result = await client.query(query, params);
-      return { rows: result.rows, sync: await getSyncState(client) };
+      return { rows: result.rows, sync: await getSyncState(client, merchant.id) };
     });
 
     const next_cursor =

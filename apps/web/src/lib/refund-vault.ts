@@ -131,20 +131,29 @@ function server() {
   return new rpc.Server(RPC_URL, { allowHttp: RPC_URL.startsWith('http://') });
 }
 
-function build(source: string, method: string, args: xdr.ScVal[]) {
+function build(
+  source: string,
+  method: string,
+  args: xdr.ScVal[],
+  vaultId: string = REFUND_VAULT_ID,
+) {
   return new TransactionBuilder(new Account(source, '0'), {
     fee: '100',
     networkPassphrase: NETWORK_PASSPHRASE,
   })
-    .addOperation(new Contract(REFUND_VAULT_ID).call(method, ...args))
+    .addOperation(new Contract(vaultId).call(method, ...args))
     .setTimeout(30)
     .build();
 }
 
 /** Reads an existing refund record, or null when the payment was never refunded. */
-export async function getRefund(txHash: string, source: string): Promise<RefundRecord | null> {
+export async function getRefund(
+  txHash: string,
+  source: string,
+  vaultId: string = REFUND_VAULT_ID,
+): Promise<RefundRecord | null> {
   const sim = await server().simulateTransaction(
-    build(source, 'get_refund', [hexToBytes32(txHash)]),
+    build(source, 'get_refund', [hexToBytes32(txHash)], vaultId),
   );
 
   if (rpc.Api.isSimulationError(sim)) throw new Error(sim.error);
@@ -174,15 +183,21 @@ export async function preflightRefund(input: {
   amount: string;
   paidAtLedger: number;
   merchant: string;
+  vaultId?: string;
 }): Promise<RefundPreflight> {
   let tx;
   try {
-    tx = build(input.merchant, 'refund', [
-      hexToBytes32(input.txHash),
-      new Address(input.recipient).toScVal(),
-      nativeToScVal(BigInt(input.amount), { type: 'i128' }),
-      nativeToScVal(input.paidAtLedger, { type: 'u32' }),
-    ]);
+    tx = build(
+      input.merchant,
+      'refund',
+      [
+        hexToBytes32(input.txHash),
+        new Address(input.recipient).toScVal(),
+        nativeToScVal(BigInt(input.amount), { type: 'i128' }),
+        nativeToScVal(input.paidAtLedger, { type: 'u32' }),
+      ],
+      input.vaultId ?? REFUND_VAULT_ID,
+    );
   } catch (error) {
     return { status: 'unknown', message: error instanceof Error ? error.message : 'Invalid input' };
   }

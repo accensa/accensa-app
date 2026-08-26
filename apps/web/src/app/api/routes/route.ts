@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { withClient, ensureSchema } from '@/lib/db';
+import { withClient, withMerchantClient, ensureSchema } from '@/lib/db';
+import { getMerchantFromRequest } from '@/lib/merchants';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,14 +31,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const rows = await withClient(async (client) => {
+    const merchant = await withClient((client) => getMerchantFromRequest(client, request));
+    if (!merchant) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const rows = await withMerchantClient(merchant.id, async (client) => {
       await ensureSchema(client);
       let query = `
  SELECT COALESCE(route, '(unattributed)') as route, method, SUM(amount) as total_revenue, COUNT(*) as calls
  FROM payments
- WHERE ts IS NOT NULL
+ WHERE merchant_id = $1 AND ts IS NOT NULL
  `;
-      const params: (string | number)[] = [];
+      const params: (string | number)[] = [merchant.id];
 
       // Apply a default time window when no explicit from/to is given so
       // the aggregate does not scan the entire table on every dashboard load.

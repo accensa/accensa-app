@@ -1,19 +1,33 @@
 import { expect, test, vi, describe, beforeEach } from 'vitest';
 import { GET } from './route';
 
+const MERCHANT = { id: 1, address: 'GABC' };
 const mockQuery = vi.fn();
 
+const { mockWithClient, mockWithMerchantClient, mockGetMerchantFromRequest } = vi.hoisted(() => ({
+  mockWithClient: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => fn({})),
+  mockWithMerchantClient: vi.fn(
+    async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) =>
+      fn({ query: mockQuery }),
+  ),
+  mockGetMerchantFromRequest: vi.fn(),
+}));
+
 vi.mock('@/lib/db', () => ({
-  withClient: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => {
-    return fn({ query: mockQuery });
-  }),
+  withClient: mockWithClient,
+  withMerchantClient: mockWithMerchantClient,
   ensureSchema: vi.fn(),
+}));
+
+vi.mock('@/lib/merchants', () => ({
+  getMerchantFromRequest: mockGetMerchantFromRequest,
 }));
 
 describe('/api/routes GET', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.DATABASE_URL = 'postgres://dummy';
+    mockGetMerchantFromRequest.mockResolvedValue(MERCHANT);
   });
 
   const mockRequest = (url: string) => new Request(url);
@@ -90,7 +104,7 @@ describe('/api/routes GET', () => {
     expect(data.routes).toHaveLength(5);
   });
 
-  test('applies default 30-day window when no from/to given', async () => {
+  test('scopes the aggregate query to the resolved merchant', async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 
     await GET(mockRequest('http://localhost/api/routes'));
@@ -98,9 +112,10 @@ describe('/api/routes GET', () => {
     const query = callArgs[0] as string;
     const params = callArgs[1] as (string | number)[];
 
-    expect(query).toContain('ts >= $1');
-    expect(params).toHaveLength(2); // from + limit
-    expect(typeof params[0]).toBe('string');
+    expect(query).toContain('merchant_id = $1');
+    expect(query).toContain('ts >= $2');
+    expect(params).toHaveLength(3); // merchant_id + from + limit
+    expect(params[0]).toBe(MERCHANT.id);
   });
 
   test('respects custom from/to parameters', async () => {
@@ -111,10 +126,10 @@ describe('/api/routes GET', () => {
     const query = callArgs[0] as string;
     const params = callArgs[1] as (string | number)[];
 
-    expect(query).toContain('ts >= $1');
-    expect(query).toContain('ts <= $2');
-    expect(params[0]).toBe('2026-01-01');
-    expect(params[1]).toBe('2026-06-01');
+    expect(query).toContain('ts >= $2');
+    expect(query).toContain('ts <= $3');
+    expect(params[1]).toBe('2026-01-01');
+    expect(params[2]).toBe('2026-06-01');
   });
 
   test('does not include default_window_days when from is provided', async () => {
@@ -131,5 +146,11 @@ describe('/api/routes GET', () => {
     expect(res.status).toBe(500);
     const data = await res.json();
     expect(data.error).toBe('DATABASE_URL is not configured');
+  });
+
+  test('returns 401 when the request carries no resolvable merchant', async () => {
+    mockGetMerchantFromRequest.mockResolvedValue(null);
+    const res = await GET(mockRequest('http://localhost/api/routes'));
+    expect(res.status).toBe(401);
   });
 });
