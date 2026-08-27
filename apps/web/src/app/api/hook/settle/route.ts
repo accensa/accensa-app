@@ -30,8 +30,6 @@ async function verifyingMerchant(
     return null;
   }
 
-
-  
   for (const merchant of merchants) {
     if (!merchant.publicKeyHex) continue;
     const publicKeys = merchant.publicKeyHex
