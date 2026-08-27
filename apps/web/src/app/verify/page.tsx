@@ -15,22 +15,22 @@ const SAMPLE = {
 const FORGED_LEAF = '16b138aabc889c21114436424e13132bd8928d2c21b4ac5a9ac5198104efb42c';
 
 /** Strip optional 0x prefix and surrounding whitespace, returning lowercase hex. */
-function normalizeHex(input: string): string {
+export function normalizeHex(input: string): string {
   return input.trim().replace(/^0x/i, '').toLowerCase();
 }
 
 /** A hex-encoded 32-byte hash is exactly 64 hex characters. */
-function isHex64(value: string): boolean {
+export function isHex64(value: string): boolean {
   return /^[0-9a-f]{64}$/.test(normalizeHex(value));
 }
 
-interface FieldErrors {
+export interface FieldErrors {
   batchId?: string;
   leaf?: string;
   proof?: string;
 }
 
-function validate(batchId: string, leaf: string, proof: string): FieldErrors {
+export function validate(batchId: string, leaf: string, proof: string): FieldErrors {
   const errors: FieldErrors = {};
 
   if (!batchId.trim()) {
@@ -329,7 +329,9 @@ function CheckCard({
           <p className="text-slate-900 dark:text-white font-bold text-lg transition-colors duration-300">
             {title}
           </p>
-          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 transition-colors duration-300">{source}</p>
+          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 transition-colors duration-300">
+            {source}
+          </p>
         </div>
         <div
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest border transition-colors duration-300 ${result.ok ? 'bg-emerald-50 dark:bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' : 'bg-red-50 dark:bg-red-500/5 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20'}`}

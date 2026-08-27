@@ -108,8 +108,10 @@ async function signSettlementPayload(payload: string, privateKeyHex: string): Pr
   if (subtle) {
     try {
       const key = await subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
-      const signatureBytes = new Uint8Array(signature);
-      return Array.from(signatureBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      const signature = await subtle.sign({ name: 'Ed25519' }, key, data);
+      return Array.from(new Uint8Array(signature), (byte) =>
+        byte.toString(16).padStart(2, '0'),
+      ).join('');
     } catch {
       // Ed25519 is not available in every WebCrypto implementation; try Node below.
     }

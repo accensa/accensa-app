@@ -23,6 +23,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "gen:vectors": "node scripts/generate-vectors.mjs"
   },
