@@ -158,10 +158,10 @@ async function ensureMultiMerchantSchema(client: Client): Promise<void> {
   `);
 
   await client.query(`
-    DO $$ 
+    DO $$
     BEGIN
       IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
+        SELECT 1 FROM information_schema.columns
         WHERE table_name='merchants' AND column_name='public_key_hex' AND data_type='character varying'
       ) THEN
         ALTER TABLE merchants ALTER COLUMN public_key_hex TYPE TEXT;
