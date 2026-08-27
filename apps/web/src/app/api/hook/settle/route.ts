@@ -34,8 +34,11 @@ async function verifyingMerchant(
   
   for (const merchant of merchants) {
     if (!merchant.publicKeyHex) continue;
-    const publicKeys = merchant.publicKeyHex.split(',').map(k => k.trim()).filter(Boolean);
-    
+    const publicKeys = merchant.publicKeyHex
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
+
     for (const pubKeyHex of publicKeys) {
       try {
         const keyBuffer = Buffer.from(pubKeyHex, 'hex');
@@ -49,9 +52,14 @@ async function verifyingMerchant(
         });
         if (crypto.verify(null, Buffer.from(raw, 'utf8'), publicKey, signature)) {
           if (keyId) {
-            console.log(`[accensa] settlement reported with key id: ${keyId}`);
+            console.info(`[accensa] settlement reported with key id: ${keyId}`);
           } else if (publicKeys.length > 1) {
-            console.log(`[accensa] settlement reported with key: ${pubKeyHex.substring(0, 8)}... (key rotation in progress)`);
+            console.info(
+              `[accensa] settlement reported with key: ${pubKeyHex.substring(
+                0,
+                8,
+              )}... (key rotation in progress)`,
+            );
           }
           return merchant;
         }
