@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { withClient, withMerchantClient, ensureSchema, getSyncState } from '@/lib/db';
 import { getMerchantFromRequest } from '@/lib/merchants';
-import { isHash32 } from '@/lib/receipt-anchor';
+import { getMaxBatchSize, isHash32 } from '@/lib/receipt-anchor';
 import type { SyncState } from '@/lib/sync-status';
 
 export const dynamic = 'force-dynamic';
