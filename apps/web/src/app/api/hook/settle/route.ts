@@ -52,12 +52,9 @@ async function verifyingMerchant(
           if (keyId) {
             console.info(`[accensa] settlement reported with key id: ${keyId}`);
           } else if (publicKeys.length > 1) {
-            console.info(
-              `[accensa] settlement reported with key: ${pubKeyHex.substring(
-                0,
-                8,
-              )}... (key rotation in progress)`,
-            );
+            const prefix = pubKeyHex.substring(0, 8);
+            const msg = `[accensa] settlement reported with key: ${prefix}... (key rotation)`;
+            console.info(msg);
           }
           return merchant;
         }

@@ -153,9 +153,8 @@ describe('reportSettlement', () => {
     const onError = vi.fn();
     const veryBadKeyHex = 'abc';
     const fetchImpl = vi.fn();
-    await expect(
-      reportSettlement(settlement, opts({ privateKeyHex: veryBadKeyHex, onError, fetchImpl })),
-    ).resolves.toBe(false);
+    const options = opts({ privateKeyHex: veryBadKeyHex, onError, fetchImpl });
+    await expect(reportSettlement(settlement, options)).resolves.toBe(false);
 
     expect(onError).toHaveBeenCalledOnce();
     const errorStr = String(onError.mock.calls[0][0]);
@@ -163,9 +162,8 @@ describe('reportSettlement', () => {
     
     // Also test fallback console.error
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(
-      reportSettlement(settlement, opts({ privateKeyHex: 'def', onError: undefined })),
-    ).resolves.toBe(false);
+    const optionsFallback = opts({ privateKeyHex: 'def', onError: undefined });
+    await expect(reportSettlement(settlement, optionsFallback)).resolves.toBe(false);
     expect(String(consoleSpy.mock.calls[0][0])).not.toContain('def');
     expect(String(consoleSpy.mock.calls[0][2])).not.toContain('def');
   });
