@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { PaymentsTable } from './page';
+import { PaymentsTable, TableSkeleton } from './page';
 import { RouteTable } from './routes/page';
 
 describe('Dashboard tables accessibility', () => {
@@ -89,6 +89,21 @@ describe('Dashboard tables accessibility', () => {
 
     // Preserves sr-only share percentage and aria-hidden visual bar
     expect(html).toContain('<span class="sr-only">100%</span>');
+    expect(html).toContain('aria-hidden="true"');
+  });
+
+  it('renders TableSkeleton with matching mobile and desktop responsive layouts with aria-hidden', () => {
+    const html = renderToString(<TableSkeleton />);
+
+    // Mobile layout skeleton
+    expect(html).toContain('class="md:hidden divide-y');
+    // Desktop layout table skeleton
+    expect(html).toContain('class="hidden md:block');
+    expect(html).toContain('<th scope="col" class="px-8 py-5">Transaction</th>');
+    expect(html).toContain('<th scope="col" class="px-8 py-5">Amount</th>');
+    expect(html).toContain('<th scope="col" class="px-8 py-5">Payer</th>');
+    expect(html).toContain('<th scope="col" class="px-8 py-5">Route</th>');
+    expect(html).toContain('<th scope="col" class="px-8 py-5">Time</th>');
     expect(html).toContain('aria-hidden="true"');
   });
 });

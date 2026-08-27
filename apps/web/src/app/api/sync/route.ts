@@ -11,11 +11,8 @@ import { eventsToPaymentRows, insertPaymentsInTransaction } from '@/lib/insert-p
 import { listMerchants, getMerchantFromRequest, type Merchant } from '@/lib/merchants';
 import { sweepLedgerRange, EVENTS_PAGE_LIMIT, type EventPage } from '@/lib/event-pager';
 import { cooldownRemaining } from '@/lib/sync-status';
-<<<<<<< HEAD
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
-=======
 import { createHmac } from 'node:crypto';
->>>>>>> origin/main
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;

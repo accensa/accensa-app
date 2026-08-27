@@ -30,7 +30,7 @@ interface FieldErrors {
   proof?: string;
 }
 
-function validate(batchId: string, leaf: string, proof: string): FieldErrors {
+export function validate(batchId: string, leaf: string, proof: string): FieldErrors {
   const errors: FieldErrors = {};
 
   if (!batchId.trim()) {
@@ -329,7 +329,9 @@ function CheckCard({
           <p className="text-slate-900 dark:text-white font-bold text-lg transition-colors duration-300">
             {title}
           </p>
-          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 transition-colors duration-300">{source}</p>
+          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 transition-colors duration-300">
+            {source}
+          </p>
         </div>
         <div
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest border transition-colors duration-300 ${result.ok ? 'bg-emerald-50 dark:bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' : 'bg-red-50 dark:bg-red-500/5 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20'}`}
