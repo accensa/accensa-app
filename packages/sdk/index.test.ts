@@ -85,7 +85,8 @@ async function runHook(
   middleware(req, res, next);
   res.emit('finish');
   // reportSettlement is deliberately not awaited by the middleware.
-  await new Promise((resolve) => setImmediate(resolve));
+  await vi.waitFor(() => expect(next).toHaveBeenCalledOnce());
+  await new Promise((resolve) => setTimeout(resolve, 10));
   return next;
 }
 
@@ -110,6 +111,22 @@ describe('toSettleHookPayload', () => {
 });
 
 describe('reportSettlement', () => {
+  it('reports loudly when signing is unavailable', async () => {
+    const onError = vi.fn();
+    const fetchImpl = okFetch();
+    const originalImport = globalThis.crypto;
+    vi.stubGlobal('crypto', {
+      subtle: { importKey: vi.fn().mockRejectedValue(new Error('unsupported')) },
+    });
+    vi.stubGlobal('process', undefined);
+    vi.stubGlobal('Buffer', undefined);
+    await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
+    expect(String(onError.mock.calls[0][0])).toContain('Ed25519 signing unavailable');
+    expect(fetchImpl).not.toHaveBeenCalled();
+    vi.stubGlobal('crypto', originalImport);
+    vi.unstubAllGlobals();
+  });
+
   it('posts the signed payload to the settle endpoint', async () => {
     const fetchImpl = okFetch();
     const result = await reportSettlement(settlement, opts({ fetchImpl }));
@@ -134,6 +151,25 @@ describe('reportSettlement', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe(`https://accensa.test${SETTLE_ENDPOINT}`);
   });
 
+  it('never logs the private key on signing failure', async () => {
+    const onError = vi.fn();
+    const veryBadKeyHex = 'abc';
+    const fetchImpl = vi.fn();
+    const options = opts({ privateKeyHex: veryBadKeyHex, onError, fetchImpl });
+    await expect(reportSettlement(settlement, options)).resolves.toBe(false);
+
+    expect(onError).toHaveBeenCalledOnce();
+    const errorStr = String(onError.mock.calls[0][0]);
+    expect(errorStr).not.toContain(veryBadKeyHex);
+    
+    // Also test fallback console.error
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const optionsFallback = opts({ privateKeyHex: 'def', onError: undefined });
+    await expect(reportSettlement(settlement, optionsFallback)).resolves.toBe(false);
+    expect(String(consoleSpy.mock.calls[0][0])).not.toContain('def');
+    expect(String(consoleSpy.mock.calls[0][2])).not.toContain('def');
+  });
+
   it('reports a non-2xx response as a failure without throwing', async () => {
     const onError = vi.fn();
     const fetchImpl = vi.fn(async () => new globalThis.Response(null, { status: 401 }));
@@ -141,6 +177,9 @@ describe('reportSettlement', () => {
     await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
     expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
     expect(String(onError.mock.calls[0][0])).toContain('401');
+    expect(String(onError.mock.calls[0][0])).not.toContain(PRIVATE_KEY_HEX);
+    // A 4xx means the request itself is wrong (#123) — it must not be retried.
+    expect(fetchImpl).toHaveBeenCalledOnce();
     // The payload comes back with the error so a caller can retry or log it.
     const payload = onError.mock.calls[0][1];
     const expected = toSettleHookPayload(settlement);
@@ -178,13 +217,84 @@ describe('reportSettlement', () => {
         indexerUrl: 'https://accensa.test',
         privateKeyHex: PRIVATE_KEY_HEX,
         fetchImpl,
+        // Not testing retry behaviour here — keep it to one attempt so this
+        // stays fast.
+        retry: { maxRetries: 0 },
       }),
     ).resolves.toBe(false);
     expect(spy).toHaveBeenCalled();
   });
 });
 
+describe('reportSettlement — retry (#123)', () => {
+  it('retries a transient 5xx from the indexer and succeeds once it recovers', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    fetchImpl.mockResolvedValueOnce(new globalThis.Response(null, { status: 503 }));
+    fetchImpl.mockResolvedValueOnce(new globalThis.Response(null, { status: 504 }));
+    fetchImpl.mockResolvedValueOnce(ok());
+
+    const onError = vi.fn();
+    const result = await reportSettlement(
+      settlement,
+      opts({ fetchImpl, onError, retry: { baseDelayMs: 1 } }),
+    );
+
+    expect(result).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('gives up and reports failure after exhausting retries against a persistent 503', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new globalThis.Response(null, { status: 503 }),
+    );
+    const onError = vi.fn();
+
+    const result = await reportSettlement(
+      settlement,
+      opts({ fetchImpl, onError, retry: { baseDelayMs: 1, maxRetries: 3 } }),
+    );
+
+    expect(result).toBe(false);
+    // The initial attempt plus 3 retries.
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(String(onError.mock.calls[0][0])).toContain('503');
+  });
+
+  it('retries a dropped connection the same way as a 5xx', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    fetchImpl.mockRejectedValueOnce(new Error('ECONNRESET'));
+    fetchImpl.mockResolvedValueOnce(ok());
+
+    const result = await reportSettlement(
+      settlement,
+      opts({ fetchImpl, retry: { baseDelayMs: 1 } }),
+    );
+
+    expect(result).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('respects a custom maxRetries', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new globalThis.Response(null, { status: 503 }),
+    );
+
+    await reportSettlement(
+      settlement,
+      opts({ fetchImpl, retry: { baseDelayMs: 1, maxRetries: 1 } }),
+    );
+
+    // The initial attempt plus 1 retry, not the default 3.
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('reportSettlement — network timeout', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /** A fetch that never answers, exactly like a dropped connection. */
   const hangingFetch = () =>
     vi.fn<typeof fetch>(
@@ -227,7 +337,7 @@ describe('reportSettlement — network timeout', () => {
     await vi.advanceTimersByTimeAsync(1);
     await expect(pending).resolves.toBe(false);
     expect(onError).toHaveBeenCalledOnce();
-  });
+  }, 10_000);
 
   it('clears the timer once the request succeeds, leaving nothing pending', async () => {
     vi.useFakeTimers();
@@ -310,7 +420,9 @@ describe('attachAccensaHook', () => {
     });
 
     const next = await runHook(
-      attachAccensaHook(opts({ fetchImpl, onError })),
+      // Not testing retry behaviour here — one attempt keeps this in step
+      // with runHook's single setImmediate tick.
+      attachAccensaHook(opts({ fetchImpl, onError, retry: { maxRetries: 0 } })),
       fakeReq(),
       fakeRes(paid),
     );

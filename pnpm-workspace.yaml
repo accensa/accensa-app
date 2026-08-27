@@ -5,7 +5,7 @@ allowBuilds:
   '@swc/core': true
   core-js: true
   esbuild: true
-  sharp: false
+  sharp: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - esbuild@0.24.3
