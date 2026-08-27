@@ -19,8 +19,9 @@
     "./errors": "./src/errors.ts",
     "./merkle": "./merkle.ts",
     "./types": "./src/types/index.ts"
+    "./receipt-anchor-client": "./receipt-anchor-client.ts",
     "./merkle": "./merkle.ts",
-    "./types": "./src/types/index.ts"
+    "./types": "./src/types/index.ts",
     "./webhooks": "./webhooks.ts",
     "./retry": "./retry.ts"
   },
@@ -30,6 +31,9 @@
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "gen:vectors": "node scripts/generate-vectors.mjs"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^16.0.1"
   },
   "peerDependencies": {
     "express": ">=4"
