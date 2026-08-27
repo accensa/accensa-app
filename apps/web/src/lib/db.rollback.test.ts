@@ -42,7 +42,9 @@ describe('rollbackSyncToLedger', () => {
     // The cursor write must NOT carry setLastSyncedLedger's forward-only
     // guard: rewinding is the point of a rollback.
     const upsert = queries.find((q) => /^INSERT INTO sync_state/m.test(q))!;
-    expect(upsert).toContain('ON CONFLICT (merchant_id) DO UPDATE SET last_ledger = EXCLUDED.last_ledger');
+    expect(upsert).toContain(
+      'ON CONFLICT (merchant_id) DO UPDATE SET last_ledger = EXCLUDED.last_ledger',
+    );
     expect(upsert).not.toContain('WHERE sync_state.last_ledger < EXCLUDED.last_ledger');
 
     expect(queries[queries.length - 1]).toBe('COMMIT');

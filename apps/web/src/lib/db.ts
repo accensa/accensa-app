@@ -433,10 +433,10 @@ export async function rollbackSyncToLedger(
   await client.query('BEGIN');
   try {
     await client.query('SELECT pg_advisory_xact_lock($1)', [merchantId]);
-    const res = await client.query(
-      `DELETE FROM payments WHERE merchant_id = $1 AND ledger > $2`,
-      [merchantId, ledger],
-    );
+    const res = await client.query(`DELETE FROM payments WHERE merchant_id = $1 AND ledger > $2`, [
+      merchantId,
+      ledger,
+    ]);
     await client.query(
       `INSERT INTO sync_state (merchant_id, last_ledger, updated_at) VALUES ($1, $2, now())
        ON CONFLICT (merchant_id) DO UPDATE SET last_ledger = EXCLUDED.last_ledger, updated_at = now()`,
