@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { nativeToScVal, rpc, xdr } from '@stellar/stellar-sdk';
 import {
-  AccensaClient,
+  ReceiptAnchorClient,
   DEFAULT_CONTRACT_ID,
   DEFAULT_NETWORK_PASSPHRASE,
   DEFAULT_RPC_URL,
   type RpcServerLike,
-} from './client';
+} from './receipt-anchor-client';
 
 const LEAF = 'a'.repeat(64);
 const PROOF = ['b'.repeat(64)];
@@ -34,16 +34,16 @@ function erroringServer(error: string): RpcServerLike {
   };
 }
 
-describe('AccensaClient — defaults', () => {
+describe('ReceiptAnchorClient — defaults', () => {
   it('uses the Accensa-operated contract, RPC, and network by default', () => {
-    const client = new AccensaClient();
+    const client = new ReceiptAnchorClient();
     expect(client.contractId).toBe(DEFAULT_CONTRACT_ID);
     expect(client.rpcUrl).toBe(DEFAULT_RPC_URL);
     expect(client.networkPassphrase).toBe(DEFAULT_NETWORK_PASSPHRASE);
   });
 
   it('overrides the contract, RPC, and network independently', () => {
-    const client = new AccensaClient({
+    const client = new ReceiptAnchorClient({
       contractId: 'CCUSTOM',
       rpcUrl: 'https://rpc.example.org',
       networkPassphrase: 'Custom Network ; Sept 2026',
@@ -54,17 +54,17 @@ describe('AccensaClient — defaults', () => {
   });
 });
 
-describe('AccensaClient#verifyReceiptOnChain', () => {
+describe('ReceiptAnchorClient#verifyReceiptOnChain', () => {
   it('returns true when the contract reports the receipt verifies', async () => {
     const server = fakeServer(nativeToScVal(true));
-    const client = new AccensaClient({ rpcServerFactory: () => server });
+    const client = new ReceiptAnchorClient({ rpcServerFactory: () => server });
 
     await expect(client.verifyReceiptOnChain(1, LEAF, PROOF)).resolves.toBe(true);
   });
 
   it('returns false when the contract reports the receipt does not verify', async () => {
     const server = fakeServer(nativeToScVal(false));
-    const client = new AccensaClient({ rpcServerFactory: () => server });
+    const client = new ReceiptAnchorClient({ rpcServerFactory: () => server });
 
     await expect(client.verifyReceiptOnChain(1, LEAF, PROOF)).resolves.toBe(false);
   });
@@ -73,7 +73,7 @@ describe('AccensaClient#verifyReceiptOnChain', () => {
     const CUSTOM_CONTRACT_ID = 'CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR';
     const server = fakeServer(nativeToScVal(true));
     const factory = vi.fn(() => server);
-    const client = new AccensaClient({
+    const client = new ReceiptAnchorClient({
       contractId: CUSTOM_CONTRACT_ID,
       rpcServerFactory: factory,
     });
@@ -92,13 +92,13 @@ describe('AccensaClient#verifyReceiptOnChain', () => {
 
   it('throws when the RPC simulation errors', async () => {
     const server = erroringServer('contract not found');
-    const client = new AccensaClient({ rpcServerFactory: () => server });
+    const client = new ReceiptAnchorClient({ rpcServerFactory: () => server });
 
     await expect(client.verifyReceiptOnChain(1, LEAF, PROOF)).rejects.toThrow('contract not found');
   });
 });
 
-describe('AccensaClient#getBatch', () => {
+describe('ReceiptAnchorClient#getBatch', () => {
   it('maps the contract result into a BatchRecord', async () => {
     const root = 'c'.repeat(64);
     const raw = nativeToScVal({
@@ -108,7 +108,7 @@ describe('AccensaClient#getBatch', () => {
       period_end: 200,
     });
     const server = fakeServer(raw);
-    const client = new AccensaClient({ rpcServerFactory: () => server });
+    const client = new ReceiptAnchorClient({ rpcServerFactory: () => server });
 
     await expect(client.getBatch(1)).resolves.toEqual({
       root,
@@ -120,7 +120,7 @@ describe('AccensaClient#getBatch', () => {
 
   it('throws when the batch does not exist', async () => {
     const server = erroringServer('batch not found');
-    const client = new AccensaClient({ rpcServerFactory: () => server });
+    const client = new ReceiptAnchorClient({ rpcServerFactory: () => server });
 
     await expect(client.getBatch(999)).rejects.toThrow('batch not found');
   });

@@ -117,6 +117,7 @@ Prefer the raw mappers when you hold a response body yourself
 `productFromWire`, and `productsFromResponse` parse an `unknown` JSON value
 into the strict types. The `Order` and `Product` types are also re-exported
 from the package root, and available directly from `@accensa/sdk/types`.
+
 ## Verifying Inbound Webhooks
 
 Merchants receiving webhooks from the Accensa indexer can verify that the
@@ -154,20 +155,27 @@ Two things to get right:
 merchant using `verifyWebhookSignature` accepts genuine Accensa webhooks and
 rejects forged or altered ones.
 
-## Verifying Receipts On-Chain with `AccensaClient`
+## Verifying Receipts On-Chain with `ReceiptAnchorClient`
 
 `verifyReceipt()` (above) checks a receipt off-chain, with no network call, by
-recomputing the Merkle root yourself. `AccensaClient` is the on-chain
+recomputing the Merkle root yourself. `ReceiptAnchorClient` is the on-chain
 alternative: it reads Accensa's `ReceiptAnchor` contract directly over Soroban
 RPC, so the answer comes from the ledger rather than from anything you
-computed locally. It lives at a separate entry point, `@accensa/sdk/client`,
-so importing it (and its `@stellar/stellar-sdk` dependency) is opt-in and
-doesn't add weight to the rest of the SDK.
+computed locally. It lives at a separate entry point,
+`@accensa/sdk/receipt-anchor-client`, so importing it (and its
+`@stellar/stellar-sdk` dependency) is opt-in and doesn't add weight to the
+rest of the SDK.
+
+> **Not to be confused with `AccensaClient`** (above, under "Reading Orders
+> and Products"): that client talks to Accensa's own indexer HTTP API to read
+> orders/products, and has no concept of a contract at all.
+> `ReceiptAnchorClient` talks to a Soroban contract directly over RPC — the
+> two are unrelated beyond sharing the same SDK.
 
 ```ts
-import { AccensaClient } from '@accensa/sdk/client';
+import { ReceiptAnchorClient } from '@accensa/sdk/receipt-anchor-client';
 
-const client = new AccensaClient();
+const client = new ReceiptAnchorClient();
 const verified = await client.verifyReceiptOnChain(
   1, // batchId
   'c476fc0553303ec4275bd4cb50ab7fa8182e343dbc4c721d7e2076fd77a5b56c', // leaf
@@ -180,8 +188,8 @@ const verified = await client.verifyReceiptOnChain(
 const batch = await client.getBatch(1); // { root, count, periodStart, periodEnd }
 ```
 
-With no arguments, `AccensaClient` reads the `ReceiptAnchor` instance Accensa
-operates on Stellar testnet
+With no arguments, `ReceiptAnchorClient` reads the `ReceiptAnchor` instance
+Accensa operates on Stellar testnet
 ([`CBHRJU7C…`](https://stellar.expert/explorer/testnet/contract/CBHRJU7CF4XIFRNDITFHNQHABKBMFM2FYFHLGWN3JGSFYYCDSMDAWPRV)).
 This is the right choice for verifying receipts issued by Accensa's own
 deployment, which covers most integrations.
@@ -194,10 +202,10 @@ doesn't operate on — override `contractId` (and, if it isn't testnet,
 `rpcUrl` and `networkPassphrase` to match):
 
 ```ts
-import { AccensaClient } from '@accensa/sdk/client';
+import { ReceiptAnchorClient } from '@accensa/sdk/receipt-anchor-client';
 import { Networks } from '@stellar/stellar-sdk';
 
-const client = new AccensaClient({
+const client = new ReceiptAnchorClient({
   // Your own ReceiptAnchor deployment.
   contractId: 'C...',
   // Must be an RPC endpoint for the same network the contract above is
@@ -212,14 +220,14 @@ const verified = await client.verifyReceiptOnChain(batchId, leaf, proof);
 
 **When to use which:**
 
-|                                                           | Default (`new AccensaClient()`)                                   | Custom `contractId`                           |
+|                                                           | Default (`new ReceiptAnchorClient()`)                             | Custom `contractId`                           |
 | --------------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------- |
 | Verifying receipts issued by Accensa's hosted deployment  | ✅                                                                | —                                             |
 | Verifying receipts from your own `ReceiptAnchor` instance | —                                                                 | ✅                                            |
 | RPC endpoint                                              | Accensa's testnet default (`https://soroban-testnet.stellar.org`) | Must point at **your** contract's own network |
 | Network passphrase                                        | Testnet default                                                   | Must match `rpcUrl`'s network                 |
 
-Every call `AccensaClient` makes is a read-only RPC simulation: nothing is
-signed, nothing is submitted, and no transaction fee is paid. That means
+Every call `ReceiptAnchorClient` makes is a read-only RPC simulation: nothing
+is signed, nothing is submitted, and no transaction fee is paid. That means
 verifying a receipt never requires a Stellar account, a wallet, or any trust
 in Accensa's servers - only a correctly paired `contractId` and `rpcUrl`.

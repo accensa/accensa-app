@@ -51,7 +51,7 @@ export interface RpcServerLike {
   simulateTransaction: InstanceType<typeof rpc.Server>['simulateTransaction'];
 }
 
-export interface AccensaClientOptions {
+export interface ReceiptAnchorClientOptions {
   /**
    * The `ReceiptAnchor` contract to read from.
    *
@@ -81,27 +81,27 @@ function hexToScValBytes(hex: string) {
  * instance, or a custom one a merchant has deployed themselves.
  *
  * ```ts
- * import { AccensaClient } from '@accensa/sdk/client';
+ * import { ReceiptAnchorClient } from '@accensa/sdk/receipt-anchor-client';
  *
  * // Default: reads Accensa's own ReceiptAnchor on testnet.
- * const client = new AccensaClient();
+ * const client = new ReceiptAnchorClient();
  *
  * // Custom: reads a merchant-deployed ReceiptAnchor instance instead.
- * const merchantClient = new AccensaClient({
+ * const merchantClient = new ReceiptAnchorClient({
  *   contractId: 'C...',
  *   rpcUrl: 'https://soroban-testnet.stellar.org',
  *   networkPassphrase: Networks.TESTNET,
  * });
  * ```
  */
-export class AccensaClient {
+export class ReceiptAnchorClient {
   readonly contractId: string;
   readonly rpcUrl: string;
   readonly networkPassphrase: string;
   private readonly simulationSource: string;
   private readonly server: RpcServerLike;
 
-  constructor(opts: AccensaClientOptions = {}) {
+  constructor(opts: ReceiptAnchorClientOptions = {}) {
     this.contractId = opts.contractId ?? DEFAULT_CONTRACT_ID;
     this.rpcUrl = opts.rpcUrl ?? DEFAULT_RPC_URL;
     this.networkPassphrase = opts.networkPassphrase ?? DEFAULT_NETWORK_PASSPHRASE;
