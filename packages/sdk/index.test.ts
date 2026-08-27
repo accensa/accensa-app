@@ -161,7 +161,7 @@ describe('reportSettlement', () => {
     expect(onError).toHaveBeenCalledOnce();
     const errorStr = String(onError.mock.calls[0][0]);
     expect(errorStr).not.toContain(veryBadKeyHex);
-    
+
     // Also test fallback console.error
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const optionsFallback = opts({ privateKeyHex: 'def', onError: undefined });

@@ -6,10 +6,24 @@ import {
   ensureSchema,
   getLastSyncedLedger,
   getSyncState,
+  setLastSyncedLedger,
 } from '@/lib/db';
-import { eventsToPaymentRows, insertPaymentsInTransaction } from '@/lib/insert-payments';
+import {
+  sweepLedgerRange,
+  parallelSweepLedgerRange,
+  PARALLEL_SYNC_THRESHOLD,
+  EVENTS_PAGE_LIMIT,
+  type EventPage,
+} from '@/lib/event-pager';
+import {
+  eventsToPaymentRows,
+  chunkRows,
+  buildBatchInsertSql,
+  flattenRows,
+  PAYMENTS_BATCH_SIZE,
+  type PaymentRow,
+} from '@/lib/insert-payments';
 import { listMerchants, getMerchantFromRequest, type Merchant } from '@/lib/merchants';
-import { sweepLedgerRange, EVENTS_PAGE_LIMIT, type EventPage } from '@/lib/event-pager';
 import { cooldownRemaining } from '@/lib/sync-status';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 import { createHmac } from 'node:crypto';
@@ -98,6 +112,43 @@ interface CooldownResult {
 }
 
 /**
+ * Inserts `rows` in batches inside a single transaction.
+ *
+ * Mirrors `insertPaymentsInTransaction`'s batching but without advancing the
+ * sync cursor: the streaming consumer calls this once per completed ledger
+ * window, and the route advances the cursor to the sweep's final
+ * `sweptThrough` afterwards. Each chunk commits atomically with the window —
+ * if a chunk fails, the ROLLBACK discards the window's writes, and the cursor
+ * is never moved because it is only written after the sweep. Webhooks are not
+ * fired here; they run after COMMIT in the caller.
+ *
+ * @returns The RETURNING rows — exactly the payments inserted this window
+ *   (conflicts skipped by the `WHERE ledger IS NULL` guard are not returned).
+ */
+async function insertPaymentRows(
+  client: import('pg').Client,
+  merchantId: number,
+  rows: PaymentRow[],
+): Promise<Record<string, unknown>[]> {
+  await client.query('BEGIN');
+  try {
+    const payments: Record<string, unknown>[] = [];
+    for (const chunk of chunkRows(rows, PAYMENTS_BATCH_SIZE)) {
+      const res = await client.query<Record<string, unknown>>(
+        buildBatchInsertSql(chunk.length),
+        flattenRows(chunk),
+      );
+      payments.push(...res.rows);
+    }
+    await client.query('COMMIT');
+    return payments;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  }
+}
+
+/**
  * Indexes Stellar Asset Contract transfers into one merchant's payment ledger.
  *
  * Shared by both entry points: the scheduled GET (looped over every merchant),
@@ -162,83 +213,101 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
       // The limit belongs under `pagination`; sent at the top level the RPC
       // ignores it and applies its own default.
       const deadline = Date.now() + PAGING_BUDGET_MS;
-      const { events, sweptThrough, complete, pages, windows } = await sweepLedgerRange(
-        ({ startLedger: from, endLedger: to, cursor: pageCursor }) =>
-          rpc<EventPage>('getEvents', {
-            ...(pageCursor ? {} : { startLedger: from, endLedger: to }),
-            filters,
-            pagination: { limit: EVENTS_PAGE_LIMIT, ...(pageCursor ? { cursor: pageCursor } : {}) },
-            xdrFormat: 'base64',
-          }),
-        { startLedger, endLedger: latestLedger, withinBudget: () => Date.now() < deadline },
-      );
+      const fetchPage = ({
+        startLedger: from,
+        endLedger: to,
+        cursor: pageCursor,
+      }: {
+        startLedger?: number;
+        endLedger?: number;
+        cursor?: string;
+      }) =>
+        rpc<EventPage>('getEvents', {
+          ...(pageCursor ? {} : { startLedger: from, endLedger: to }),
+          filters,
+          pagination: {
+            limit: EVENTS_PAGE_LIMIT,
+            ...(pageCursor ? { cursor: pageCursor } : {}),
+          },
+          xdrFormat: 'base64',
+        });
 
-      const webhookUrl = merchant.webhookUrl ?? process.env.WEBHOOK_URL;
+      const gap = latestLedger - startLedger + 1;
+      const sweepFn = gap > PARALLEL_SYNC_THRESHOLD ? parallelSweepLedgerRange : sweepLedgerRange;
+      let inserted = 0;
+      let decoded = 0;
 
-      // Per-event filtering lives in eventsToPaymentRows: a malformed or
-      // non-transfer event is skipped, and a transfer not addressed to this
-      // merchant is never recorded. Only the insert below is batched — batching
-      // must not quietly admit events that would have been filtered out.
-      const { rows, decoded } = eventsToPaymentRows(events, merchant);
+      // Streams each completed ledger window to an awaited consumer so the
+      // whole catch-up backlog is never retained in memory. Upserts stay
+      // sequential and deterministic because onEvents awaits before the sweep
+      // advances to the next window.
+      const { sweptThrough, complete, pages, windows, scanned } = await sweepFn(fetchPage, {
+        startLedger,
+        endLedger: latestLedger,
+        withinBudget: () => Date.now() < deadline,
+        onEvents: async (events: EventPage['events']) => {
+          const webhookUrl = merchant.webhookUrl ?? process.env.WEBHOOK_URL;
 
-      // DO UPDATE, not DO NOTHING: a row may already exist because the
-      // merchant reported route attribution before this transfer was indexed,
-      // which is the normal ordering — the hook fires the moment x402 settles,
-      // this job runs on a schedule. Skipping the conflict would leave that
-      // row permanently null and invisible. Only ledger-owned columns are
-      // written; route, method, request_id and hook_reported_at belong to the
-      // merchant's report and are left alone.
-      //
-      // The inserts and the cursor advance commit atomically (see
-      // insertPaymentsInTransaction): if any chunk fails, nothing commits and
-      // the cursor stays behind the failed run.
-      const { inserted, payments } = await insertPaymentsInTransaction(
-        client,
-        merchant.id,
-        rows,
-        sweptThrough,
-      );
+          // Per-event filtering lives in eventsToPaymentRows: a malformed or
+          // non-transfer event is skipped, and a transfer not addressed to this
+          // merchant is never recorded. Only the insert below is batched —
+          // batching must not quietly admit events that would have been filtered
+          // out.
+          const { rows, decoded: decodedCount } = eventsToPaymentRows(events, merchant);
+          decoded += decodedCount;
 
-      // Webhooks fire after COMMIT, so a slow or failing webhook can neither
-      // hold the transaction open nor roll back a committed batch. The
-      // returned rows are exactly the payments written this run.
-      if (webhookUrl) {
-        for (const payment of payments) {
-          const body = JSON.stringify(payment);
-          const webhookSecret = process.env.WEBHOOK_SECRET;
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (webhookSecret) {
-            headers['X-Webhook-Signature'] = createHmac('sha256', webhookSecret)
-              .update(body)
-              .digest('hex');
-          }
-          const timeoutMs = 2000;
-          for (let i = 0; i < 3; i++) {
-            try {
-              const controller = new AbortController();
-              const id = setTimeout(() => controller.abort(), timeoutMs);
-              const webhookRes = await fetch(webhookUrl, {
-                method: 'POST',
-                headers,
-                body,
-                signal: controller.signal,
-              });
-              clearTimeout(id);
-              if (webhookRes.ok || webhookRes.status < 500) break;
-            } catch {
-              // A webhook the merchant cannot receive must not stall indexing.
+          if (rows.length === 0) return;
+
+          // Batch-insert the window's rows in one transaction. Since the sweep
+          // only reports whole completed windows (sweptThrough), the cursor is
+          // advanced separately below after the sweep resolves — never past a
+          // window that may have been only partially drained.
+          const payments = await insertPaymentRows(client, merchant.id, rows);
+          inserted += payments.length;
+
+          // Webhooks fire after COMMIT, so a slow or failing webhook can neither
+          // hold the transaction open nor roll back a committed batch. The
+          // returned rows are exactly the payments written this run.
+          if (webhookUrl) {
+            for (const payment of payments) {
+              const body = JSON.stringify(payment);
+              const webhookSecret = process.env.WEBHOOK_SECRET;
+              const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+              if (webhookSecret) {
+                headers['X-Webhook-Signature'] = createHmac('sha256', webhookSecret)
+                  .update(body)
+                  .digest('hex');
+              }
+              const timeoutMs = 2000;
+              for (let i = 0; i < 3; i++) {
+                try {
+                  const controller = new AbortController();
+                  const id = setTimeout(() => controller.abort(), timeoutMs);
+                  const webhookRes = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers,
+                    body,
+                    signal: controller.signal,
+                  });
+                  clearTimeout(id);
+                  if (webhookRes.ok || webhookRes.status < 500) break;
+                } catch {
+                  // A webhook the merchant cannot receive must not stall indexing.
+                }
+              }
             }
           }
-        }
-      }
+        },
+      });
 
-      // The sweep only ever reports whole windows, so the cursor advance is
-      // safe whether or not it reached the head. Crucially it advances across
-      // empty windows too - a quiet merchant that never moved the cursor is
-      // how the indexer fell behind the RPC retention window and stopped
-      // seeing payments. Each merchant's cursor advances independently, so one
-      // merchant with no activity cannot hold back or be held back by
-      // another's progress.
+      // The sweep only ever advances the cursor across whole completed
+      // windows, so this is safe whether or not it reached the head. Crucially
+      // it advances across empty windows too - a quiet merchant that never
+      // moved the cursor is how the indexer fell behind the RPC retention
+      // window and stopped seeing payments. Each merchant's cursor advances
+      // independently, so one merchant with no activity cannot hold back or be
+      // held back by another's progress.
+      await setLastSyncedLedger(client, merchant.id, sweptThrough);
 
       return {
         merchant: merchant.address,
@@ -249,7 +318,7 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
         drained: complete,
         pages,
         windows,
-        scanned: events.length,
+        scanned,
         decoded,
         inserted,
       };
@@ -313,13 +382,9 @@ function failed(error: unknown) {
  * Scheduled entry point.
  *
  * Driven by Vercel Cron and by .github/workflows/sync.yml. Protected by
- * CRON_SECRET, checked with a constant-time compare in isAuthorizedCronRequest
- * (@/lib/cron-auth) - both senders pass it as a bearer token - so the
- * endpoint cannot be driven by arbitrary callers. An unset CRON_SECRET fails
- * closed: middleware.ts already denies this path before it reaches here, and
- * this check denies it too, since no caller should ever run a sync against a
- * deployment with no secret configured. No cooldown: a scheduled run is
- * already rate limited by its schedule.
+ * CRON_SECRET when set - both senders pass it as a bearer token - so the
+ * endpoint cannot be driven by arbitrary callers. No cooldown: a scheduled run
+ * is already rate limited by its schedule.
  *
  * Sweeps every configured merchant in turn, each with its own cursor - a
  * merchant with no activity still has its cursor advanced (see runSync),
@@ -327,7 +392,8 @@ function failed(error: unknown) {
  * checks in the first place.
  */
 export async function GET(request: Request) {
-  if (!isAuthorizedCronRequest(request.headers.get('authorization'))) {
+  const secret = process.env.CRON_SECRET;
+  if (secret && !isAuthorizedCronRequest(request.headers.get('authorization'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

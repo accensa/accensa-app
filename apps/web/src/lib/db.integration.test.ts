@@ -1,12 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { Client } from 'pg';
+import { withClient, ensureSchema, setLastSyncedLedger, getLastSyncedLedger } from './db';
+import { insertPaymentsInTransaction } from './insert-payments';
+import { getMerchantByAddress } from './merchants';
 
-async function withMerchantClient<T>(
-  merchantId: number,
-  fn: (client: Client) => Promise<T>,
-): Promise<T> {
-  return withClient(async (client) => {
-    // Ensure the non-superuser role exists
+/**
+ * Brings the schema up and grants the non-superuser test role everything it
+ * needs to drive RLS as the app would.
+ *
+ * Run once up front (not per connection) so `withMerchantClient` can be called
+ * concurrently without racing on catalog rows. On PostgreSQL 15 the `public`
+ * schema is no longer world-writable, so the role must be granted CREATE on it
+ * and be made the owner of the tables it re-runs DDL against via `ensureSchema`.
+ */
+async function setupTestDatabase(): Promise<void> {
+  await withClient(async (client) => {
+    await ensureSchema(client);
     await client.query(`
       DO $$
       BEGIN
@@ -15,9 +24,21 @@ async function withMerchantClient<T>(
         END IF;
       END $$;
     `);
+    await client.query('GRANT USAGE, CREATE ON SCHEMA public TO test_app_user');
+    for (const table of ['payments', 'sync_state', 'challenge_nonces', 'merchants']) {
+      await client.query(`ALTER TABLE IF EXISTS ${table} OWNER TO test_app_user`).catch(() => {});
+    }
     await client.query('GRANT ALL ON ALL TABLES IN SCHEMA public TO test_app_user');
     await client.query('GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO test_app_user');
+    await client.query('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO test_app_user');
+  });
+}
 
+async function withMerchantClient<T>(
+  merchantId: number,
+  fn: (client: Client) => Promise<T>,
+): Promise<T> {
+  return withClient(async (client) => {
     // Switch to non-superuser so RLS policies are enforced
     await client.query('SET SESSION AUTHORIZATION test_app_user');
 
@@ -28,11 +49,14 @@ async function withMerchantClient<T>(
     return fn(client);
   });
 }
-import { withClient, ensureSchema, setLastSyncedLedger, getLastSyncedLedger } from './db';
-import { insertPaymentsInTransaction } from './insert-payments';
-import { getMerchantByAddress } from './merchants';
 
 describe('Database Integration', () => {
+  beforeAll(async () => {
+    if (process.env.DATABASE_URL) {
+      await setupTestDatabase();
+    }
+  });
+
   it('should ensure schema and perform basic operations', async () => {
     if (!process.env.DATABASE_URL) {
       console.warn('Skipping integration test as DATABASE_URL is missing');
@@ -209,7 +233,8 @@ describe('Database Integration', () => {
         [merchant!.id],
       );
       expect(res.rows).toHaveLength(3);
-      expect(res.rows.map((r) => r.ledger)).toEqual([100, 101, 102]);
+      // ledger is BIGINT and comes back as a string from pg's default parser.
+      expect(res.rows.map((r) => Number(r.ledger))).toEqual([100, 101, 102]);
       const cursor = await getLastSyncedLedger(client, merchant!.id);
       expect(cursor).toBe(500);
     });
@@ -269,7 +294,7 @@ describe('Database Integration', () => {
       );
       const payment = res.rows[0];
       // Ledger-owned columns were written by the indexer...
-      expect(payment.ledger).toBe(300);
+      expect(Number(payment.ledger)).toBe(300);
       expect(payment.payer).toBe('G' + 'C'.repeat(55));
       expect(payment.amount).toBe('5000');
       expect(payment.ts).toBeInstanceOf(Date);
