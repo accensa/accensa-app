@@ -45,6 +45,20 @@ jobs:
           fi
           echo "Unauthenticated GET correctly rejected with 401."
 
+          # Regression probe: with CRON_SECRET unset, `Bearer ${CRON_SECRET}`
+          # used to render as the literal string "Bearer undefined", and a
+          # caller sending that exact header compared equal and bypassed
+          # auth. The no-header check above can't catch this - it never sends
+          # a header at all.
+          code=$(curl -sS --max-time 60 -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer undefined" "$SYNC_URL")
+          if [ "$code" != "401" ]; then
+            echo "::error::GET with 'Authorization: Bearer undefined' returned HTTP $code," \
+                 "expected 401. The unset-CRON_SECRET bypass has regressed."
+            exit 1
+          fi
+          echo "'Authorization: Bearer undefined' correctly rejected with 401."
+
       - name: Call sync endpoint in a loop
         env:
           SYNC_URL: ${{ secrets.SYNC_URL }}

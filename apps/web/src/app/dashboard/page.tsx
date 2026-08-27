@@ -14,6 +14,8 @@ import { CopyButton } from '@/components/copy-button';
 import { useOnline } from '@/components/network-status';
 import { describeFailure } from '@/lib/network-status';
 import { Pagination } from '@/components/pagination';
+import { useOnline, useVisibility } from '@/components/network-status';
+import { describeFailure, isAbortError } from '@/lib/network-status';
 
 interface Payment {
   tx_hash: string;
@@ -29,6 +31,14 @@ interface Payment {
 type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; payments: Payment[]; sync: SyncState | null }
+  | {
+      status: 'ready';
+      payments: Payment[];
+      fetchedAt: number;
+      sync: SyncState | null;
+      totalCount?: number;
+      totalAmount?: string;
+    }
   | { status: 'error'; message: string };
 
 /** A page of payments as `/api/payments` returns them. */
@@ -91,12 +101,18 @@ export function Dashboard() {
   // Refunds issued in this session. The indexer does not watch RefundVault
   // events yet, so a refund is otherwise invisible until someone opens the
   // payment again and the contract is re-read.
-  const [refunded, setRefunded] = useState<ReadonlySet<string>>(() => new Set());
+  const [refunded, setRefunded] = useState<ReadonlySet<string>>(() => loadRefundedFromStorage());
   const markRefunded = useCallback(
-    (txHash: string) => setRefunded((prev) => new Set(prev).add(txHash)),
+    (txHash: string) =>
+      setRefunded((prev) => {
+        const next = new Set(prev).add(txHash);
+        saveRefundedToStorage(next);
+        return next;
+      }),
     [],
   );
   const online = useOnline();
+  const visible = useVisibility();
 
   // The current page lives in the URL (?page=2) so it survives reloads and can
   // be linked to; searchParams is the single source of truth, and `goToPage`
@@ -148,6 +164,57 @@ export function Dashboard() {
   // clicking Next is instant. Renders nothing; the cache is the whole point.
   const hasNext = totalPages > page;
   useSWR(hasNext ? paymentsUrl(page + 1) : null, fetchPaymentsPage);
+  // Polling stops while offline or while the tab is hidden.
+  // Returning to the tab or reconnecting refetches immediately rather than
+  // waiting out the remainder of a 15s tick.
+  useEffect(() => {
+    if (!online || !visible) return;
+    const controller = new AbortController();
+    async function fetchPayments() {
+      try {
+        const res = await fetch('/api/payments', { signal: controller.signal, cache: 'no-store' });
+        if (!res.ok) {
+          if (res.status === 401) throw new Error('Session expired. Please sign in again.');
+          throw new Error((await res.json().catch(() => ({}))).error ?? `Error ${res.status}`);
+        }
+        const data = await res.json();
+        // Tolerate both shapes: the endpoint used to return a bare array, and
+        // a deploy can briefly serve an older build to an already-open tab.
+        const payments: Payment[] = Array.isArray(data) ? data : (data.payments ?? []);
+        const sync: SyncState | null = Array.isArray(data) ? null : (data.sync ?? null);
+        const totalCount: number = Array.isArray(data)
+          ? payments.length
+          : (data.total_count ?? payments.length);
+        const totalAmount: string = Array.isArray(data)
+          ? sumAmounts(payments.map((p) => p.amount))
+          : (data.total_amount ?? sumAmounts(payments.map((p) => p.amount)));
+
+        if (!controller.signal.aborted) {
+          setState({
+            status: 'ready',
+            payments,
+            fetchedAt: Date.now(),
+            sync,
+            totalCount,
+            totalAmount,
+          });
+        }
+      } catch (error) {
+        // Re-read navigator.onLine here rather than closing over `online`: the
+        // connection can drop between the request going out and it failing,
+        // and that is exactly the case worth naming correctly.
+        if (!controller.signal.aborted && !isAbortError(error)) {
+          setState({ status: 'error', message: describeFailure(error, navigator.onLine) });
+        }
+      }
+    }
+    void fetchPayments();
+    const timer = setInterval(fetchPayments, POLL_INTERVAL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [reloadToken, online, visible]);
 
   useEffect(() => {
     if (!selected) return;
@@ -168,6 +235,15 @@ export function Dashboard() {
     total = data.total_amount;
     totalAsset = data.total_asset ? assetLabel(data.total_asset) : '';
   }
+  const payments = state.status === 'ready' ? state.payments : [];
+  const total =
+    state.status === 'ready' && state.totalAmount !== undefined
+      ? state.totalAmount
+      : sumAmounts(payments.map((p) => p.amount));
+  const totalCount =
+    state.status === 'ready' && state.totalCount !== undefined ? state.totalCount : payments.length;
+  const assets = new Set(payments.map((p) => assetLabel(p.asset)));
+  const totalAsset = assets.size === 1 ? [...assets][0] : '';
 
   return (
     <main className="min-h-screen text-slate-600 dark:text-slate-200 font-sans selection:bg-slate-200 dark:selection:bg-white/10 transition-colors duration-300 bg-grid p-6 md:p-12 lg:p-20 pt-28 md:pt-32 lg:pt-32">
@@ -176,7 +252,7 @@ export function Dashboard() {
         <header className="grid lg:grid-cols-3 gap-8 items-end">
           <div className="lg:col-span-2 space-y-6 text-center lg:text-left">
             <div>
-              <p className="uppercase tracking-[0.25em] text-emerald-600 dark:text-emerald-400 font-bold text-xs mb-3">
+              <p className="uppercase tracking-[0.25em] text-emerald-700 dark:text-emerald-400 font-bold text-xs mb-3">
                 Dashboard
               </p>
               <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tighter text-slate-900 dark:text-white transition-colors duration-300">
@@ -184,26 +260,26 @@ export function Dashboard() {
               </h1>
               <Link
                 href="/dashboard/routes"
-                className="inline-block mt-4 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                className="inline-block mt-4 text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors"
               >
                 Revenue by route →
               </Link>
             </div>
           </div>
 
-          <div className="bg-white/50 dark:bg-white/5 backdrop-blur-2xl p-8 flex flex-col shadow-[0_8px_30px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] relative overflow-hidden transition-colors duration-300">
+          <div className="bg-white/90 dark:bg-[#0c131d]/90 backdrop-blur-2xl p-8 flex flex-col shadow-[0_8px_30px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] relative overflow-hidden transition-colors duration-300">
             <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-[40px] dark:blur-[50px] pointer-events-none" />
-            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+            <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">
               Total Settled
             </span>
             <span className="text-4xl sm:text-5xl font-black tracking-tighter mt-4 flex items-baseline gap-2 text-slate-900 dark:text-white transition-colors duration-300">
               {state.status === 'loading' ? (
-                <span className="block h-12 w-32 bg-slate-100 dark:bg-white/5 animate-pulse" />
+                <span className="block h-10 sm:h-12 w-44 sm:w-56 bg-slate-200/80 dark:bg-white/10 animate-pulse" />
               ) : (
                 <>
                   {formatAmount(total)}
                   {totalAsset && (
-                    <span className="text-2xl text-emerald-600 dark:text-emerald-400 font-bold">
+                    <span className="text-2xl text-emerald-700 dark:text-emerald-400 font-bold">
                       {totalAsset}
                     </span>
                   )}
@@ -214,14 +290,23 @@ export function Dashboard() {
         </header>
 
         {/* Data Table Section */}
-        <section className="bg-white/50 dark:bg-white/5 backdrop-blur-2xl overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] transition-colors duration-300">
-          <div className="px-8 py-6 flex justify-between items-center bg-white/30 dark:bg-black/30 backdrop-blur-xl transition-colors duration-300">
-            <h2 className="text-xl font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">
-              Recent Settlements
-            </h2>
+        <section className="bg-white/90 dark:bg-[#0c131d]/90 backdrop-blur-2xl overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] transition-colors duration-300">
+          <div className="px-8 py-6 flex flex-wrap gap-4 justify-between items-center bg-white/40 dark:bg-black/40 backdrop-blur-xl transition-colors duration-300 border-b border-slate-100 dark:border-white/5">
+            <div>
+              <h2 className="text-xl font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">
+                Recent Settlements
+              </h2>
+              {state.status === 'ready' && totalCount > 0 && (
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 font-medium">
+                  {totalCount > payments.length
+                    ? `Showing newest ${payments.length} of ${totalCount} payments`
+                    : `Showing all ${payments.length} payment${payments.length === 1 ? '' : 's'}`}
+                </p>
+              )}
+            </div>
             <div className="flex items-center gap-4">
               <StatusPill state={state} onRetry={reload} />
-              <ExportCsvButton payments={payments} />
+              <ExportCsvButton payments={payments} totalCount={totalCount} />
               <SyncNowButton onSynced={reload} />
             </div>
           </div>
@@ -235,17 +320,30 @@ export function Dashboard() {
                   ✕
                 </div>
                 <p className="text-xl font-black tracking-tighter text-slate-900 dark:text-white">
-                  Connection Error
+                  {state.message.toLowerCase().includes('session expired') ||
+                  state.message.toLowerCase().includes('unauthorized')
+                    ? 'Session Expired'
+                    : 'Connection Error'}
                 </p>
                 <p className="text-slate-500 dark:text-slate-400 text-sm max-w-md">
                   {state.message}
                 </p>
-                <button
-                  onClick={reload}
-                  className="mt-4 px-6 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 transition-colors shadow-sm dark:shadow-none"
-                >
-                  Try Again
-                </button>
+                {state.message.toLowerCase().includes('session expired') ||
+                state.message.toLowerCase().includes('unauthorized') ? (
+                  <Link
+                    href="/login"
+                    className="mt-4 px-6 py-3 bg-emerald-600 dark:bg-emerald-500 text-white dark:text-black text-sm font-bold hover:bg-emerald-500 dark:hover:bg-emerald-400 transition-colors shadow-sm dark:shadow-none"
+                  >
+                    Sign In Again
+                  </Link>
+                ) : (
+                  <button
+                    onClick={reload}
+                    className="mt-4 px-6 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 transition-colors shadow-sm dark:shadow-none"
+                  >
+                    Try Again
+                  </button>
+                )}
               </div>
             )}
 
@@ -388,11 +486,11 @@ export function PaymentModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#04090f]/40 dark:bg-black/80 backdrop-blur-sm transition-colors duration-300"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#04090f]/50 dark:bg-black/80 backdrop-blur-sm transition-colors duration-300"
       onClick={onClose}
     >
       <div
-        className="bg-white/40 dark:bg-white/5 backdrop-blur-2xl border border-slate-200 dark:border-white/10 w-full max-w-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_0_50px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] animate-in zoom-in-95 duration-200 transition-colors duration-300 max-h-[90vh] flex flex-col"
+        className="bg-white/95 dark:bg-[#0c131d]/95 backdrop-blur-2xl border border-slate-200 dark:border-white/10 w-full max-w-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_0_50px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] animate-in zoom-in-95 duration-200 transition-colors duration-300 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 md:px-8 md:py-6 border-b border-slate-200/60 dark:border-white/20 flex justify-between items-center bg-slate-50 dark:bg-[#0a111a] transition-colors duration-300 shrink-0">
@@ -402,7 +500,7 @@ export function PaymentModal({
             </h3>
             {refunded.has(selected.tx_hash) && (
               <span
-                className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest border border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 align-middle"
+                className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest border border-amber-400 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 align-middle"
                 title="Refunded from the vault in this session"
               >
                 Refunded
@@ -411,7 +509,8 @@ export function PaymentModal({
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-white transition-colors"
+            aria-label="Close details"
+            className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
           >
             ✕
           </button>
@@ -421,7 +520,7 @@ export function PaymentModal({
             label="Transaction Hash"
             action={<CopyButton value={selected.tx_hash} label="Transaction Hash" />}
           >
-            <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-400 dark:border-emerald-500/20 px-4 py-3 font-mono text-xs text-emerald-600 dark:text-emerald-400 break-all transition-colors duration-300">
+            <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-400 dark:border-emerald-500/20 px-4 py-3 font-mono text-xs text-emerald-700 dark:text-emerald-400 break-all transition-colors duration-300">
               {selected.tx_hash}
             </div>
           </Field>
@@ -429,24 +528,24 @@ export function PaymentModal({
             <Field label="Amount">
               <span className="text-3xl font-black tracking-tighter text-slate-900 dark:text-white transition-colors duration-300">
                 {formatAmount(selected.amount)}{' '}
-                <span className="text-base font-bold text-emerald-600 dark:text-emerald-400 transition-colors duration-300">
+                <span className="text-base font-bold text-emerald-700 dark:text-emerald-400 transition-colors duration-300">
                   {assetLabel(selected.asset)}
                 </span>
               </span>
             </Field>
             <Field label="Ledger">
-              <span className="font-mono text-slate-500 dark:text-slate-300 text-lg transition-colors duration-300">
+              <span className="font-mono text-slate-600 dark:text-slate-300 text-lg transition-colors duration-300">
                 {selected.ledger ?? '-'}
               </span>
             </Field>
           </div>
           <Field label="Payer" action={<CopyButton value={selected.payer} label="Payer Address" />}>
-            <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300 break-all transition-colors duration-300">
+            <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-4 py-3 font-mono text-xs text-slate-700 dark:text-slate-300 break-all transition-colors duration-300">
               {selected.payer}
             </div>
           </Field>
           <Field label="Timestamp">
-            <span className="text-slate-600 dark:text-slate-300 transition-colors duration-300">
+            <span className="text-slate-700 dark:text-slate-300 transition-colors duration-300">
               {new Date(selected.ts).toLocaleString()}
             </span>
           </Field>
@@ -463,7 +562,7 @@ export function PaymentModal({
           </div>
 
           <div className="pt-6 mt-6 border-t border-slate-100 dark:border-white/10 transition-colors duration-300">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 mb-3">
               Refund
             </p>
             <RefundPanel payment={selected} onRefunded={onRefunded} />
@@ -487,7 +586,7 @@ export function PaymentsTable({
     <table className="w-full text-left border-collapse whitespace-nowrap">
       <caption className="sr-only">Recent Settlements</caption>
       <thead>
-        <tr className="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest border-b border-slate-100 dark:border-white/5 bg-white dark:bg-[#04090f]/50 transition-colors duration-300">
+        <tr className="text-slate-600 dark:text-slate-300 text-xs font-bold uppercase tracking-widest border-b border-slate-100 dark:border-white/5 bg-white/40 dark:bg-[#04090f]/50 transition-colors duration-300">
           <th scope="col" className="px-8 py-5">
             Transaction
           </th>
@@ -512,11 +611,11 @@ export function PaymentsTable({
             onClick={() => onSelect(payment)}
             className="hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors cursor-pointer group"
           >
-            <td className="px-8 py-5 font-mono text-emerald-600 dark:text-emerald-400 text-sm group-hover:text-emerald-600 dark:group-hover:text-emerald-300 transition-colors">
+            <td className="px-8 py-5 font-mono text-emerald-700 dark:text-emerald-400 text-sm group-hover:text-emerald-800 dark:group-hover:text-emerald-300 transition-colors">
               {truncate(payment.tx_hash)}
               {refunded.has(payment.tx_hash) && (
                 <span
-                  className="ml-2 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest border border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 align-middle"
+                  className="ml-2 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest border border-amber-400 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 align-middle"
                   title="Refunded from the vault in this session"
                 >
                   Refunded
@@ -527,30 +626,30 @@ export function PaymentsTable({
               <span className="font-black text-lg tracking-tight text-slate-900 dark:text-white transition-colors duration-300">
                 {formatAmount(payment.amount)}
               </span>
-              <span className="text-slate-400 dark:text-slate-500 ml-2 text-xs font-bold">
+              <span className="text-slate-600 dark:text-slate-400 ml-2 text-xs font-bold">
                 {assetLabel(payment.asset)}
               </span>
             </td>
-            <td className="px-8 py-5 font-mono text-slate-500 dark:text-slate-400 text-sm transition-colors duration-300">
+            <td className="px-8 py-5 font-mono text-slate-600 dark:text-slate-300 text-sm transition-colors duration-300">
               {truncate(payment.payer, 4, 4)}
             </td>
             <td className="px-8 py-5">
               {payment.route ? (
-                <div className="inline-flex items-center gap-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 px-2.5 py-1 text-sm transition-colors duration-300">
+                <div className="inline-flex items-center gap-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 px-2.5 py-1 text-sm transition-colors duration-300">
                   {payment.method && (
-                    <span className="text-emerald-600 dark:text-emerald-500/70 font-mono font-bold text-xs">
+                    <span className="text-emerald-700 dark:text-emerald-400 font-mono font-bold text-xs">
                       {payment.method}
                     </span>
                   )}
-                  <span className="font-mono text-slate-600 dark:text-slate-300">
+                  <span className="font-mono text-slate-700 dark:text-slate-300">
                     {payment.route}
                   </span>
                 </div>
               ) : (
-                <span className="text-slate-400 dark:text-slate-600">-</span>
+                <span className="text-slate-500 dark:text-slate-400">-</span>
               )}
             </td>
-            <td className="px-8 py-5 text-slate-500 dark:text-slate-400 text-sm">
+            <td className="px-8 py-5 text-slate-600 dark:text-slate-300 text-sm">
               {new Date(payment.ts).toLocaleString()}
             </td>
           </tr>
@@ -572,7 +671,7 @@ function Field({
   return (
     <div className="space-y-2">
       <div className="flex justify-between items-center">
-        <span className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest transition-colors duration-300">
+        <span className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest transition-colors duration-300">
           {label}
         </span>
         {action}
@@ -585,36 +684,53 @@ function Field({
 function StatusPill({ state, onRetry }: { state: LoadState; onRetry: () => void }) {
   if (state.status === 'loading')
     return (
-      <span className="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 animate-pulse transition-colors duration-300">
+      <span className="text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 animate-pulse transition-colors duration-300">
         Syncing...
       </span>
     );
-  if (state.status === 'error')
+  if (state.status === 'error') {
+    const isAuth =
+      state.message.toLowerCase().includes('session expired') ||
+      state.message.toLowerCase().includes('unauthorized');
+    if (isAuth) {
+      return (
+        <Link
+          href="/login"
+          className="flex gap-2 items-center text-xs font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 hover:underline transition-colors"
+        >
+          <span className="w-2 h-2 bg-amber-500" /> Sign In Required
+        </Link>
+      );
+    }
     return (
       <button
         onClick={onRetry}
-        className="flex gap-2 items-center text-xs font-bold uppercase tracking-widest text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors"
+        className="flex gap-2 items-center text-xs font-bold uppercase tracking-widest text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors cursor-pointer"
       >
-        <span className="w-2 h-2 bg-red-500" /> Retry Connection
+        <span className="w-2 h-2 bg-red-600 dark:bg-red-500" /> Retry Connection
       </button>
     );
   // Deliberately reports the indexer's timestamp, not when the poll last
   // succeeded. The poll succeeding says nothing about how current the data
   // behind it is, and the sync job lands every 1-3 hours in practice.
+  }
+  // Deliberately reports the indexer's timestamp, not state.fetchedAt. The poll
+  // succeeding says nothing about how current the data behind it is, and the
+  // sync job lands every 1-3 hours in practice.
   const { level, age, detail } = describeSync(state.sync);
 
   const tone = {
-    live: 'text-emerald-600 dark:text-emerald-400',
-    lagging: 'text-amber-600 dark:text-amber-400',
-    stale: 'text-red-600 dark:text-red-400',
-    unknown: 'text-slate-500 dark:text-slate-400',
+    live: 'text-emerald-700 dark:text-emerald-400',
+    lagging: 'text-amber-700 dark:text-amber-400',
+    stale: 'text-red-700 dark:text-red-400',
+    unknown: 'text-slate-600 dark:text-slate-400',
   }[level];
 
   const dot = {
-    live: 'bg-emerald-500',
-    lagging: 'bg-amber-500',
-    stale: 'bg-red-500',
-    unknown: 'bg-slate-400',
+    live: 'bg-emerald-600 dark:bg-emerald-500',
+    lagging: 'bg-amber-600 dark:bg-amber-500',
+    stale: 'bg-red-600 dark:bg-red-500',
+    unknown: 'bg-slate-500 dark:bg-slate-400',
   }[level];
 
   const label = {
@@ -632,7 +748,7 @@ function StatusPill({ state, onRetry }: { state: LoadState; onRetry: () => void 
       <span className="relative flex h-2 w-2">
         {/* The ping animation claims activity; only show it when that is true. */}
         {level === 'live' && (
-          <span className="animate-ping absolute inline-flex h-full w-full bg-emerald-400 opacity-75" />
+          <span className="animate-ping absolute inline-flex h-full w-full bg-emerald-500 opacity-75" />
         )}
         <span className={`relative inline-flex h-2 w-2 ${dot}`} />
       </span>
@@ -746,8 +862,8 @@ function SyncNowButton({ onSynced }: { onSynced: () => void }) {
       }
       className={`px-3 py-2 text-[10px] font-bold uppercase tracking-widest border transition-colors cursor-pointer disabled:cursor-not-allowed ${
         state.phase === 'error'
-          ? 'border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
-          : 'border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-50 disabled:hover:bg-transparent'
+          ? 'border-red-300 dark:border-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
+          : 'border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-50 disabled:hover:bg-transparent'
       }`}
     >
       <span aria-live="polite">{label}</span>
@@ -764,7 +880,7 @@ function SyncNowButton({ onSynced }: { onSynced: () => void }) {
  * Serialization lives in lib/payments-csv so it can be tested without a DOM;
  * this only turns the text into a download.
  */
-function ExportCsvButton({ payments }: { payments: Payment[] }) {
+function ExportCsvButton({ payments, totalCount }: { payments: Payment[]; totalCount?: number }) {
   const [error, setError] = useState<string | null>(null);
 
   const download = useCallback(() => {
@@ -788,6 +904,8 @@ function ExportCsvButton({ payments }: { payments: Payment[] }) {
   }, [payments]);
 
   const empty = payments.length === 0;
+  const count = totalCount ?? payments.length;
+  const isTruncated = count > payments.length;
 
   return (
     <button
@@ -799,12 +917,14 @@ function ExportCsvButton({ payments }: { payments: Payment[] }) {
           ? error
           : empty
             ? 'Nothing to export yet'
-            : `Download these ${payments.length} payment${payments.length === 1 ? '' : 's'} as CSV`
+            : isTruncated
+              ? `Download these newest ${payments.length} of ${count} payments as CSV`
+              : `Download these ${payments.length} payment${payments.length === 1 ? '' : 's'} as CSV`
       }
       className={`px-3 py-2 text-[10px] font-bold uppercase tracking-widest border transition-colors cursor-pointer disabled:cursor-not-allowed ${
         error
-          ? 'border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
-          : 'border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-50 disabled:hover:bg-transparent'
+          ? 'border-red-300 dark:border-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
+          : 'border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 disabled:opacity-50 disabled:hover:bg-transparent'
       }`}
     >
       <span aria-live="polite">{error ? 'Export failed' : 'Export CSV'}</span>
@@ -812,16 +932,81 @@ function ExportCsvButton({ payments }: { payments: Payment[] }) {
   );
 }
 
-function TableSkeleton() {
+export function TableSkeleton() {
   return (
-    <div className="p-8 space-y-4">
-      {[...Array(5)].map((_, i) => (
-        <div
-          key={i}
-          className="h-12 bg-slate-100 dark:bg-white/5 animate-pulse transition-colors duration-300"
-        />
-      ))}
-    </div>
+    <>
+      {/* Mobile Card List Skeleton */}
+      <div className="md:hidden divide-y divide-slate-100 dark:divide-white/5" aria-hidden="true">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="p-6 flex flex-col gap-4 animate-pulse">
+            <div className="flex justify-between items-start">
+              <div className="h-8 w-32 bg-slate-200/80 dark:bg-white/10" />
+              <div className="h-4 w-28 bg-slate-200/60 dark:bg-white/5 mt-1" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="h-3 w-16 bg-slate-200/60 dark:bg-white/5 mb-2" />
+                <div className="h-4 w-24 bg-slate-200/80 dark:bg-white/10" />
+              </div>
+              <div>
+                <div className="h-3 w-12 bg-slate-200/60 dark:bg-white/5 mb-2" />
+                <div className="h-4 w-20 bg-slate-200/80 dark:bg-white/10" />
+              </div>
+              <div className="col-span-2">
+                <div className="h-3 w-12 bg-slate-200/60 dark:bg-white/5 mb-2" />
+                <div className="h-6 w-36 bg-slate-200/60 dark:bg-white/5" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop Table Skeleton */}
+      <div className="hidden md:block overflow-x-auto" aria-hidden="true">
+        <table className="w-full text-left border-collapse whitespace-nowrap">
+          <thead>
+            <tr className="text-slate-600 dark:text-slate-300 text-xs font-bold uppercase tracking-widest border-b border-slate-100 dark:border-white/5 bg-white/40 dark:bg-[#04090f]/50 transition-colors duration-300">
+              <th scope="col" className="px-8 py-5">
+                Transaction
+              </th>
+              <th scope="col" className="px-8 py-5">
+                Amount
+              </th>
+              <th scope="col" className="px-8 py-5">
+                Payer
+              </th>
+              <th scope="col" className="px-8 py-5">
+                Route
+              </th>
+              <th scope="col" className="px-8 py-5">
+                Time
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+            {[...Array(5)].map((_, i) => (
+              <tr key={i} className="animate-pulse">
+                <td className="px-8 py-5">
+                  <div className="h-5 w-32 bg-slate-200/80 dark:bg-white/10" />
+                </td>
+                <td className="px-8 py-5">
+                  <div className="h-6 w-24 bg-slate-200/80 dark:bg-white/10" />
+                </td>
+                <td className="px-8 py-5">
+                  <div className="h-5 w-24 bg-slate-200/80 dark:bg-white/10" />
+                </td>
+                <td className="px-8 py-5">
+                  <div className="h-6 w-32 bg-slate-200/80 dark:bg-white/10" />
+                </td>
+                <td className="px-8 py-5">
+                  <div className="h-5 w-36 bg-slate-200/80 dark:bg-white/10" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

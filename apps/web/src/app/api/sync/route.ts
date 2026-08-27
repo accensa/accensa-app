@@ -1,16 +1,17 @@
 import { NextResponse } from 'next/server';
-import { decodeTransferEvent, transferTopicFilter, addressTopicFilter } from '@/lib/stellar-events';
+import { transferTopicFilter, addressTopicFilter } from '@/lib/stellar-events';
 import {
   withClient,
   withMerchantClient,
   ensureSchema,
   getLastSyncedLedger,
-  setLastSyncedLedger,
   getSyncState,
 } from '@/lib/db';
+import { eventsToPaymentRows, insertPaymentsInTransaction } from '@/lib/insert-payments';
 import { listMerchants, getMerchantFromRequest, type Merchant } from '@/lib/merchants';
 import { sweepLedgerRange, EVENTS_PAGE_LIMIT, type EventPage } from '@/lib/event-pager';
 import { cooldownRemaining } from '@/lib/sync-status';
+import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 import { createHmac } from 'node:crypto';
 
 export const dynamic = 'force-dynamic';
@@ -172,49 +173,37 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
         { startLedger, endLedger: latestLedger, withinBudget: () => Date.now() < deadline },
       );
 
-      let inserted = 0;
-      let decoded = 0;
       const webhookUrl = merchant.webhookUrl ?? process.env.WEBHOOK_URL;
 
-      for (const event of events) {
-        const transferEvent = decodeTransferEvent(event);
-        // A malformed or non-transfer event must not stall the batch.
-        if (!transferEvent) continue;
-        decoded++;
+      // Per-event filtering lives in eventsToPaymentRows: a malformed or
+      // non-transfer event is skipped, and a transfer not addressed to this
+      // merchant is never recorded. Only the insert below is batched — batching
+      // must not quietly admit events that would have been filtered out.
+      const { rows, decoded } = eventsToPaymentRows(events, merchant);
 
-        // Defensive: never record a transfer that is not to this merchant.
-        if (transferEvent.to !== merchant.address) continue;
+      // DO UPDATE, not DO NOTHING: a row may already exist because the
+      // merchant reported route attribution before this transfer was indexed,
+      // which is the normal ordering — the hook fires the moment x402 settles,
+      // this job runs on a schedule. Skipping the conflict would leave that
+      // row permanently null and invisible. Only ledger-owned columns are
+      // written; route, method, request_id and hook_reported_at belong to the
+      // merchant's report and are left alone.
+      //
+      // The inserts and the cursor advance commit atomically (see
+      // insertPaymentsInTransaction): if any chunk fails, nothing commits and
+      // the cursor stays behind the failed run.
+      const { inserted, payments } = await insertPaymentsInTransaction(
+        client,
+        merchant.id,
+        rows,
+        sweptThrough,
+      );
 
-        // DO UPDATE, not DO NOTHING: a row may already exist because the
-        // merchant reported route attribution before this transfer was
-        // indexed, which is the normal ordering — the hook fires the moment
-        // x402 settles, this job runs on a schedule. Skipping the conflict
-        // would leave that row permanently null and invisible.
-        //
-        // Only ledger-owned columns are written. route, method, request_id and
-        // hook_reported_at belong to the merchant's report and are left alone.
-        const res = await client.query(
-          `INSERT INTO payments (merchant_id, tx_hash, ledger, payer, amount, asset, ts)
-  VALUES ($1, $2, $3, $4, $5::numeric, $6, $7::timestamptz)
-  ON CONFLICT (merchant_id, tx_hash) DO UPDATE
-  SET ledger = EXCLUDED.ledger,
-  payer = EXCLUDED.payer,
-  amount = EXCLUDED.amount,
-  asset = EXCLUDED.asset,
-  ts = EXCLUDED.ts
-  WHERE payments.ledger IS NULL RETURNING *`,
-          [
-            merchant.id,
-            transferEvent.txHash,
-            transferEvent.ledger,
-            transferEvent.from,
-            transferEvent.amount, // string - never a float
-            transferEvent.asset,
-            transferEvent.ledgerClosedAt,
-          ],
-        );
-        if (res.rowCount && res.rowCount > 0 && webhookUrl) {
-          const payment = res.rows[0];
+      // Webhooks fire after COMMIT, so a slow or failing webhook can neither
+      // hold the transaction open nor roll back a committed batch. The
+      // returned rows are exactly the payments written this run.
+      if (webhookUrl) {
+        for (const payment of payments) {
           const body = JSON.stringify(payment);
           const webhookSecret = process.env.WEBHOOK_SECRET;
           const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -241,16 +230,15 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
             }
           }
         }
-        inserted += res.rowCount ?? 0;
       }
 
-      // The sweep only ever reports whole windows, so this is safe whether or
-      // not it reached the head. Crucially it advances across empty windows
-      // too - a quiet merchant that never moved the cursor is how the indexer
-      // fell behind the RPC retention window and stopped seeing payments. Each
-      // merchant's cursor advances independently, so one merchant with no
-      // activity cannot hold back or be held back by another's progress.
-      await setLastSyncedLedger(client, merchant.id, sweptThrough);
+      // The sweep only ever reports whole windows, so the cursor advance is
+      // safe whether or not it reached the head. Crucially it advances across
+      // empty windows too - a quiet merchant that never moved the cursor is
+      // how the indexer fell behind the RPC retention window and stopped
+      // seeing payments. Each merchant's cursor advances independently, so one
+      // merchant with no activity cannot hold back or be held back by
+      // another's progress.
 
       return {
         merchant: merchant.address,
@@ -325,9 +313,13 @@ function failed(error: unknown) {
  * Scheduled entry point.
  *
  * Driven by Vercel Cron and by .github/workflows/sync.yml. Protected by
- * CRON_SECRET when set - both senders pass it as a bearer token - so the
- * endpoint cannot be driven by arbitrary callers. No cooldown: a scheduled run
- * is already rate limited by its schedule.
+ * CRON_SECRET, checked with a constant-time compare in isAuthorizedCronRequest
+ * (@/lib/cron-auth) - both senders pass it as a bearer token - so the
+ * endpoint cannot be driven by arbitrary callers. An unset CRON_SECRET fails
+ * closed: middleware.ts already denies this path before it reaches here, and
+ * this check denies it too, since no caller should ever run a sync against a
+ * deployment with no secret configured. No cooldown: a scheduled run is
+ * already rate limited by its schedule.
  *
  * Sweeps every configured merchant in turn, each with its own cursor - a
  * merchant with no activity still has its cursor advanced (see runSync),
@@ -335,8 +327,7 @@ function failed(error: unknown) {
  * checks in the first place.
  */
 export async function GET(request: Request) {
-  const secret = process.env.CRON_SECRET;
-  if (secret && request.headers.get('authorization') !== `Bearer ${secret}`) {
+  if (!isAuthorizedCronRequest(request.headers.get('authorization'))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

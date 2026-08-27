@@ -35,6 +35,33 @@ export function useOnline(): boolean {
   return React.useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
+function subscribeVisibility(onChange: () => void) {
+  if (typeof document === 'undefined') return () => {};
+  document.addEventListener('visibilitychange', onChange);
+  return () => {
+    document.removeEventListener('visibilitychange', onChange);
+  };
+}
+
+const getVisibilitySnapshot = () =>
+  typeof document !== 'undefined' ? document.visibilityState === 'visible' : true;
+
+const getServerVisibilitySnapshot = () => true;
+
+/**
+ * Whether the current document/tab is visible to the user.
+ *
+ * Backed by `document.visibilityState` via `useSyncExternalStore`.
+ * Returns false when the tab is in the background or hidden, and true when visible.
+ */
+export function useVisibility(): boolean {
+  return React.useSyncExternalStore(
+    subscribeVisibility,
+    getVisibilitySnapshot,
+    getServerVisibilitySnapshot,
+  );
+}
+
 /**
  * Persistent notice while the browser has no connection.
  *
