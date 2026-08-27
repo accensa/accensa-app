@@ -107,9 +107,21 @@ export async function GET(request: Request) {
       sync,
       next_cursor,
     };
-    return NextResponse.json(body);
+    return NextResponse.json(body, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      },
+    });
   } catch (error: unknown) {
     console.error('Error fetching payments:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      {
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        },
+      },
+    );
   }
 }

@@ -17,10 +17,10 @@ async function withMerchantClient<T>(
     `);
     await client.query('GRANT ALL ON ALL TABLES IN SCHEMA public TO test_app_user');
     await client.query('GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO test_app_user');
-    
+
     // Switch to non-superuser so RLS policies are enforced
     await client.query('SET SESSION AUTHORIZATION test_app_user');
-    
+
     await client.query('SELECT set_config($1, $2, false)', [
       'accensa.merchant_id',
       String(merchantId),
@@ -28,13 +28,7 @@ async function withMerchantClient<T>(
     return fn(client);
   });
 }
-import {
-  withClient,
-  
-  ensureSchema,
-  setLastSyncedLedger,
-  getLastSyncedLedger,
-} from './db';
+import { withClient, ensureSchema, setLastSyncedLedger, getLastSyncedLedger } from './db';
 import { insertPaymentsInTransaction } from './insert-payments';
 import { getMerchantByAddress } from './merchants';
 

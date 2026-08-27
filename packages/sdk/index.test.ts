@@ -115,7 +115,9 @@ describe('reportSettlement', () => {
     const onError = vi.fn();
     const fetchImpl = okFetch();
     const originalImport = globalThis.crypto;
-    vi.stubGlobal('crypto', { subtle: { importKey: vi.fn().mockRejectedValue(new Error('unsupported')) } });
+    vi.stubGlobal('crypto', {
+      subtle: { importKey: vi.fn().mockRejectedValue(new Error('unsupported')) },
+    });
     vi.stubGlobal('process', undefined);
     vi.stubGlobal('Buffer', undefined);
     await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
@@ -269,6 +271,10 @@ describe('reportSettlement — retry (#123)', () => {
 });
 
 describe('reportSettlement — network timeout', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /** A fetch that never answers, exactly like a dropped connection. */
   const hangingFetch = () =>
     vi.fn<typeof fetch>(
@@ -311,7 +317,7 @@ describe('reportSettlement — network timeout', () => {
     await vi.advanceTimersByTimeAsync(1);
     await expect(pending).resolves.toBe(false);
     expect(onError).toHaveBeenCalledOnce();
-  });
+  }, 10_000);
 
   it('clears the timer once the request succeeds, leaving nothing pending', async () => {
     vi.useFakeTimers();

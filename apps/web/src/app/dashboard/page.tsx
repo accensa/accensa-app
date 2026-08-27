@@ -66,9 +66,14 @@ export default function Dashboard() {
   // Refunds issued in this session. The indexer does not watch RefundVault
   // events yet, so a refund is otherwise invisible until someone opens the
   // payment again and the contract is re-read.
-  const [refunded, setRefunded] = useState<ReadonlySet<string>>(() => new Set());
+  const [refunded, setRefunded] = useState<ReadonlySet<string>>(() => loadRefundedFromStorage());
   const markRefunded = useCallback(
-    (txHash: string) => setRefunded((prev) => new Set(prev).add(txHash)),
+    (txHash: string) =>
+      setRefunded((prev) => {
+        const next = new Set(prev).add(txHash);
+        saveRefundedToStorage(next);
+        return next;
+      }),
     [],
   );
   const online = useOnline();
@@ -85,8 +90,10 @@ export default function Dashboard() {
     async function fetchPayments() {
       try {
         const res = await fetch('/api/payments', { signal: controller.signal, cache: 'no-store' });
-        if (!res.ok)
+        if (!res.ok) {
+          if (res.status === 401) throw new Error('Session expired. Please sign in again.');
           throw new Error((await res.json().catch(() => ({}))).error ?? `Error ${res.status}`);
+        }
         const data = await res.json();
         // Tolerate both shapes: the endpoint used to return a bare array, and
         // a deploy can briefly serve an older build to an already-open tab.
@@ -191,17 +198,30 @@ export default function Dashboard() {
                   ✕
                 </div>
                 <p className="text-xl font-black tracking-tighter text-slate-900 dark:text-white">
-                  Connection Error
+                  {state.message.toLowerCase().includes('session expired') ||
+                  state.message.toLowerCase().includes('unauthorized')
+                    ? 'Session Expired'
+                    : 'Connection Error'}
                 </p>
                 <p className="text-slate-500 dark:text-slate-400 text-sm max-w-md">
                   {state.message}
                 </p>
-                <button
-                  onClick={reload}
-                  className="mt-4 px-6 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 transition-colors shadow-sm dark:shadow-none"
-                >
-                  Try Again
-                </button>
+                {state.message.toLowerCase().includes('session expired') ||
+                state.message.toLowerCase().includes('unauthorized') ? (
+                  <Link
+                    href="/login"
+                    className="mt-4 px-6 py-3 bg-emerald-600 dark:bg-emerald-500 text-white dark:text-black text-sm font-bold hover:bg-emerald-500 dark:hover:bg-emerald-400 transition-colors shadow-sm dark:shadow-none"
+                  >
+                    Sign In Again
+                  </Link>
+                ) : (
+                  <button
+                    onClick={reload}
+                    className="mt-4 px-6 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white text-sm font-bold hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 transition-colors shadow-sm dark:shadow-none"
+                  >
+                    Try Again
+                  </button>
+                )}
               </div>
             )}
 
@@ -388,7 +408,7 @@ export function PaymentModal({
               href={explorerUrl(selected.tx_hash)}
               target="_blank"
               rel="noreferrer"
-               className="flex items-center justify-center gap-1.5 w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-sm dark:shadow-none transition-all font-bold text-sm tracking-wide uppercase"
+              className="flex items-center justify-center gap-1.5 w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-sm dark:shadow-none transition-all font-bold text-sm tracking-wide uppercase"
             >
               View on Explorer <ArrowUpRight className="w-4 h-4 opacity-70" />
             </a>
@@ -521,7 +541,20 @@ function StatusPill({ state, onRetry }: { state: LoadState; onRetry: () => void 
         Syncing...
       </span>
     );
-  if (state.status === 'error')
+  if (state.status === 'error') {
+    const isAuth =
+      state.message.toLowerCase().includes('session expired') ||
+      state.message.toLowerCase().includes('unauthorized');
+    if (isAuth) {
+      return (
+        <Link
+          href="/login"
+          className="flex gap-2 items-center text-xs font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 hover:underline transition-colors"
+        >
+          <span className="w-2 h-2 bg-amber-500" /> Sign In Required
+        </Link>
+      );
+    }
     return (
       <button
         onClick={onRetry}
@@ -530,6 +563,7 @@ function StatusPill({ state, onRetry }: { state: LoadState; onRetry: () => void 
         <span className="w-2 h-2 bg-red-500" /> Retry Connection
       </button>
     );
+  }
   // Deliberately reports the indexer's timestamp, not state.fetchedAt. The poll
   // succeeding says nothing about how current the data behind it is, and the
   // sync job lands every 1-3 hours in practice.
