@@ -10,6 +10,41 @@ To maintain integrity, the payload is authenticated. Sellers using `@accensa/sdk
 
 Signing uses WebCrypto Ed25519 when `globalThis.crypto.subtle` supports it, and falls back to Node.js `crypto` otherwise. The SDK is supported and tested on Node.js, Vercel Edge Functions, Cloudflare Workers, and Deno Deploy. Runtimes without either WebCrypto Ed25519 or Node.js crypto fail loudly rather than sending an unsigned report.
 
+## Security & Key Management
+
+### The Signing Key
+
+**This is a dedicated signing key, generated specifically for settlement reporting.**
+**It is NEVER your merchant's Stellar account key.**
+
+Generating a key for this purpose (requires Node.js):
+
+```sh
+node -e "const crypto = require('crypto'); console.log(crypto.generateKeyPairSync('ed25519').privateKey.export({format: 'der', type: 'pkcs8'}).toString('hex').slice(32))"
+```
+
+Or you can use any standard tool to generate a 32-byte Ed25519 seed in hex.
+
+### Threat Model
+
+- **What the key grants**: The ability to write route attribution for payments to the indexer.
+- **What it does NOT grant**: The ability to fabricate a payment, move funds, or change ledger records. The indexer verifies all payments on-chain, so an attacker cannot invent a transaction that never happened on the Stellar ledger.
+- **Blast radius**: An attacker with this key can misattribute revenue (e.g. assigning analytics credit to a different route) or create attribution for real payments to routes that don't exist.
+- **Detection**: To detect a compromise, monitor your analytics for attribution to routes your application does not serve, or unusual spikes in attribution for specific routes that don't match your web traffic.
+- **Storage Guidance**: The private key (`privateKeyHex`) must be provided via an environment variable at minimum, or ideally fetched from a secret manager at runtime. Never commit the key to source control. The SDK is designed to ensure the key is never logged (even on failure).
+
+### Key Rotation
+
+Accensa supports key rotation with zero downtime.
+
+During a rollover, your deployment's `MERCHANT_PUBLIC_KEY` environment variable (or the database `merchants` row) accepts a comma-separated list of multiple public keys. The indexer will accept a signature from any of them.
+
+1. Generate a new keypair.
+2. Add the new public key to the list in your Accensa backend (e.g. `MERCHANT_PUBLIC_KEY="old_key,new_key"`).
+3. Wait for the new configuration to deploy.
+4. Update your seller application to use the new `privateKeyHex` (and pass `keyId` to `reportSettlement` / `AccensaHookOptions` so the backend can easily identify which key was used if desired).
+5. Once all instances are running the new key, remove the old public key from the backend. The entire rollover can be safely completed within a short maintenance window, but keys can overlap indefinitely if needed.
+
 ### Signing Contract (For Non-JS Implementers)
 
 If you are integrating with Accensa from a non-JavaScript environment, you must construct and sign the settlement report yourself.
