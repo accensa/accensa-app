@@ -135,6 +135,12 @@ describe('/api/payments GET', () => {
       expect(sql).toContain('merchant_id = $1');
       expect(params[0]).toBe(MERCHANT.id);
     });
+
+    test('sets Cache-Control no-store headers on successful response', async () => {
+      const res = await GET(mockRequest('http://localhost/api/payments'));
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Cache-Control')).toContain('no-store');
+    });
   });
 
   describe('totals and pagination (>100 payments)', () => {

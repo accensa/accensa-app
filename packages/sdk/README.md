@@ -8,6 +8,8 @@ Accensa supports merchant-reported route attribution via the `/api/hook/settle` 
 
 To maintain integrity, the payload is authenticated. Sellers using `@accensa/sdk` will have this handled automatically via `createSettleHook` or `attachAccensaHook`.
 
+Signing uses WebCrypto Ed25519 when `globalThis.crypto.subtle` supports it, and falls back to Node.js `crypto` otherwise. The SDK is supported and tested on Node.js, Vercel Edge Functions, Cloudflare Workers, and Deno Deploy. Runtimes without either WebCrypto Ed25519 or Node.js crypto fail loudly rather than sending an unsigned report.
+
 ### Signing Contract (For Non-JS Implementers)
 
 If you are integrating with Accensa from a non-JavaScript environment, you must construct and sign the settlement report yourself.

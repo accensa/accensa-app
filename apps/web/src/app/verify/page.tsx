@@ -15,16 +15,16 @@ const SAMPLE = {
 const FORGED_LEAF = '16b138aabc889c21114436424e13132bd8928d2c21b4ac5a9ac5198104efb42c';
 
 /** Strip optional 0x prefix and surrounding whitespace, returning lowercase hex. */
-function normalizeHex(input: string): string {
+export function normalizeHex(input: string): string {
   return input.trim().replace(/^0x/i, '').toLowerCase();
 }
 
 /** A hex-encoded 32-byte hash is exactly 64 hex characters. */
-function isHex64(value: string): boolean {
+export function isHex64(value: string): boolean {
   return /^[0-9a-f]{64}$/.test(normalizeHex(value));
 }
 
-interface FieldErrors {
+export interface FieldErrors {
   batchId?: string;
   leaf?: string;
   proof?: string;

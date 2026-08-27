@@ -52,8 +52,12 @@ export default function RoutesPage() {
     const controller = new AbortController();
     (async () => {
       try {
-        const res = await fetch('/api/payments', { signal: controller.signal });
-        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+        const res = await fetch('/api/payments', { signal: controller.signal, cache: 'no-store' });
+        if (!res.ok) {
+          if (res.status === 401) throw new Error('Session expired. Please sign in again.');
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error ?? `Request failed: ${res.status}`);
+        }
         const data = await res.json();
         if (!controller.signal.aborted) {
           setState({ status: 'ready', payments: data.payments ?? [] });
