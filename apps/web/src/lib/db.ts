@@ -149,13 +149,14 @@ async function ensureMultiMerchantSchema(client: Client): Promise<void> {
     CREATE TABLE IF NOT EXISTS merchants (
       id                 SERIAL PRIMARY KEY,
       address            VARCHAR(56) UNIQUE NOT NULL,
-      public_key_hex     VARCHAR(64),
+      public_key_hex     TEXT,
       asset_contract_ids TEXT,
       refund_vault_id    VARCHAR(56),
       webhook_url        TEXT,
       created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  await client.query(`ALTER TABLE merchants ALTER COLUMN public_key_hex TYPE TEXT;`);
 
   if (process.env.MERCHANT_ADDRESS) {
     await client.query(

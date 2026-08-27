@@ -134,6 +134,23 @@ describe('reportSettlement', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe(`https://accensa.test${SETTLE_ENDPOINT}`);
   });
 
+  it('never logs the private key on signing failure', async () => {
+    const onError = vi.fn();
+    const badKeyHex = '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'; // valid hex length, but maybe fails during import? Actually wait, to force a throw in `signSettlementPayload` we can just pass an invalid length key hex.
+    const veryBadKeyHex = 'abc'; 
+    await expect(reportSettlement(settlement, opts({ privateKeyHex: veryBadKeyHex, onError }))).resolves.toBe(false);
+    
+    expect(onError).toHaveBeenCalledOnce();
+    const errorStr = String(onError.mock.calls[0][0]);
+    expect(errorStr).not.toContain(veryBadKeyHex);
+    
+    // Also test fallback console.error
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(reportSettlement(settlement, opts({ privateKeyHex: 'def', onError: undefined }))).resolves.toBe(false);
+    expect(String(consoleSpy.mock.calls[0][0])).not.toContain('def');
+    expect(String(consoleSpy.mock.calls[0][2])).not.toContain('def');
+  });
+
   it('reports a non-2xx response as a failure without throwing', async () => {
     const onError = vi.fn();
     const fetchImpl = vi.fn(async () => new globalThis.Response(null, { status: 401 }));
@@ -141,6 +158,7 @@ describe('reportSettlement', () => {
     await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
     expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
     expect(String(onError.mock.calls[0][0])).toContain('401');
+    expect(String(onError.mock.calls[0][0])).not.toContain(PRIVATE_KEY_HEX);
     // A 4xx means the request itself is wrong (#123) — it must not be retried.
     expect(fetchImpl).toHaveBeenCalledOnce();
     // The payload comes back with the error so a caller can retry or log it.

@@ -47,6 +47,11 @@ export interface AccensaHookOptions {
   indexerUrl: string;
   /** Ed25519 private key in hex format to sign the settlement report. */
   privateKeyHex: string;
+  /**
+   * Identifies which key signed this report, when multiple keys are active
+   * during a rollover. Passed to the indexer as the X-Key-Id header.
+   */
+  keyId?: string;
   /** Abandon a report after this many milliseconds. Defaults to 5000. */
   timeoutMs?: number;
   /** Injected in tests. Defaults to global fetch. */
@@ -184,6 +189,7 @@ export async function reportSettlement(
         headers: {
           'Content-Type': 'application/json',
           'X-Signature': signatureHex,
+          ...(opts.keyId ? { 'X-Key-Id': opts.keyId } : {}),
         },
         body: payload,
         signal: controller.signal,
