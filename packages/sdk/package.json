@@ -17,7 +17,8 @@
   "exports": {
     ".": "./index.ts",
     "./merkle": "./merkle.ts",
-    "./webhooks": "./webhooks.ts"
+    "./webhooks": "./webhooks.ts",
+    "./retry": "./retry.ts"
   },
   "scripts": {
     "test": "vitest run",

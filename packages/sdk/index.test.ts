@@ -141,6 +141,8 @@ describe('reportSettlement', () => {
     await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
     expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
     expect(String(onError.mock.calls[0][0])).toContain('401');
+    // A 4xx means the request itself is wrong (#123) — it must not be retried.
+    expect(fetchImpl).toHaveBeenCalledOnce();
     // The payload comes back with the error so a caller can retry or log it.
     const payload = onError.mock.calls[0][1];
     const expected = toSettleHookPayload(settlement);
@@ -178,9 +180,76 @@ describe('reportSettlement', () => {
         indexerUrl: 'https://accensa.test',
         privateKeyHex: PRIVATE_KEY_HEX,
         fetchImpl,
+        // Not testing retry behaviour here — keep it to one attempt so this
+        // stays fast.
+        retry: { maxRetries: 0 },
       }),
     ).resolves.toBe(false);
     expect(spy).toHaveBeenCalled();
+  });
+});
+
+describe('reportSettlement — retry (#123)', () => {
+  it('retries a transient 5xx from the indexer and succeeds once it recovers', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    fetchImpl.mockResolvedValueOnce(new globalThis.Response(null, { status: 503 }));
+    fetchImpl.mockResolvedValueOnce(new globalThis.Response(null, { status: 504 }));
+    fetchImpl.mockResolvedValueOnce(ok());
+
+    const onError = vi.fn();
+    const result = await reportSettlement(
+      settlement,
+      opts({ fetchImpl, onError, retry: { baseDelayMs: 1 } }),
+    );
+
+    expect(result).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('gives up and reports failure after exhausting retries against a persistent 503', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new globalThis.Response(null, { status: 503 }),
+    );
+    const onError = vi.fn();
+
+    const result = await reportSettlement(
+      settlement,
+      opts({ fetchImpl, onError, retry: { baseDelayMs: 1, maxRetries: 3 } }),
+    );
+
+    expect(result).toBe(false);
+    // The initial attempt plus 3 retries.
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(String(onError.mock.calls[0][0])).toContain('503');
+  });
+
+  it('retries a dropped connection the same way as a 5xx', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    fetchImpl.mockRejectedValueOnce(new Error('ECONNRESET'));
+    fetchImpl.mockResolvedValueOnce(ok());
+
+    const result = await reportSettlement(
+      settlement,
+      opts({ fetchImpl, retry: { baseDelayMs: 1 } }),
+    );
+
+    expect(result).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('respects a custom maxRetries', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new globalThis.Response(null, { status: 503 }),
+    );
+
+    await reportSettlement(
+      settlement,
+      opts({ fetchImpl, retry: { baseDelayMs: 1, maxRetries: 1 } }),
+    );
+
+    // The initial attempt plus 1 retry, not the default 3.
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -310,7 +379,9 @@ describe('attachAccensaHook', () => {
     });
 
     const next = await runHook(
-      attachAccensaHook(opts({ fetchImpl, onError })),
+      // Not testing retry behaviour here — one attempt keeps this in step
+      // with runHook's single setImmediate tick.
+      attachAccensaHook(opts({ fetchImpl, onError, retry: { maxRetries: 0 } })),
       fakeReq(),
       fakeRes(paid),
     );

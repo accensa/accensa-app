@@ -8,8 +8,10 @@ import {
   type Settlement,
   type X402SettleResult,
 } from './settlement';
+import { fetchWithRetry, type RetryOptions } from './retry';
 
 export { verifyReceipt } from './merkle';
+export { fetchWithRetry, HttpError, type RetryOptions } from './retry';
 export {
   SETTLEMENT_HEADER,
   parseSettlementHeader,
@@ -49,6 +51,13 @@ export interface AccensaHookOptions {
   timeoutMs?: number;
   /** Injected in tests. Defaults to global fetch. */
   fetchImpl?: typeof fetch;
+  /**
+   * Retry policy for delivering the report (#123). Defaults to 3 retries
+   * with exponential backoff starting at 200ms; a 4xx response from the
+   * indexer is never retried, since the request itself won't become valid by
+   * asking again.
+   */
+  retry?: RetryOptions;
   /**
    * Called when reporting fails, with the payload that could not be delivered.
    * Reporting is best-effort by design — a paid request must not fail because
@@ -165,20 +174,22 @@ export async function reportSettlement(
       throw new Error('Ed25519 signing requires Node.js crypto in this version');
     }
 
-    const response = await doFetch(`${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Signature': signatureHex,
+    // A transient 5xx from the indexer (or a dropped connection) is retried
+    // with exponential backoff (#123) — a 4xx, or the abort above firing,
+    // still fails on the first attempt, since retrying either changes nothing.
+    await fetchWithRetry(
+      `${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Signature': signatureHex,
+        },
+        body: payload,
+        signal: controller.signal,
       },
-      body: payload,
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      report(new Error(`Accensa returned ${response.status} for ${settlement.txHash}`), body);
-      return false;
-    }
+      { fetchImpl: doFetch, ...opts.retry },
+    );
     return true;
   } catch (error) {
     report(error, body);
