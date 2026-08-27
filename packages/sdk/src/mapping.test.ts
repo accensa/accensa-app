@@ -103,6 +103,8 @@ describe('ordersFromResponse', () => {
 
   it('throws AccensaContractError on a malformed row rather than dropping it', () => {
     try {
+  it('throws on a malformed row rather than dropping it', () => {
+    expect(() =>
       ordersFromResponse({
         payments: [
           { tx_hash: 'a'.repeat(64), amount: '1000', ts: '2026-08-20T07:22:16Z' },
@@ -122,6 +124,14 @@ describe('ordersFromResponse', () => {
     expect(() => ordersFromResponse({ payments: 'nope' })).toThrow(/payments/);
     expect(() => ordersFromResponse([])).toThrow(AccensaContractError);
     expect(() => ordersFromResponse(null)).toThrow(AccensaContractError);
+      }),
+    ).toThrow(/row at index 1/);
+  });
+
+  it('throws when the body is not a payments envelope', () => {
+    expect(() => ordersFromResponse({ payments: 'nope' })).toThrow(/payments/);
+    expect(() => ordersFromResponse([])).toThrow(/payments/);
+    expect(() => ordersFromResponse(null)).toThrow(/payments/);
   });
 });
 
@@ -203,5 +213,16 @@ describe('productsFromResponse', () => {
     expect(() => productsFromResponse({ routes: 'nope' })).toThrow(AccensaContractError);
     expect(() => productsFromResponse({ routes: 'nope' })).toThrow(/routes/);
     expect(() => productsFromResponse(null)).toThrow(AccensaContractError);
+  it('throws on a malformed row', () => {
+    expect(() =>
+      productsFromResponse({
+        routes: [{ route: '/api/hello', calls: 5 }],
+      }),
+    ).toThrow(/row at index 0/);
+  });
+
+  it('throws when the body is not a routes envelope', () => {
+    expect(() => productsFromResponse({ routes: 'nope' })).toThrow(/routes/);
+    expect(() => productsFromResponse(null)).toThrow(/routes/);
   });
 });

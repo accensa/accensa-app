@@ -59,6 +59,17 @@ export interface ProductsPage {
   truncated: boolean;
 }
 
+/** Thrown when the indexer responds with a non-2xx status. */
+export class AccensaError extends Error {
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'AccensaError';
+    this.status = status;
+  }
+}
+
 export class AccensaClient {
   private readonly indexerUrl: string;
   private readonly headers: Record<string, string>;
@@ -169,6 +180,20 @@ export class AccensaClient {
     } catch (cause) {
       throw new AccensaContractError(`Accensa returned a non-JSON body for ${path}`, { cause });
     }
+      throw new AccensaError('No fetch implementation available');
+    }
+
+    const response = await doFetch(`${this.indexerUrl}${path}`, {
+      method: 'GET',
+      headers: this.headers,
+    });
+
+    if (!response.ok) {
+      throw new AccensaError(`Accensa returned ${response.status} for ${path}`, response.status);
+    }
+
+    const body: unknown = await response.json();
+    return body;
   }
 }
 

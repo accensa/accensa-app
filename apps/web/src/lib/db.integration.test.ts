@@ -1,11 +1,35 @@
 import { describe, it, expect } from 'vitest';
-import {
-  withClient,
-  withMerchantClient,
-  ensureSchema,
-  setLastSyncedLedger,
-  getLastSyncedLedger,
-} from './db';
+import { Client } from 'pg';
+
+async function withMerchantClient<T>(
+  merchantId: number,
+  fn: (client: Client) => Promise<T>,
+): Promise<T> {
+  return withClient(async (client) => {
+    // Ensure the non-superuser role exists
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'test_app_user') THEN
+          CREATE ROLE test_app_user;
+        END IF;
+      END $$;
+    `);
+    await client.query('GRANT ALL ON ALL TABLES IN SCHEMA public TO test_app_user');
+    await client.query('GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO test_app_user');
+
+    // Switch to non-superuser so RLS policies are enforced
+    await client.query('SET SESSION AUTHORIZATION test_app_user');
+
+    await client.query('SELECT set_config($1, $2, false)', [
+      'accensa.merchant_id',
+      String(merchantId),
+    ]);
+    return fn(client);
+  });
+}
+import { withClient, ensureSchema, setLastSyncedLedger, getLastSyncedLedger } from './db';
+import { insertPaymentsInTransaction } from './insert-payments';
 import { getMerchantByAddress } from './merchants';
 
 describe('Database Integration', () => {
@@ -123,7 +147,7 @@ describe('Database Integration', () => {
       await client.query(
         `INSERT INTO payments (merchant_id, tx_hash) VALUES ($1, $2)
          ON CONFLICT (merchant_id, tx_hash) DO NOTHING`,
-        [merchantB.id, 'c'.repeat(64)],
+        [merchantB.id, 'c'.repeat(63)],
       );
     });
 
@@ -131,15 +155,134 @@ describe('Database Integration', () => {
     // with a query that has no WHERE clause at all — this is what
     // FORCE ROW LEVEL SECURITY buys as the second line of defence.
     const rowsSeenByA = await withMerchantClient(merchantA.id, async (client) => {
-      const res = await client.query(`SELECT * FROM payments WHERE tx_hash = $1`, ['c'.repeat(64)]);
+      const res = await client.query(`SELECT * FROM payments WHERE tx_hash = $1`, ['c'.repeat(63)]);
       return res.rows;
     });
     expect(rowsSeenByA).toHaveLength(0);
 
     const rowsSeenByB = await withMerchantClient(merchantB.id, async (client) => {
-      const res = await client.query(`SELECT * FROM payments WHERE tx_hash = $1`, ['c'.repeat(64)]);
+      const res = await client.query(`SELECT * FROM payments WHERE tx_hash = $1`, ['c'.repeat(63)]);
       return res.rows;
     });
     expect(rowsSeenByB).toHaveLength(1);
+  });
+
+  it('batched inserts write many rows in one statement and commit the cursor atomically', async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('Skipping integration test as DATABASE_URL is missing');
+      return;
+    }
+
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO merchants (address) VALUES ($1) ON CONFLICT (address) DO NOTHING`,
+        ['GBATCHMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'],
+      );
+      return getMerchantByAddress(client, 'GBATCHMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX');
+    });
+    expect(merchant).not.toBeNull();
+
+    const rows = Array.from({ length: 3 }, (_, i) => ({
+      merchantId: merchant!.id,
+      txHash: 'b'.repeat(63) + i,
+      ledger: 100 + i,
+      payer: 'G' + 'B'.repeat(55),
+      amount: String(1000 * (i + 1)),
+      asset: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
+      ts: new Date(Date.UTC(2026, 7, 1, 0, 0, i)).toISOString(),
+    }));
+
+    const result = await withMerchantClient(merchant!.id, async (client) => {
+      await ensureSchema(client);
+      return insertPaymentsInTransaction(client, merchant!.id, rows, 500);
+    });
+
+    expect(result.inserted).toBe(3);
+    expect(result.payments).toHaveLength(3);
+
+    // All three rows committed, and the cursor advanced to 500 in the same
+    // transaction.
+    await withMerchantClient(merchant!.id, async (client) => {
+      const res = await client.query(
+        `SELECT ledger, payer, amount, asset, ts FROM payments WHERE merchant_id = $1 ORDER BY ledger`,
+        [merchant!.id],
+      );
+      expect(res.rows).toHaveLength(3);
+      expect(res.rows.map((r) => r.ledger)).toEqual([100, 101, 102]);
+      const cursor = await getLastSyncedLedger(client, merchant!.id);
+      expect(cursor).toBe(500);
+    });
+  });
+
+  it('batched inserts preserve ON CONFLICT semantics and the ledger-NULL guard', async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('Skipping integration test as DATABASE_URL is missing');
+      return;
+    }
+
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO merchants (address) VALUES ($1) ON CONFLICT (address) DO NOTHING`,
+        ['GBCONFLICTMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'],
+      );
+      return getMerchantByAddress(client, 'GBCONFLICTMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX');
+    });
+    expect(merchant).not.toBeNull();
+
+    const txHash = 'c'.repeat(63) + '1';
+
+    // A merchant-reported row exists first — route attribution arrived before
+    // the indexer saw the transfer, which is the normal ordering. It has a
+    // NULL ledger.
+    await withMerchantClient(merchant!.id, async (client) => {
+      await client.query(
+        `INSERT INTO payments (merchant_id, tx_hash, route, method)
+         VALUES ($1, $2, '/api/hello', 'GET')`,
+        [merchant!.id, txHash],
+      );
+    });
+
+    const row = {
+      merchantId: merchant!.id,
+      txHash,
+      ledger: 300,
+      payer: 'G' + 'C'.repeat(55),
+      amount: '5000',
+      asset: 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
+      ts: '2026-08-01T00:00:00.000Z',
+    };
+
+    const result = await withMerchantClient(merchant!.id, async (client) => {
+      await ensureSchema(client);
+      return insertPaymentsInTransaction(client, merchant!.id, [row], 600);
+    });
+
+    // The conflicting row was updated (ledger-NULL guard passed) and returned.
+    expect(result.inserted).toBe(1);
+
+    await withMerchantClient(merchant!.id, async (client) => {
+      const res = await client.query(
+        `SELECT ledger, payer, amount, asset, ts, route, method FROM payments WHERE merchant_id = $1 AND tx_hash = $2`,
+        [merchant!.id, txHash],
+      );
+      const payment = res.rows[0];
+      // Ledger-owned columns were written by the indexer...
+      expect(payment.ledger).toBe(300);
+      expect(payment.payer).toBe('G' + 'C'.repeat(55));
+      expect(payment.amount).toBe('5000');
+      expect(payment.ts).toBeInstanceOf(Date);
+      // ...and merchant-reported columns were left alone.
+      expect(payment.route).toBe('/api/hello');
+      expect(payment.method).toBe('GET');
+    });
+
+    // Re-indexing the same transfer is a no-op: the row now has a ledger, so
+    // the DO UPDATE guard fails and nothing is written or returned.
+    const second = await withMerchantClient(merchant!.id, async (client) => {
+      return insertPaymentsInTransaction(client, merchant!.id, [{ ...row, ledger: 301 }], 601);
+    });
+    expect(second.inserted).toBe(0);
   });
 });

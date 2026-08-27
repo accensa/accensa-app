@@ -69,12 +69,19 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Enforce CRON_SECRET for GET /api/sync
-  if (isCronSync) {
-    const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  // Enforce CRON_SECRET for GET /api/sync.
+  //
+  // The bearer-token comparison itself lives in the route handler
+  // (isAuthorizedCronRequest, src/lib/cron-auth.ts): it needs node:crypto's
+  // constant-time compare, which this middleware's Edge runtime doesn't
+  // have. Re-implementing that comparison here with `!==` is exactly how it
+  // previously drifted - an unset CRON_SECRET rendered this template literal
+  // as the string "Bearer undefined", which a request carrying that literal
+  // header then matched. So this only asserts what is true unconditionally:
+  // with no secret configured, no header can ever be valid, and denying here
+  // means a misconfigured deployment never even reaches the route.
+  if (isCronSync && !process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   return NextResponse.next();
