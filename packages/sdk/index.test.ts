@@ -152,8 +152,9 @@ describe('reportSettlement', () => {
   it('never logs the private key on signing failure', async () => {
     const onError = vi.fn();
     const veryBadKeyHex = 'abc';
+    const fetchImpl = vi.fn();
     await expect(
-      reportSettlement(settlement, opts({ privateKeyHex: veryBadKeyHex, onError })),
+      reportSettlement(settlement, opts({ privateKeyHex: veryBadKeyHex, onError, fetchImpl })),
     ).resolves.toBe(false);
 
     expect(onError).toHaveBeenCalledOnce();
