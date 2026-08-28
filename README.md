@@ -119,6 +119,9 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 MERCHANT_ADDRESS=GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6
 STELLAR_RPC_URL=https://soroban-testnet.stellar.org
 HOOK_API_KEY=any-shared-secret   # required for /api/hook/settle
+# ASSET_CONTRACT_IDS — comma-separated SAC ids whose transfers are revenue.
+# Omitted, it defaults to the testnet native XLM SAC. For USDC (or XLM + USDC):
+# ASSET_CONTRACT_IDS=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA,CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
 
 # 3. Dashboard (schema is created on first request)
 cd apps/web
@@ -183,6 +186,18 @@ standing up another deployment.
 
 Testnet IDs are published in
 [`accensa-contracts/deployments/testnet.env`](https://github.com/accensa/accensa-contracts/blob/main/deployments/testnet.env).
+
+### Settling in USDC or multiple assets
+
+`ASSET_CONTRACT_IDS` selects which Stellar Asset Contracts the indexer treats as
+revenue. It defaults to the testnet native XLM SAC; set it to a comma-separated
+list to index USDC, or XLM and USDC together. `payments.asset` records each
+row's asset, and revenue is grouped by asset — never summed across them.
+
+RefundVault holds a **single** token, so a merchant taking both assets refunds
+in only one of them unless a second vault is deployed. Receiving USDC also
+requires a trustline. Both constraints are spelled out in
+[DEPLOYMENT.md](DEPLOYMENT.md#settling-in-usdc-or-multiple-assets).
 
 ## Testing
 

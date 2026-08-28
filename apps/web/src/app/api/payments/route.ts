@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   let limit = 100;
   if (limitParam !== null) {
     const parsed = Number.parseFloat(limitParam);
-    const maxLimit = await getMaxBatchSize().catch(() => 1000); // Fallback to 1000 if network fails
+    const maxLimit = await getMaxBatchSize().catch(() => 1000);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > maxLimit) {
       return NextResponse.json(
         { error: 'limit must be an integer between 1 and 1000' },
@@ -56,9 +56,6 @@ export async function GET(request: Request) {
     limit = parsed;
   }
 
-  // Page-based (offset) pagination, e.g. ?page=2&limit=50. Absent means page 1,
-  // which keeps every existing no-parameter caller (the routes page, the SDK's
-  // first page) on exactly the behaviour they had.
   const pageParam = searchParams.get('page');
   let page = 1;
   if (pageParam !== null) {
@@ -69,8 +66,6 @@ export async function GET(request: Request) {
     page = parsed;
   }
 
-  // Cursor-based (keyset) pagination, used by @accensa/sdk. The two schemes are
-  // mutually exclusive: a request cannot offset and keyset at the same time.
   const cursor = searchParams.get('cursor');
   let parsedCursor: { ts: string; txHash: string } | null = null;
   if (cursor) {
@@ -93,6 +88,25 @@ export async function GET(request: Request) {
     }
   }
 
+  // Date range filter (#142): ?from=ISO-8601&to=ISO-8601
+  const fromParam = searchParams.get('from');
+  const toParam = searchParams.get('to');
+  let fromDate: Date | null = null;
+  let toDate: Date | null = null;
+
+  if (fromParam) {
+    fromDate = new Date(fromParam);
+    if (Number.isNaN(fromDate.getTime())) {
+      return NextResponse.json({ error: 'from must be a valid ISO-8601 date' }, { status: 400 });
+    }
+  }
+  if (toParam) {
+    toDate = new Date(toParam);
+    if (Number.isNaN(toDate.getTime())) {
+      return NextResponse.json({ error: 'to must be a valid ISO-8601 date' }, { status: 400 });
+    }
+  }
+
   const offset = (page - 1) * limit;
 
   try {
@@ -101,7 +115,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { rows, sync, totalCount, totalAmount } = await withMerchantClient(
+    const { rows, sync } = await withMerchantClient(
       merchant.id,
       async (client) => {
         await ensureSchema(client);
@@ -118,12 +132,27 @@ export async function GET(request: Request) {
                                 THEN MIN(COALESCE(asset, 'native')) OVER() END AS total_asset
                     FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
         const params: (string | number)[] = [merchant.id];
+
+        // Apply date range filter (#142)
+        if (fromDate) {
+          query += ` AND ts >= $${params.length + 1}`;
+          params.push(fromDate.toISOString());
+        }
+        if (toDate) {
+          query += ` AND ts <= $${params.length + 1}`;
+          params.push(toDate.toISOString());
+        }
+
         if (parsedCursor) {
           query += ` AND (ts < $${params.length + 1} OR (ts = $${params.length + 1} AND tx_hash < $${params.length + 2}))`;
           params.push(parsedCursor.ts, parsedCursor.txHash);
         }
         query += ` ORDER BY ts DESC, tx_hash DESC LIMIT $${params.length + 1}`;
         params.push(limit);
+
+        query += ` ORDER BY ts DESC, tx_hash DESC LIMIT $${params.length + 1}`;
+        params.push(limit);
+
         if (!parsedCursor) {
           query += ` OFFSET $${params.length + 1}`;
           params.push(offset);
@@ -151,11 +180,10 @@ export async function GET(request: Request) {
           totalCount,
           totalAmount,
         };
+        return { rows: result.rows, sync: await getSyncState(client, merchant.id) };
       },
     );
 
-    // The fake databases in tests do not return the window columns; tolerate
-    // their absence so aggregate handling is uniform.
     const total = rows.length > 0 ? Number(rows[0].total ?? 0) : 0;
     const totalAsset = rows.length > 0 ? (rows[0].total_asset ?? null) : null;
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);

@@ -21,7 +21,8 @@
     "./types": "./src/types/index.ts",
     "./receipt-anchor-client": "./receipt-anchor-client.ts",
     "./webhooks": "./webhooks.ts",
-    "./retry": "./retry.ts"
+    "./retry": "./retry.ts",
+    "./react-native": "./src/react-native.ts"
   },
   "scripts": {
     "test": "vitest run",
