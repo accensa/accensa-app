@@ -16,6 +16,7 @@
 import { ordersFromResponse, productsFromResponse } from './mapping';
 import type { Order } from './types/order';
 import type { Product } from './types/product';
+import type { SyncEvent } from './types/sync-event';
 
 export interface AccensaClientOptions {
   /** Base URL of your Accensa deployment, e.g. https://accensa-dashboard.vercel.app */
@@ -122,6 +123,38 @@ export class AccensaClient {
   async fetchProduct(productId: string, opts: { limit?: number } = {}): Promise<Product | null> {
     const page = await this.listProducts({ limit: opts.limit ?? 200 });
     return page.products.find((product) => product.id === productId) ?? null;
+  }
+
+  /**
+   * Subscribes to real-time indexer updates via Server-Sent Events.
+   *
+   * Returns an unsubscribe function. `onSync` fires each time the indexer
+   * completes a run for the merchant; `onStatus` reports connection state so
+   * callers can show a live/lagging indicator. Uses the browser-native
+   * EventSource, which reconnects automatically.
+   *
+   * Mirrors the `/api/sync/stream` endpoint.
+   */
+  subscribeSync(handlers: {
+    onSync: (payload: SyncEvent) => void;
+    onStatus?: (connected: boolean) => void;
+  }): () => void {
+    if (typeof globalThis.EventSource !== 'function') {
+      // Non-browser callers have no EventSource; degrade to a no-op.
+      return () => undefined;
+    }
+    const source = new EventSource(`${this.indexerUrl}/api/sync/stream`);
+    source.addEventListener('sync', (event) => {
+      const message = event as MessageEvent;
+      try {
+        handlers.onSync(JSON.parse(message.data as string) as SyncEvent);
+      } catch {
+        // Ignore malformed payloads rather than dropping the subscription.
+      }
+    });
+    source.onopen = () => handlers.onStatus?.(true);
+    source.onerror = () => handlers.onStatus?.(false);
+    return () => source.close();
   }
 
   private async getJson(path: string): Promise<unknown> {

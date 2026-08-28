@@ -27,6 +27,7 @@ import {
 } from '@/lib/insert-payments';
 import { listMerchants, getMerchantFromRequest, type Merchant } from '@/lib/merchants';
 import { cooldownRemaining } from '@/lib/sync-status';
+import { broadcastSyncEvent, hasSubscribers } from '@/lib/sync-events';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 import { logSyncFailure, notifySyncFailure, type SyncFailureContext } from '@/lib/sync-logger';
 import { createHmac } from 'node:crypto';
@@ -332,6 +333,21 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
       // independently, so one merchant with no activity cannot hold back or be
       // held back by another's progress.
       await setLastSyncedLedger(client, merchant.id, sweptThrough);
+
+      // Push a real-time update to any subscribed dashboard tab instead of
+      // waiting for the next poll (real-time indexer updates). Skipped when no
+      // client is listening so an idle sync does no broadcast bookkeeping.
+      if (hasSubscribers(merchant.id)) {
+        broadcastSyncEvent(merchant.id, {
+          merchant: merchant.address,
+          syncedTo: sweptThrough,
+          inserted,
+          scanned,
+          pages,
+          drained: complete,
+          occurredAt: new Date().toISOString(),
+        });
+      }
 
       return {
         merchant: merchant.address,
