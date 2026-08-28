@@ -152,6 +152,7 @@ try {
 ```
 
 The error classes are also available from `@accensa/sdk/errors`.
+
 ## Verifying Inbound Webhooks
 
 Merchants receiving webhooks from the Accensa indexer can verify that the

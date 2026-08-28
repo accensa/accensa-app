@@ -27,10 +27,7 @@
  * @param timezone    IANA timezone name. Defaults to `'UTC'`.
  * @returns           e.g. `"3 Apr 2026, 11:20:00 PM UTC"`
  */
-export function formatTimestamp(
-  input: Date | string | number,
-  timezone = 'UTC',
-): string {
+export function formatTimestamp(input: Date | string | number, timezone = 'UTC'): string {
   const date = input instanceof Date ? input : new Date(input);
   if (Number.isNaN(date.getTime())) return '—';
 

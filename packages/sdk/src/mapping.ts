@@ -89,11 +89,6 @@ export function ordersFromResponse(raw: unknown): OrdersResponse {
   const rows = Array.isArray(raw.payments) ? raw.payments : null;
   if (rows === null) {
     throw new AccensaContractError('ordersFromResponse: expected a "payments" array');
-    throw new Error('ordersFromResponse: expected an object with a "payments" array');
-  }
-  const rows = Array.isArray(raw.payments) ? raw.payments : null;
-  if (rows === null) {
-    throw new Error('ordersFromResponse: expected a "payments" array');
   }
 
   const orders: Order[] = rows.map((row, index) => {
@@ -103,9 +98,6 @@ export function ordersFromResponse(raw: unknown): OrdersResponse {
         `ordersFromResponse: row at index ${index} is missing a required field ` +
           '(tx_hash, amount, ts)',
         { index },
-      throw new Error(
-        `ordersFromResponse: row at index ${index} is missing a required field ` +
-          '(tx_hash, amount, ts)',
       );
     }
     return order;
@@ -157,7 +149,6 @@ export function productsFromResponse(raw: unknown): ProductsResponse {
     throw new AccensaContractError(
       'productsFromResponse: expected an object with a "routes" array',
     );
-    throw new Error('productsFromResponse: expected an object with a "routes" array');
   }
 
   const products: Product[] = raw.routes.map((row, index) => {
@@ -167,9 +158,6 @@ export function productsFromResponse(raw: unknown): ProductsResponse {
         `productsFromResponse: row at index ${index} is missing a required field ` +
           '(route, total_revenue, calls)',
         { index },
-      throw new Error(
-        `productsFromResponse: row at index ${index} is missing a required field ` +
-          '(route, total_revenue, calls)',
       );
     }
     return product;

@@ -127,9 +127,7 @@ export function buildBatch(leaves: string[]): BatchInfo {
         const left = currentLevel[i];
         const right = currentLevel[i + 1];
         const [lo, hi] =
-          Buffer.compare(left.buf, right.buf) <= 0
-            ? [left.buf, right.buf]
-            : [right.buf, left.buf];
+          Buffer.compare(left.buf, right.buf) <= 0 ? [left.buf, right.buf] : [right.buf, left.buf];
         const parent = createHash('sha256')
           .update(Buffer.concat([lo, hi]))
           .digest();

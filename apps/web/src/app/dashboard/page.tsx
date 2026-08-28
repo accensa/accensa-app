@@ -1,7 +1,6 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { formatAmount, sumAmounts, assetLabel } from '@/lib/money';
 import { describeSync, type SyncState } from '@/lib/sync-status';
 import { CSV_BOM, paymentsCsvFilename, paymentsToCsv } from '@/lib/payments-csv';
@@ -15,8 +14,6 @@ import { CopyButton } from '@/components/copy-button';
 import { useOnline } from '@/components/network-status';
 import { describeFailure } from '@/lib/network-status';
 import { Pagination } from '@/components/pagination';
-import { useOnline, useVisibility } from '@/components/network-status';
-import { describeFailure, isAbortError } from '@/lib/network-status';
 import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';
 
 interface Payment {
@@ -55,6 +52,8 @@ interface PaymentsResponse {
   total_asset?: string | null;
   /** ceil(total / limit); absent on older deploys. */
   total_pages?: number;
+  /** Total count of all settled payments; absent on older deploys. */
+  total_count?: number;
 }
 
 /** Chunk size for the transaction history. */
@@ -114,7 +113,6 @@ export function Dashboard() {
     [],
   );
   const online = useOnline();
-  const visible = useVisibility();
 
   // The current page lives in the URL (?page=2) so it survives reloads and can
   // be linked to; searchParams is the single source of truth, and `goToPage`
@@ -166,57 +164,6 @@ export function Dashboard() {
   // clicking Next is instant. Renders nothing; the cache is the whole point.
   const hasNext = totalPages > page;
   useSWR(hasNext ? paymentsUrl(page + 1) : null, fetchPaymentsPage);
-  // Polling stops while offline or while the tab is hidden.
-  // Returning to the tab or reconnecting refetches immediately rather than
-  // waiting out the remainder of a 15s tick.
-  useEffect(() => {
-    if (!online || !visible) return;
-    const controller = new AbortController();
-    async function fetchPayments() {
-      try {
-        const res = await fetch('/api/payments', { signal: controller.signal, cache: 'no-store' });
-        if (!res.ok) {
-          if (res.status === 401) throw new Error('Session expired. Please sign in again.');
-          throw new Error((await res.json().catch(() => ({}))).error ?? `Error ${res.status}`);
-        }
-        const data = await res.json();
-        // Tolerate both shapes: the endpoint used to return a bare array, and
-        // a deploy can briefly serve an older build to an already-open tab.
-        const payments: Payment[] = Array.isArray(data) ? data : (data.payments ?? []);
-        const sync: SyncState | null = Array.isArray(data) ? null : (data.sync ?? null);
-        const totalCount: number = Array.isArray(data)
-          ? payments.length
-          : (data.total_count ?? payments.length);
-        const totalAmount: string = Array.isArray(data)
-          ? sumAmounts(payments.map((p) => p.amount))
-          : (data.total_amount ?? sumAmounts(payments.map((p) => p.amount)));
-
-        if (!controller.signal.aborted) {
-          setState({
-            status: 'ready',
-            payments,
-            fetchedAt: Date.now(),
-            sync,
-            totalCount,
-            totalAmount,
-          });
-        }
-      } catch (error) {
-        // Re-read navigator.onLine here rather than closing over `online`: the
-        // connection can drop between the request going out and it failing,
-        // and that is exactly the case worth naming correctly.
-        if (!controller.signal.aborted && !isAbortError(error)) {
-          setState({ status: 'error', message: describeFailure(error, navigator.onLine) });
-        }
-      }
-    }
-    void fetchPayments();
-    const timer = setInterval(fetchPayments, POLL_INTERVAL_MS);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [reloadToken, online, visible]);
 
   useEffect(() => {
     if (!selected) return;
@@ -237,15 +184,7 @@ export function Dashboard() {
     total = data.total_amount;
     totalAsset = data.total_asset ? assetLabel(data.total_asset) : '';
   }
-  const payments = state.status === 'ready' ? state.payments : [];
-  const total =
-    state.status === 'ready' && state.totalAmount !== undefined
-      ? state.totalAmount
-      : sumAmounts(payments.map((p) => p.amount));
-  const totalCount =
-    state.status === 'ready' && state.totalCount !== undefined ? state.totalCount : payments.length;
-  const assets = new Set(payments.map((p) => assetLabel(p.asset)));
-  const totalAsset = assets.size === 1 ? [...assets][0] : '';
+  const totalCount = data?.total_count ?? payments.length;
 
   return (
     <main className="min-h-screen text-slate-600 dark:text-slate-200 font-sans selection:bg-slate-200 dark:selection:bg-white/10 transition-colors duration-300 bg-grid p-6 md:p-12 lg:p-20 pt-28 md:pt-32 lg:pt-32">
@@ -720,9 +659,9 @@ function StatusPill({ state, onRetry }: { state: LoadState; onRetry: () => void 
         <span className="w-2 h-2 bg-red-600 dark:bg-red-500" /> Retry Connection
       </button>
     );
-  // Deliberately reports the indexer's timestamp, not when the poll last
-  // succeeded. The poll succeeding says nothing about how current the data
-  // behind it is, and the sync job lands every 1-3 hours in practice.
+    // Deliberately reports the indexer's timestamp, not when the poll last
+    // succeeded. The poll succeeding says nothing about how current the data
+    // behind it is, and the sync job lands every 1-3 hours in practice.
   }
   // Deliberately reports the indexer's timestamp, not state.fetchedAt. The poll
   // succeeding says nothing about how current the data behind it is, and the

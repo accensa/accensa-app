@@ -154,7 +154,6 @@ describe('reportSettlement', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe(`https://accensa.test${SETTLE_ENDPOINT}`);
   });
 
-  it('reports a 401 as an AccensaAuthError without throwing', async () => {
   it('never logs the private key on signing failure', async () => {
     const onError = vi.fn();
     const veryBadKeyHex = 'abc';
@@ -366,13 +365,26 @@ describe('reportSettlement — network timeout', () => {
     const onError = vi.fn();
     const fetchImpl = hangingFetch();
 
-    const pending = reportSettlement(settlement, opts({ fetchImpl, onError }));
-    await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS - 1);
-    expect(onError).not.toHaveBeenCalled();
+    // Replace WebCrypto with promise-only operations so signing resolves on the
+    // microtask queue. A real importKey/sign completes on the libuv threadpool,
+    // letting the fake-timer abort outpace the fetch registration and leave the
+    // abort listener attached to an already-aborted signal.
+    const subtle = {
+      importKey: vi.fn(async () => ({})),
+      sign: vi.fn(async () => new Uint8Array(64)),
+    };
+    vi.stubGlobal('crypto', { subtle });
+    try {
+      const pending = reportSettlement(settlement, opts({ fetchImpl, onError }));
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS - 1);
+      expect(onError).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(1);
-    await expect(pending).resolves.toBe(false);
-    expect(onError).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toBe(false);
+      expect(onError).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   }, 10_000);
 
   it('clears the timer once the request succeeds, leaving nothing pending', async () => {

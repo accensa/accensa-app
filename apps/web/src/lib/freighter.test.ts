@@ -146,7 +146,11 @@ describe('freighterAdapter.readStatus', () => {
       networkPassphrase: 'Test SDF Network ; September 2015',
     });
 
-    expect(await freighterAdapter.readStatus()).toEqual({ kind: 'connected', address: G, network: 'TESTNET' });
+    expect(await freighterAdapter.readStatus()).toEqual({
+      kind: 'connected',
+      address: G,
+      network: 'TESTNET',
+    });
   });
 
   it('still reports connected when the network cannot be read', async () => {
@@ -154,7 +158,11 @@ describe('freighterAdapter.readStatus', () => {
     vi.mocked(getAddress).mockResolvedValue({ address: G });
     vi.mocked(getNetwork).mockRejectedValue(new Error('extension went away'));
 
-    expect(await freighterAdapter.readStatus()).toEqual({ kind: 'connected', address: G, network: undefined });
+    expect(await freighterAdapter.readStatus()).toEqual({
+      kind: 'connected',
+      address: G,
+      network: undefined,
+    });
   });
 
   it('surfaces an isConnected error as a renderable message', async () => {
@@ -163,7 +171,10 @@ describe('freighterAdapter.readStatus', () => {
       error: { code: -1, message: 'Extension is locked' },
     });
 
-    expect(await freighterAdapter.readStatus()).toEqual({ kind: 'error', message: 'Extension is locked' });
+    expect(await freighterAdapter.readStatus()).toEqual({
+      kind: 'error',
+      message: 'Extension is locked',
+    });
   });
 
   it('does not reject when a call throws outright', async () => {
@@ -201,7 +212,11 @@ describe('freighterAdapter.connect', () => {
     vi.mocked(requestAccess).mockResolvedValue({ address: G });
     vi.mocked(getNetwork).mockResolvedValue(NO_NETWORK);
 
-    expect(await freighterAdapter.connect()).toEqual({ kind: 'connected', address: G, network: undefined });
+    expect(await freighterAdapter.connect()).toEqual({
+      kind: 'connected',
+      address: G,
+      network: undefined,
+    });
   });
 });
 
@@ -216,7 +231,9 @@ describe('freighterAdapter.signTransaction', () => {
       signerAddress: G,
     });
 
-    expect(await freighterAdapter.signTransaction('AAAA-unsigned', { networkPassphrase: 'x' })).toBe('AAAA-signed');
+    expect(
+      await freighterAdapter.signTransaction('AAAA-unsigned', { networkPassphrase: 'x' }),
+    ).toBe('AAAA-signed');
   });
 
   it('throws when the user refuses, so a refund flow cannot continue unsigned', async () => {
@@ -226,17 +243,17 @@ describe('freighterAdapter.signTransaction', () => {
       error: { code: -1, message: 'User declined to sign' },
     });
 
-    await expect(freighterAdapter.signTransaction('AAAA', { networkPassphrase: 'x' })).rejects.toThrow(
-      'User declined to sign',
-    );
+    await expect(
+      freighterAdapter.signTransaction('AAAA', { networkPassphrase: 'x' }),
+    ).rejects.toThrow('User declined to sign');
   });
 
   it('throws rather than returning an empty envelope', async () => {
     vi.mocked(freighterSign).mockResolvedValue({ signedTxXdr: '', signerAddress: G });
 
-    await expect(freighterAdapter.signTransaction('AAAA', { networkPassphrase: 'x' })).rejects.toThrow(
-      'did not return a signed transaction',
-    );
+    await expect(
+      freighterAdapter.signTransaction('AAAA', { networkPassphrase: 'x' }),
+    ).rejects.toThrow('did not return a signed transaction');
   });
 });
 

@@ -18,10 +18,8 @@
     ".": "./index.ts",
     "./errors": "./src/errors.ts",
     "./merkle": "./merkle.ts",
-    "./types": "./src/types/index.ts"
-    "./receipt-anchor-client": "./receipt-anchor-client.ts",
-    "./merkle": "./merkle.ts",
     "./types": "./src/types/index.ts",
+    "./receipt-anchor-client": "./receipt-anchor-client.ts",
     "./webhooks": "./webhooks.ts",
     "./retry": "./retry.ts"
   },

@@ -9,7 +9,7 @@ import {
   type X402SettleResult,
 } from './settlement';
 import { AccensaAuthError, AccensaError, AccensaNetworkError } from './src/errors';
-import { fetchWithRetry, type RetryOptions } from './retry';
+import { fetchWithRetry, HttpError, type RetryOptions } from './retry';
 
 export { verifyReceipt, buildBatch, type BatchInfo } from './merkle';
 export { fetchWithRetry, HttpError, type RetryOptions } from './retry';
@@ -23,27 +23,6 @@ export {
   type X402SettleResult,
 } from './settlement';
 export { WEBHOOK_SIGNATURE_HEADER, signWebhookSignature, verifyWebhookSignature } from './webhooks';
-
-/** Strict, typed Order and Product fetches against the Accensa indexer. */
-export {
-  AccensaClient,
-  AccensaError,
-  type AccensaClientOptions,
-  type OrdersPage,
-  type ProductsPage,
-} from './src/client';
-/** Strict mappers from the indexer's wire rows to Order/Product. */
-export {
-  orderFromWire,
-  ordersFromResponse,
-  productFromWire,
-  productsFromResponse,
-  type OrdersResponse,
-  type ProductsResponse,
-} from './src/mapping';
-/** The strict Order and Product types themselves. */
-export type { Order, OrderMetadata } from './src/types/order';
-export type { Product, ProductMetadata } from './src/types/product';
 
 /** Strict, typed Order and Product fetches against the Accensa indexer. */
 export {
@@ -257,31 +236,6 @@ export async function reportSettlement(
   try {
     const payload = JSON.stringify(body);
 
-    let signatureHex = '';
-    if (typeof process !== 'undefined' && process.versions && process.versions.node) {
-      // Node.js environment
-      const crypto = await import('node:crypto');
-      const keyBuffer = Buffer.from(opts.privateKeyHex, 'hex');
-      const privateKey = crypto.createPrivateKey({
-        key: Buffer.concat([
-          Buffer.from('302e020100300506032b657004220420', 'hex'), // PKCS#8 Ed25519 header
-          keyBuffer,
-        ]),
-        format: 'der',
-        type: 'pkcs8',
-      });
-      signatureHex = crypto.sign(null, Buffer.from(payload), privateKey).toString('hex');
-    } else {
-      // Browser/Edge has no node:crypto. Fail loudly rather than skip signing:
-      // an unsigned report is rejected with 401 by the hook anyway, and a
-      // silent no-op here would look like a delivered report that never landed.
-      throw new AccensaError('Ed25519 signing requires Node.js crypto in this version');
-    }
-
-    const url = `${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`;
-    let response: globalThis.Response;
-    try {
-      response = await doFetch(url, {
     const signatureHex = await signSettlementPayload(payload, opts.privateKeyHex);
 
     // A transient 5xx from the indexer (or a dropped connection) is retried
@@ -294,37 +248,6 @@ export async function reportSettlement(
         headers: {
           'Content-Type': 'application/json',
           'X-Signature': signatureHex,
-        },
-        body: payload,
-        signal: controller.signal,
-      });
-    } catch (cause) {
-      // Timeouts abort the request, which surfaces here as an AbortError.
-      report(
-        new AccensaNetworkError(`Failed to reach the Accensa indexer at ${SETTLE_ENDPOINT}`, {
-          url,
-          cause,
-        }),
-        body,
-      );
-      return false;
-    }
-
-    if (!response.ok) {
-      // A 401/403 means the report itself was rejected, not that the network
-      // is down — classify it so callers can distinguish the two.
-      const error =
-        response.status === 401 || response.status === 403
-          ? new AccensaAuthError(`Accensa returned ${response.status} for ${settlement.txHash}`, {
-              status: response.status,
-              path: SETTLE_ENDPOINT,
-            })
-          : new AccensaError(`Accensa returned ${response.status} for ${settlement.txHash}`, {
-              status: response.status,
-            });
-      report(error, body);
-      return false;
-    }
           ...(opts.keyId ? { 'X-Key-Id': opts.keyId } : {}),
         },
         body: payload,
@@ -334,7 +257,37 @@ export async function reportSettlement(
     );
     return true;
   } catch (error) {
-    report(error, body);
+    if (error instanceof HttpError) {
+      // A 401/403 means the report itself was rejected, not that the network
+      // is down — classify it so callers can distinguish the two.
+      const { status } = error;
+      report(
+        status === 401 || status === 403
+          ? new AccensaAuthError(`Accensa returned ${status} for ${settlement.txHash}`, {
+              status,
+              path: SETTLE_ENDPOINT,
+            })
+          : new AccensaError(`Accensa returned ${status} for ${settlement.txHash}`, {
+              status,
+            }),
+        body,
+      );
+    } else {
+      // A dropped connection, a timeout (surfacing as an AbortError), or a
+      // network-level failure that exhausted its retries. The underlying
+      // message rides along so `report` can show why the report failed.
+      const causeText = error instanceof Error ? error.message : String(error);
+      report(
+        new AccensaNetworkError(
+          `Failed to reach the Accensa indexer at ${SETTLE_ENDPOINT}: ${causeText}`,
+          {
+            url: `${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`,
+            cause: error,
+          },
+        ),
+        body,
+      );
+    }
     return false;
   } finally {
     clearTimeout(timer);

@@ -6,7 +6,6 @@ import {
   AccensaError,
   AccensaNetworkError,
 } from './client';
-import { AccensaClient, AccensaError } from './client';
 
 const TX_HASH = 'a'.repeat(64);
 const PAYER = 'G' + 'A'.repeat(55);
@@ -237,17 +236,5 @@ describe('AccensaClient — request plumbing', () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(AccensaContractError);
     expect(String(error)).toContain('non-JSON');
-  it('throws AccensaError with the status on a non-2xx response', async () => {
-    const fetchImpl = vi.fn<typeof fetch>(
-      async () => new globalThis.Response(null, { status: 401 }),
-    );
-
-    await expect(client(fetchImpl).listOrders()).rejects.toBeInstanceOf(AccensaError);
-    await expect(client(fetchImpl).listOrders()).rejects.toMatchObject({ status: 401 });
-  });
-
-  it('throws a clear error when a malformed row comes back', async () => {
-    const fetchImpl = jsonFetch({ payments: [{ amount: '1000' }] });
-    await expect(client(fetchImpl).listOrders()).rejects.toThrow(/row at index 0/);
   });
 });
