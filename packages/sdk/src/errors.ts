@@ -6,6 +6,7 @@
  * The subclasses discriminate the failure modes that matter in practice:
  *
  * - {@link AccensaAuthError} — the indexer rejected the credential (401/403).
+ * - {@link AccensaRateLimitError} — a rate-limited RPC or indexer node (429).
  * - {@link AccensaNetworkError} — the indexer could not be reached at all.
  * - {@link AccensaContractError} — the indexer (or a receipt) violated the
  *   documented wire contract.
@@ -59,6 +60,44 @@ export class AccensaAuthError extends AccensaError {
     this.name = 'AccensaAuthError';
     this.status = options.status;
     this.path = options.path;
+  }
+}
+
+/**
+ * A rate-limited RPC or indexer node answered HTTP 429 and the retry budget
+ * was exhausted (#155).
+ *
+ * Thrown by the SDK's rate-limit wrapper after it has already waited and
+ * retried, so a caller can catch it and tell the user "try again shortly"
+ * instead of crashing on a generic error. `retryAfterMs` carries the server's
+ * `Retry-After` hint (or the SDK's backoff) so the UI can show a concrete
+ * countdown.
+ */
+export class AccensaRateLimitError extends AccensaError {
+  /** Always 429 for this error type. */
+  readonly status: number;
+  /** The path or RPC method that was rate limited, when known. */
+  readonly path?: string;
+  /** How long the caller should wait before retrying, in milliseconds. */
+  readonly retryAfterMs?: number;
+
+  constructor(
+    message: string,
+    options: { path?: string; retryAfterMs?: number; cause?: unknown } = {},
+  ) {
+    super(message, { status: 429, path: options.path, cause: options.cause });
+    this.name = 'AccensaRateLimitError';
+    this.status = 429;
+    this.path = options.path;
+    this.retryAfterMs = options.retryAfterMs;
+  }
+}
+
+/** The client aborted a request because it exceeded the configured timeout (#134). */
+export class AccensaTimeoutError extends AccensaError {
+  constructor(message: string, options?: { path?: string; cause?: unknown }) {
+    super(message, { path: options?.path, cause: options?.cause });
+    this.name = 'AccensaTimeoutError';
   }
 }
 

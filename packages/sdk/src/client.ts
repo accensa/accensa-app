@@ -14,12 +14,46 @@
  */
 
 import { ordersFromResponse, productsFromResponse } from './mapping';
+import { fetchWithRetry, HttpError, retryAfterMs, type RetryOptions } from '../retry';
 import type { Order } from './types/order';
 import type { Product } from './types/product';
 import type { SyncEvent } from './types/sync-event';
 
+// Re-exported from `./errors` (which owns the canonical definitions) so that
+// consumers importing the error classes from `@accensa/sdk` keep working.
+export {
+  AccensaError,
+  AccensaAuthError,
+  AccensaContractError,
+  AccensaNetworkError,
+  AccensaRateLimitError,
+  AccensaTimeoutError,
+} from './errors';
+import {
+  AccensaError,
+  AccensaAuthError,
+  AccensaContractError,
+  AccensaNetworkError,
+  AccensaRateLimitError,
+  AccensaTimeoutError,
+} from './errors';
+
 /** Default request timeout in milliseconds (30 seconds). */
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * How long a successful read stays in the in-memory cache before being
+ * re-fetched, in milliseconds.
+ *
+ * The dashboard navigates between pages that each re-read the same merchant
+ * profile and product data. A short TTL (10 seconds) makes those repeat reads
+ * instant while keeping the cache stale for at most one polling interval, so
+ * it can never outlive the truth for long. Set `cacheTtlMs: 0` to disable.
+ */
+const DEFAULT_CACHE_TTL_MS = 10_000;
+
+/** How many times a rate-limited (429) request is retried after the first try. */
+const RATE_LIMIT_MAX_RETRIES = 3;
 
 export interface AccensaClientOptions {
   /** Base URL of your Accensa deployment, e.g. https://accensa-dashboard.vercel.app */
@@ -37,10 +71,14 @@ export interface AccensaClientOptions {
    * Defaults to 30 000 ms (30 seconds).
    */
   timeoutMs?: number;
+  /**
+   * How long successful read results are served from an in-memory cache, in
+   * milliseconds (#160). Repeat calls for the same data within the TTL bypass
+   * the network. Set to 0 to disable caching. Defaults to 10 000 ms.
+   */
+  cacheTtlMs?: number;
   /** Injected in tests. Defaults to global fetch. */
   fetchImpl?: typeof fetch;
-  /** Optional request timeout in milliseconds. */
-  timeoutMs?: number;
 }
 
 /** A page of {@link Order}s as `/api/payments` returns them. */
@@ -57,36 +95,31 @@ export interface ProductsPage {
   truncated: boolean;
 }
 
-/** Thrown when the indexer responds with a non-2xx status. */
-export class AccensaError extends Error {
-  readonly status?: number;
-
-  constructor(message: string, status?: number) {
-    super(message);
-    this.name = 'AccensaError';
-    this.status = status;
-  }
-}
-
-/** Thrown when a request exceeds the configured timeout. */
-export class AccensaTimeoutError extends AccensaError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AccensaTimeoutError';
-  }
-}
-
 export class AccensaClient {
   private readonly indexerUrl: string;
   private readonly headers: Record<string, string>;
   private readonly timeoutMs: number;
+  private readonly cacheTtlMs: number;
   private readonly fetchImpl?: typeof fetch;
+  /** In-memory read cache (#160): keyed by path, entries expire on their TTL. */
+  private readonly cache = new Map<string, { expiresAt: number; value: unknown }>();
 
   constructor(opts: AccensaClientOptions) {
     this.indexerUrl = opts.indexerUrl.replace(/\/$/, '');
     this.headers = opts.headers ?? {};
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.cacheTtlMs = opts.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.fetchImpl = opts.fetchImpl;
+  }
+
+  /**
+   * Drops every cached read, forcing the next call to hit the network.
+   *
+   * Call this after a write the cache could have missed (a refund, a profile
+   * update, a manual sync) so the dashboard never shows data that predates it.
+   */
+  clearCache(): void {
+    this.cache.clear();
   }
 
   /**
@@ -169,7 +202,11 @@ export class AccensaClient {
     source.addEventListener('sync', (event) => {
       const message = event as MessageEvent;
       try {
-        handlers.onSync(JSON.parse(message.data as string) as SyncEvent);
+        const payload = JSON.parse(message.data as string) as SyncEvent;
+        // A new sync run means fresh data on the other side of every cached
+        // read; drop the cache so the next poll reflects it (#160).
+        this.clearCache();
+        handlers.onSync(payload);
       } catch {
         // Ignore malformed payloads rather than dropping the subscription.
       }
@@ -181,9 +218,18 @@ export class AccensaClient {
 
   /**
    * Makes a GET request and parses the JSON response, respecting the
-   * configured timeout. (#134)
+   * configured timeout (#134), retrying rate limits (#155), and serving
+   * recent reads from the in-memory cache (#160).
+   *
+   * Read results are cached by path for `cacheTtlMs`, so the redundant reads
+   * the dashboard makes across page navigations resolve instantly; expiry and
+   * {@link clearCache} bound how stale a hit can be. A request that never
+   * succeeds is never cached.
    */
   private async getJson(path: string): Promise<unknown> {
+    const cached = this.cacheRead(path);
+    if (cached.hit) return cached.value;
+
     const doFetch = this.fetchImpl ?? globalThis.fetch;
     if (typeof doFetch !== 'function') {
       throw new AccensaNetworkError('No fetch implementation available');
@@ -193,43 +239,77 @@ export class AccensaClient {
 
     let response: Response;
     try {
-      response = await doFetch(`${this.indexerUrl}${path}`, {
+      response = await fetchWithRetry(`${this.indexerUrl}${path}`, {
         method: 'GET',
         headers: this.headers,
         signal,
+      }, {
+        fetchImpl: doFetch,
+        retryOn429: true,
+        maxRetries: RATE_LIMIT_MAX_RETRIES,
       });
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw new AccensaTimeoutError(
-          `Request to ${path} timed out after ${this.timeoutMs}ms`,
-        );
+        throw new AccensaTimeoutError(`Request to ${path} timed out after ${this.timeoutMs}ms`);
       }
-      throw err;
-    }
-
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        throw new AccensaAuthError(
-          `Accensa rejected the request with ${response.status} for ${path}`,
-          {
-            status: response.status,
-            path,
-          },
-        );
+      if (err instanceof HttpError && err.status === 429) {
+        // fetchWithRetry already waited between attempts; if the node is still
+        // limiting us the caller needs a concrete signal, not a generic error.
+        throw new AccensaRateLimitError(`Accensa is rate limited for ${path}`, {
+          path,
+          retryAfterMs: retryAfterMs(err.response),
+        });
       }
-      throw new AccensaError(`Accensa returned ${response.status} for ${path}`, {
-        status: response.status,
+      if (err instanceof HttpError) {
+        if (err.status === 401 || err.status === 403) {
+          throw new AccensaAuthError(
+            `Accensa rejected the request with ${err.status} for ${path}`,
+            { status: err.status, path },
+          );
+        }
+        throw new AccensaError(`Accensa returned ${err.status} for ${path}`, {
+          status: err.status,
+        });
+      }
+      // fetchWithRetry rethrows the underlying error once retries are spent.
+      // Wrap it so the SDK's error surface stays typed.
+      throw new AccensaNetworkError(`Request to ${path} failed`, {
+        url: `${this.indexerUrl}${path}`,
+        cause: err,
       });
     }
 
+    let body: unknown;
     try {
-      const body: unknown = await response.json();
-      return body;
+      body = await response.json();
     } catch (cause) {
       throw new AccensaContractError(`Accensa returned a non-JSON body for ${path}`, { cause });
     }
+
+    this.storeCache(path, body);
+    return body;
+  }
+
+  /** Returns a cached read for `path` when one exists and is still fresh. */
+  private cacheRead(path: string): { hit: boolean; value?: unknown } {
+    if (this.cacheTtlMs <= 0) return { hit: false };
+    const entry = this.cache.get(path);
+    if (!entry) return { hit: false };
+    if (Date.now() >= entry.expiresAt) {
+      this.cache.delete(path);
+      return { hit: false };
+    }
+    return { hit: true, value: entry.value };
+  }
+
+  private storeCache(path: string, value: unknown): void {
+    if (this.cacheTtlMs <= 0) return;
+    this.cache.set(path, { expiresAt: Date.now() + this.cacheTtlMs, value });
   }
 }
+
+/** Extra retry knobs exposed for callers who reuse the rate-limit wrapper directly. */
+export type { RetryOptions };
 
 function queryString(params: URLSearchParams): string {
   const text = params.toString();
