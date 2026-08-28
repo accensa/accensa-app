@@ -20,7 +20,9 @@
     "./merkle": "./merkle.ts",
     "./types": "./src/types/index.ts",
     "./webhooks": "./webhooks.ts",
-    "./retry": "./retry.ts"
+    "./retry": "./retry.ts",
+    "./wasm-crypto": "./src/wasm-crypto.ts",
+    "./offline-sync": "./src/offline-sync.ts"
   },
   "scripts": {
     "test": "vitest run",
