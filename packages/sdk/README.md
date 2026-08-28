@@ -1,5 +1,29 @@
 # `@accensa/sdk`
 
+This SDK enables merchant applications to report x402 payment settlements to an Accensa indexer,
+and to build and verify receipt Merkle trees.
+
+## Receipt leaves and `buildBatch`
+
+A production receipt leaf is `SHA-256` of the 32-byte Stellar transaction hash:
+
+```ts
+import { receiptLeaf, buildBatch, verifyReceipt } from '@accensa/sdk';
+
+const leaf = receiptLeaf(txHash); // hex-encoded 32-byte hash
+const batch = buildBatch([leaf /* more leaves, ledger order */]);
+verifyReceipt(leaf, batch.proofs[leaf], batch.root); // true
+```
+
+`buildBatch` is the real tree: sorted-pair SHA-256, odd nodes promoted, proofs
+in leaf-to-root order — the same convention as `ReceiptAnchor::verify_receipt`
+and the vectors in `merkle-vectors.json`. Those vectors pin the tree algorithm
+with UTF-8 fixture labels; they do not define the production preimage. The
+preimage is `receiptLeaf(tx_hash)` and is documented in
+[Receipt leaves](https://accensa.github.io/accensa-app/docs/app/receipt-leaves).
+
+---
+
 This SDK enables merchant applications to report x402 payment settlements to an Accensa indexer.
 
 ## Reporting Settlements
@@ -76,6 +100,26 @@ The reporting contract is as follows:
 
 The backend verifies this signature before parsing the JSON, ensuring the request is strictly authenticated based on the raw bytes.
 
+## Generated types
+
+`SettleHookPayload` (the shape of that JSON payload) is generated from
+[`apps/web/openapi.yaml`](../../apps/web/openapi.yaml), the OpenAPI spec for
+the indexer API, rather than hand-declared — see
+[issue #169](https://github.com/accensa/accensa-app/issues/169). This closes
+the gap where the indexer's API and this SDK's types could drift apart
+silently: a change to what `/api/hook/settle` accepts now shows up as a diff
+in `generated/api-types.ts`, not a `400` discovered in production.
+
+```bash
+pnpm gen:api   # regenerates packages/sdk/generated/api-types.ts from the spec
+```
+
+CI regenerates the file and fails the build if it does not match what's
+checked in, the same way `gen:vectors` is checked for the Merkle conformance
+fixture. Only the wire type the SDK directly depends on
+(`SettleHookPayload`) has been switched over so far; the spec also documents
+`/api/payments`, `/api/routes`, `/api/verify` and `/api/sync` for the same
+treatment later.
 ## Reading Orders and Products
 
 The SDK ships a small typed client for the Accensa indexer's read API. Every
@@ -117,6 +161,41 @@ Prefer the raw mappers when you hold a response body yourself
 `productFromWire`, and `productsFromResponse` parse an `unknown` JSON value
 into the strict types. The `Order` and `Product` types are also re-exported
 from the package root, and available directly from `@accensa/sdk/types`.
+
+## Error Handling
+
+Every error the SDK throws extends the base `AccensaError`, so a single
+`instanceof AccensaError` catch handles the whole SDK surface. The subclasses
+discriminate the failure modes you actually branch on:
+
+| Class                  | Thrown when                                                                                                 | Metadata         |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------- |
+| `AccensaAuthError`     | The indexer rejected the credential (HTTP 401/403).                                                         | `status`, `path` |
+| `AccensaNetworkError`  | The indexer could not be reached — `fetch` failed, timed out, or is unavailable.                            | `url`, `cause`   |
+| `AccensaContractError` | The indexer (or a receipt) violated the wire contract: a malformed row, a non-JSON body, a bad Merkle hash. | `index`          |
+| `AccensaError`         | The base class; also thrown directly for other non-2xx statuses (e.g. 500).                                 | `status`         |
+
+```ts
+import { AccensaClient, AccensaAuthError, AccensaNetworkError } from '@accensa/sdk';
+
+const accensa = new AccensaClient({ indexerUrl: 'https://accensa-dashboard.vercel.app' });
+
+try {
+  const { orders } = await accensa.listOrders();
+} catch (error) {
+  if (error instanceof AccensaAuthError) {
+    // The credential is stale — refresh and retry; the request itself was fine.
+    console.error(`auth failed: ${error.status} on ${error.path}`);
+  } else if (error instanceof AccensaNetworkError) {
+    // Nothing wrong with the request — back off and retry.
+    console.error(`could not reach ${error.url}`, error.cause);
+  } else {
+    throw error;
+  }
+}
+```
+
+The error classes are also available from `@accensa/sdk/errors`.
 
 ## Verifying Inbound Webhooks
 

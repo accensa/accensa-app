@@ -15,6 +15,7 @@
  * a page that silently loses rows would mislead a merchant about their ledger.
  */
 
+import { AccensaContractError } from './errors';
 import type { Order, OrderMetadata } from './types/order';
 import type { Product, ProductMetadata } from './types/product';
 
@@ -81,19 +82,22 @@ export interface OrdersResponse {
  */
 export function ordersFromResponse(raw: unknown): OrdersResponse {
   if (!isWireRecord(raw)) {
-    throw new Error('ordersFromResponse: expected an object with a "payments" array');
+    throw new AccensaContractError(
+      'ordersFromResponse: expected an object with a "payments" array',
+    );
   }
   const rows = Array.isArray(raw.payments) ? raw.payments : null;
   if (rows === null) {
-    throw new Error('ordersFromResponse: expected a "payments" array');
+    throw new AccensaContractError('ordersFromResponse: expected a "payments" array');
   }
 
   const orders: Order[] = rows.map((row, index) => {
     const order = orderFromWire(row);
     if (!order) {
-      throw new Error(
+      throw new AccensaContractError(
         `ordersFromResponse: row at index ${index} is missing a required field ` +
           '(tx_hash, amount, ts)',
+        { index },
       );
     }
     return order;
@@ -142,15 +146,18 @@ export interface ProductsResponse {
  */
 export function productsFromResponse(raw: unknown): ProductsResponse {
   if (!isWireRecord(raw) || !Array.isArray(raw.routes)) {
-    throw new Error('productsFromResponse: expected an object with a "routes" array');
+    throw new AccensaContractError(
+      'productsFromResponse: expected an object with a "routes" array',
+    );
   }
 
   const products: Product[] = raw.routes.map((row, index) => {
     const product = productFromWire(row);
     if (!product) {
-      throw new Error(
+      throw new AccensaContractError(
         `productsFromResponse: row at index ${index} is missing a required field ` +
           '(route, total_revenue, calls)',
+        { index },
       );
     }
     return product;

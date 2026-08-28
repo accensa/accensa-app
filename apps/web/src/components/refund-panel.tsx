@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { formatAmount, assetLabel } from '@/lib/money';
 import { readStatus, truncateAddress } from '@/lib/freighter';
+import { explorerTxUrl } from '@/lib/explorer';
 import { submitRefund, type RefundOutcome } from '@/lib/refund-submit';
 import type { RefundPreflightResponse } from '@/app/api/refund/preflight/route';
 
@@ -15,6 +16,12 @@ import type { RefundPreflightResponse } from '@/app/api/refund/preflight/route';
  * fails. Nothing here is signed by the server — Accensa holds no key that can
  * move a merchant's float, and a refund it could issue alone would make it a
  * custodian.
+ *
+ * The stateful `RefundPanel` owns the wallet handshake and the phase machine;
+ * the pure `RefundPanelView` renders one phase. Splitting them keeps the render
+ * exhaustive — every `Phase` is a `case` and an unhandled one is a type error —
+ * so a phase like `submitting` can never again fall through to an idle-looking
+ * "Refund this payment" button while a signing prompt is open.
  */
 
 interface RefundablePayment {
@@ -91,6 +98,47 @@ export function RefundPanel({
     if (outcome.status === 'confirmed') onRefunded(payment.tx_hash);
   }, [merchant, payment, onRefunded]);
 
+  const reset = useCallback(() => setPhase({ kind: 'idle' }), []);
+
+  return (
+    <RefundPanelView
+      phase={phase}
+      merchant={merchant}
+      payment={payment}
+      error={error}
+      onCheck={check}
+      onConfirm={confirm}
+      onReset={reset}
+    />
+  );
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled refund phase: ${JSON.stringify(value)}`);
+}
+
+/**
+ * Renders a single refund phase. Pure: every branch is driven by props, so a
+ * test can put the panel into any phase — `submitting` included — without a
+ * wallet or a network.
+ */
+export function RefundPanelView({
+  phase,
+  merchant,
+  payment,
+  error,
+  onCheck,
+  onConfirm,
+  onReset,
+}: {
+  phase: Phase;
+  merchant: string | null;
+  payment: RefundablePayment;
+  error: string | null;
+  onCheck: () => void;
+  onConfirm: () => void;
+  onReset: () => void;
+}) {
   const asset = assetLabel(payment.asset);
 
   if (!merchant) {
@@ -111,72 +159,90 @@ export function RefundPanel({
     );
   }
 
-  if (phase.kind === 'done') {
-    return <Outcome outcome={phase.outcome} />;
-  }
+  switch (phase.kind) {
+    case 'done':
+      return <Outcome outcome={phase.outcome} />;
 
-  if (phase.kind === 'ready') {
-    const { existing, preflight } = phase.check;
-
-    if (existing) {
+    case 'submitting':
+      // A signing prompt is open and the transaction is on its way. There is no
+      // control here that could start a second refund — the vault would reject
+      // the duplicate, but the merchant would be left signing a doomed
+      // transaction with no explanation.
       return (
-        <Note tone="warn">
-          Already refunded: {formatAmount(existing.amount)} {asset} to{' '}
-          <span className="font-mono">{truncateAddress(existing.recipient)}</span> at ledger{' '}
-          {existing.ledger}. A payment can only be refunded once.
-        </Note>
-      );
-    }
-
-    if (preflight.status === 'rejected') {
-      return (
-        <div className="space-y-3">
-          <Note tone="warn">{preflight.message}</Note>
-          <SmallButton onClick={check}>Re-check</SmallButton>
-        </div>
-      );
-    }
-
-    if (preflight.status === 'unknown') {
-      return (
-        <div className="space-y-3">
-          <Note tone="warn">
-            Could not confirm whether this refund would succeed: {preflight.message}
-          </Note>
-          <SmallButton onClick={check}>Retry check</SmallButton>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-4">
         <Note tone="ok">
-          The vault will accept this refund: {formatAmount(payment.amount)} {asset} back to{' '}
-          <span className="font-mono">{truncateAddress(payment.payer)}</span>. Checked against the
-          live contract just now — float, refund window, and pause state all pass.
+          Waiting on your wallet. A signing prompt is open — approve or reject the refund there.
+          Don&apos;t start it again; this one is already in progress.
         </Note>
-        <div className="flex flex-wrap gap-3">
-          <SmallButton onClick={confirm} tone="primary">
-            Sign and refund
-          </SmallButton>
-          <SmallButton onClick={() => setPhase({ kind: 'idle' })}>Cancel</SmallButton>
-        </div>
-      </div>
-    );
-  }
+      );
 
-  return (
-    <div className="space-y-3">
-      {error && <Note tone="warn">{error}</Note>}
-      <SmallButton onClick={check} disabled={phase.kind === 'checking'}>
-        {phase.kind === 'checking' ? 'Checking…' : 'Refund this payment'}
-      </SmallButton>
-      <p className="text-[11px] text-slate-400 dark:text-slate-500">
-        Signing as <span className="font-mono">{truncateAddress(merchant)}</span>. Nothing is
-        submitted until you approve it in your wallet.
-      </p>
-    </div>
-  );
+    case 'ready': {
+      const { existing, preflight } = phase.check;
+
+      if (existing) {
+        return (
+          <Note tone="warn">
+            Already refunded: {formatAmount(existing.amount)} {asset} to{' '}
+            <span className="font-mono">{truncateAddress(existing.recipient)}</span> at ledger{' '}
+            {existing.ledger}. A payment can only be refunded once.
+          </Note>
+        );
+      }
+
+      if (preflight.status === 'rejected') {
+        return (
+          <div className="space-y-3">
+            <Note tone="warn">{preflight.message}</Note>
+            <SmallButton onClick={onCheck}>Re-check</SmallButton>
+          </div>
+        );
+      }
+
+      if (preflight.status === 'unknown') {
+        return (
+          <div className="space-y-3">
+            <Note tone="warn">
+              Could not confirm whether this refund would succeed: {preflight.message}
+            </Note>
+            <SmallButton onClick={onCheck}>Retry check</SmallButton>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-4">
+          <Note tone="ok">
+            The vault will accept this refund: {formatAmount(payment.amount)} {asset} back to{' '}
+            <span className="font-mono">{truncateAddress(payment.payer)}</span>. Checked against the
+            live contract just now — float, refund window, and pause state all pass.
+          </Note>
+          <div className="flex flex-wrap gap-3">
+            <SmallButton onClick={onConfirm} tone="primary">
+              Sign and refund
+            </SmallButton>
+            <SmallButton onClick={onReset}>Cancel</SmallButton>
+          </div>
+        </div>
+      );
+    }
+
+    case 'idle':
+    case 'checking':
+      return (
+        <div className="space-y-3">
+          {error && <Note tone="warn">{error}</Note>}
+          <SmallButton onClick={onCheck} disabled={phase.kind === 'checking'}>
+            {phase.kind === 'checking' ? 'Checking…' : 'Refund this payment'}
+          </SmallButton>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+            Signing as <span className="font-mono">{truncateAddress(merchant)}</span>. Nothing is
+            submitted until you approve it in your wallet.
+          </p>
+        </div>
+      );
+
+    default:
+      return assertNever(phase);
+  }
 }
 
 function Outcome({ outcome }: { outcome: RefundOutcome }) {
@@ -185,7 +251,7 @@ function Outcome({ outcome }: { outcome: RefundOutcome }) {
       <Note tone="ok">
         Refund confirmed on-chain.{' '}
         <a
-          href={`https://stellar.expert/explorer/testnet/tx/${outcome.hash}`}
+          href={explorerTxUrl(outcome.hash)}
           target="_blank"
           rel="noreferrer"
           className="underline"
@@ -201,7 +267,7 @@ function Outcome({ outcome }: { outcome: RefundOutcome }) {
         Submitted, but not yet confirmed. It may still succeed — check the transaction before
         retrying, or you risk attempting a second refund the vault will reject.{' '}
         <a
-          href={`https://stellar.expert/explorer/testnet/tx/${outcome.hash}`}
+          href={explorerTxUrl(outcome.hash)}
           target="_blank"
           rel="noreferrer"
           className="underline"

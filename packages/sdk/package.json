@@ -20,7 +20,8 @@
     "./merkle": "./merkle.ts",
     "./types": "./src/types/index.ts",
     "./webhooks": "./webhooks.ts",
-    "./retry": "./retry.ts"
+    "./retry": "./retry.ts",
+    "./currency": "./currency.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -39,6 +39,17 @@ export interface RevenuePayment {
 /** Label for the bucket holding payments with no merchant attribution. */
 export const UNATTRIBUTED_LABEL = '(unattributed)';
 
+/**
+ * Shape returned by `GET /api/analytics/revenue`: the assets a merchant has
+ * earned in, and — keyed by asset — the per-day revenue buckets and the
+ * per-`(method, route)` breakdown, all summed in SQL.
+ */
+export interface RevenueAnalyticsResponse {
+  assets: AssetOption[];
+  days: Record<string, RevenueDayBucket[]>;
+  routes: Record<string, RouteAggregate[]>;
+}
+
 /* ------------------------------------------------------------------ assets */
 
 /**
@@ -72,19 +83,29 @@ export function assetOptions(payments: RevenuePayment[]): AssetOption[] {
     const key = assetKey(payment.asset);
     calls.set(key, (calls.get(key) ?? 0) + 1);
   }
+  return assetOptionsFromCounts(
+    [...calls.entries()].map(([key, count]) => ({ key, calls: count })),
+  );
+}
 
+/**
+ * Asset selector options from pre-counted `(assetKey, calls)` pairs — the
+ * shape a server-side `GROUP BY asset` produces. Labels are disambiguated by
+ * issuer only when two assets share a display code.
+ */
+export function assetOptionsFromCounts(counts: { key: string; calls: number }[]): AssetOption[] {
   const labels = new Map<string, number>();
-  for (const key of calls.keys()) {
+  for (const { key } of counts) {
     const label = assetLabel(key);
     labels.set(label, (labels.get(label) ?? 0) + 1);
   }
 
-  return [...calls.entries()]
-    .map(([key, count]): AssetOption => {
+  return counts
+    .map(({ key, calls }): AssetOption => {
       const base = assetLabel(key);
       const issuer = key.includes(':') ? key.split(':')[1] : '';
       const ambiguous = (labels.get(base) ?? 0) > 1 && issuer !== '';
-      return { key, label: ambiguous ? `${base} (${shortIssuer(issuer)})` : base, calls: count };
+      return { key, label: ambiguous ? `${base} (${shortIssuer(issuer)})` : base, calls };
     })
     .sort((a, b) => b.calls - a.calls || a.label.localeCompare(b.label));
 }
@@ -164,50 +185,113 @@ interface Accumulator {
 }
 
 /**
+ * One `(method, route)` group's revenue in a single asset, already summed.
+ *
+ * The shape a server-side `GROUP BY method, route` produces (see
+ * `/api/analytics/revenue`). `route` is null/empty for the transfers that
+ * carry no merchant attribution; every such row folds into one bucket.
+ */
+export interface RouteAggregate {
+  method: string | null;
+  route: string | null;
+  /** Decimal string — `sum(amount)` for the group. */
+  total: string;
+  /** Rows in the group. */
+  calls: number;
+  /** Rows in the group with a readable amount — `count(amount)`. */
+  priced: number;
+}
+
+/**
  * Folds payments into one bucket per (method, route) pair.
  *
  * Payments with a null route are never merged into a route bucket and never
  * discarded: they land in `unattributed`, which the caller is expected to show
  * alongside the routes. That bucket is the honest answer to "how much of this
  * revenue does Path B actually explain".
+ *
+ * Held for callers with the raw rows and for tests; it folds them into
+ * {@link RouteAggregate}s and defers to {@link routeBreakdownFromAggregates}.
  */
 export function buildRouteBreakdown(payments: RevenuePayment[], asset: string): RouteBreakdown {
+  const groups = new Map<string, Accumulator>();
+
+  for (const payment of filterByAsset(payments, asset)) {
+    const stroops = priceOf(payment.amount);
+    const attributed = typeof payment.route === 'string' && payment.route !== '';
+    const key = attributed ? `${payment.method ?? ''} ${payment.route}` : ' unattributed';
+
+    let acc = groups.get(key);
+    if (!acc) {
+      acc = {
+        route: attributed ? payment.route : null,
+        method: attributed ? payment.method : null,
+        stroops: 0n,
+        calls: 0,
+        priced: 0,
+      };
+      groups.set(key, acc);
+    }
+    acc.calls += 1;
+    if (stroops !== null) {
+      acc.stroops += stroops;
+      acc.priced += 1;
+    }
+  }
+
+  const aggregates: RouteAggregate[] = [...groups.values()].map((acc) => ({
+    method: acc.method,
+    route: acc.route,
+    total: fromStroops(acc.stroops),
+    calls: acc.calls,
+    priced: acc.priced,
+  }));
+
+  return routeBreakdownFromAggregates(aggregates, asset);
+}
+
+/**
+ * Builds the route breakdown from pre-aggregated `(method, route)` groups.
+ *
+ * Rows with a null/empty route are folded into a single unattributed bucket
+ * regardless of method — the method alone says nothing about which endpoint
+ * earned the money.
+ */
+export function routeBreakdownFromAggregates(
+  aggregates: RouteAggregate[],
+  asset: string,
+): RouteBreakdown {
   const buckets = new Map<string, Accumulator>();
   let unattributed: Accumulator | null = null;
   let total = 0n;
   let calls = 0;
   let unpricedCalls = 0;
 
-  for (const payment of filterByAsset(payments, asset)) {
-    const stroops = priceOf(payment.amount);
-    calls += 1;
-    if (stroops === null) unpricedCalls += 1;
-    else total += stroops;
+  for (const row of aggregates) {
+    const stroops = toStroops(row.total) ?? 0n;
+    const unpriced = Math.max(0, row.calls - row.priced);
+    calls += row.calls;
+    unpricedCalls += unpriced;
+    total += stroops;
 
-    // A row is attributed only if it carries a route. The method alone says
-    // nothing about which endpoint earned the money.
-    const attributed = typeof payment.route === 'string' && payment.route !== '';
-
+    const attributed = typeof row.route === 'string' && row.route !== '';
     let bucket: Accumulator;
     if (!attributed) {
       unattributed ??= { route: null, method: null, stroops: 0n, calls: 0, priced: 0 };
       bucket = unattributed;
     } else {
-      const key = `${payment.method ?? ''} ${payment.route}`;
+      const key = `${row.method ?? ''} ${row.route}`;
       const existing = buckets.get(key);
       if (existing) {
         bucket = existing;
       } else {
-        bucket = { route: payment.route, method: payment.method, stroops: 0n, calls: 0, priced: 0 };
+        bucket = { route: row.route, method: row.method, stroops: 0n, calls: 0, priced: 0 };
         buckets.set(key, bucket);
       }
     }
-
-    bucket.calls += 1;
-    if (stroops !== null) {
-      bucket.stroops += stroops;
-      bucket.priced += 1;
-    }
+    bucket.calls += row.calls;
+    bucket.priced += row.priced;
+    bucket.stroops += stroops;
   }
 
   const toBucket = (key: string, acc: Accumulator, attributed: boolean): RouteBucket => ({
@@ -280,6 +364,30 @@ function bucketStart(ms: number, granularity: Granularity): number {
   return granularity === 'week' ? startOfWeek(ms) : startOfDay(ms);
 }
 
+/**
+ * The payments inside `range`, counting back from `now`.
+ *
+ * The window start is aligned to midnight UTC so it matches `buildRevenueSeries`,
+ * which buckets by UTC day: the earliest payment the route breakdown counts is
+ * the same one the chart shows in its first bucket. `'all'` returns the input
+ * untouched. Future-dated rows (ledger clock skew) are kept — they are real
+ * revenue — even though the chart's fixed geometry has to drop them.
+ */
+export function filterByRange(
+  payments: RevenuePayment[],
+  range: RangeKey,
+  now: number = Date.now(),
+): RevenuePayment[] {
+  const days = RANGE_DAYS[range];
+  if (days === null) return payments;
+
+  const start = startOfDay(now - (days - 1) * DAY_MS);
+  return payments.filter((payment) => {
+    const ms = Date.parse(payment.ts);
+    return !Number.isNaN(ms) && ms >= start;
+  });
+}
+
 function advance(ms: number, granularity: Granularity): number {
   return ms + (granularity === 'week' ? 7 * DAY_MS : DAY_MS);
 }
@@ -330,28 +438,118 @@ function formatLabel(startMs: number, granularity: Granularity): string {
 }
 
 /**
- * Buckets revenue over time, splitting each bucket into attributed and
- * unattributed.
+ * One day's revenue in a single asset, already summed.
  *
- * Empty buckets are emitted rather than skipped: a day with no revenue is a
- * fact about the business, and dropping it would compress the x-axis into a
- * shape that implies steadier income than there was.
+ * This is the shape a server-side `date_trunc('day', ts)` / `GROUP BY`
+ * produces (see `/api/analytics/revenue`), so the browser can render trends
+ * without pulling every raw payment row. Amounts are exact decimal strings;
+ * `attributed` is the part of `total` that carried a merchant-reported route.
+ */
+export interface RevenueDayBucket {
+  /** `date_trunc('day', ts)` — midnight UTC, ISO 8601. */
+  day: string;
+  /** Decimal string. Revenue that day carrying a route. */
+  attributed: string;
+  /** Decimal string. Revenue that day with no attribution. */
+  unattributed: string;
+  attributedCalls: number;
+  unattributedCalls: number;
+  /** Payments that day whose amount could not be read (counted, not summed). */
+  unpricedCalls: number;
+}
+
+/**
+ * Buckets revenue over time from raw payments, splitting each bucket into
+ * attributed and unattributed.
+ *
+ * Kept for callers that already hold the payment rows (and for tests). It
+ * folds the rows into per-day totals and hands off to
+ * {@link seriesFromDayBuckets}, which owns the range window, the daily→weekly
+ * rollup, and the chart geometry.
  */
 export function buildRevenueSeries(
   payments: RevenuePayment[],
   options: { asset: string; range: RangeKey; now?: number },
 ): RevenueSeries {
+  const inAsset = filterByAsset(payments, options.asset).filter(
+    (p) => !Number.isNaN(Date.parse(p.ts)),
+  );
+
+  interface DayCell {
+    attributed: bigint;
+    unattributed: bigint;
+    attributedCalls: number;
+    unattributedCalls: number;
+    unpricedCalls: number;
+  }
+  const days = new Map<number, DayCell>();
+  for (const payment of inAsset) {
+    const dayMs = startOfDay(Date.parse(payment.ts));
+    let cell = days.get(dayMs);
+    if (!cell) {
+      cell = {
+        attributed: 0n,
+        unattributed: 0n,
+        attributedCalls: 0,
+        unattributedCalls: 0,
+        unpricedCalls: 0,
+      };
+      days.set(dayMs, cell);
+    }
+    const stroops = priceOf(payment.amount);
+    if (stroops === null) cell.unpricedCalls += 1;
+    const attributed = typeof payment.route === 'string' && payment.route !== '';
+    if (attributed) {
+      cell.attributedCalls += 1;
+      if (stroops !== null) cell.attributed += stroops;
+    } else {
+      cell.unattributedCalls += 1;
+      if (stroops !== null) cell.unattributed += stroops;
+    }
+  }
+
+  const dayBuckets: RevenueDayBucket[] = [...days.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([ms, cell]) => ({
+      day: new Date(ms).toISOString(),
+      attributed: fromStroops(cell.attributed),
+      unattributed: fromStroops(cell.unattributed),
+      attributedCalls: cell.attributedCalls,
+      unattributedCalls: cell.unattributedCalls,
+      unpricedCalls: cell.unpricedCalls,
+    }));
+
+  return seriesFromDayBuckets(dayBuckets, options);
+}
+
+/**
+ * Builds the chart-ready series from pre-aggregated daily buckets.
+ *
+ * Empty buckets are emitted rather than skipped: a day with no revenue is a
+ * fact about the business, and dropping it would compress the x-axis into a
+ * shape that implies steadier income than there was.
+ *
+ * `dayBuckets` need not be dense or in range — days outside the window are
+ * ignored, and gaps are filled. Once the span passes {@link WEEKLY_ABOVE_DAYS}
+ * days the daily buckets are rolled up into weeks so the axis stays readable.
+ */
+export function seriesFromDayBuckets(
+  dayBuckets: RevenueDayBucket[],
+  options: { asset: string; range: RangeKey; now?: number },
+): RevenueSeries {
   const { asset, range } = options;
   const now = options.now ?? Date.now();
 
-  const inAsset = filterByAsset(payments, asset).filter((p) => !Number.isNaN(Date.parse(p.ts)));
+  const parsed = dayBuckets
+    .map((b) => ({ ms: Date.parse(b.day), bucket: b }))
+    .filter((d) => !Number.isNaN(d.ms));
+
   const days = RANGE_DAYS[range];
 
-  // 'all' spans from the first payment to now; a fixed range spans back from
+  // 'all' spans from the first bucket to now; a fixed range spans back from
   // today whether or not anything landed in it, so an empty week reads as an
   // empty week rather than as no data.
-  const timestamps = inAsset.map((p) => Date.parse(p.ts));
-  const earliest = timestamps.length ? Math.min(...timestamps) : now;
+  const earliest = parsed.length ? Math.min(...parsed.map((d) => d.ms)) : now;
   const from = days === null ? earliest : now - (days - 1) * DAY_MS;
   const spanDays = Math.max(1, Math.ceil((now - from) / DAY_MS) + 1);
   const granularity: Granularity = spanDays > WEEKLY_ABOVE_DAYS ? 'week' : 'day';
@@ -364,32 +562,29 @@ export function buildRevenueSeries(
     unattributed: bigint;
     attributedCalls: number;
     unattributedCalls: number;
+    unpricedCalls: number;
   }
   const cells = new Map<number, Cell>();
   for (let ms = firstBucket; ms <= lastBucket; ms = advance(ms, granularity)) {
-    cells.set(ms, { attributed: 0n, unattributed: 0n, attributedCalls: 0, unattributedCalls: 0 });
+    cells.set(ms, {
+      attributed: 0n,
+      unattributed: 0n,
+      attributedCalls: 0,
+      unattributedCalls: 0,
+      unpricedCalls: 0,
+    });
   }
 
-  let unpricedCalls = 0;
-  for (const payment of inAsset) {
-    const ms = Date.parse(payment.ts);
+  for (const { ms, bucket } of parsed) {
     // Out of range, including anything the ledger stamped in the future.
     if (ms < firstBucket || ms > advance(lastBucket, granularity) - 1) continue;
-
     const cell = cells.get(bucketStart(ms, granularity));
     if (!cell) continue;
-
-    const stroops = priceOf(payment.amount);
-    if (stroops === null) unpricedCalls += 1;
-
-    const attributed = typeof payment.route === 'string' && payment.route !== '';
-    if (attributed) {
-      cell.attributedCalls += 1;
-      if (stroops !== null) cell.attributed += stroops;
-    } else {
-      cell.unattributedCalls += 1;
-      if (stroops !== null) cell.unattributed += stroops;
-    }
+    cell.attributed += priceOf(bucket.attributed) ?? 0n;
+    cell.unattributed += priceOf(bucket.unattributed) ?? 0n;
+    cell.attributedCalls += bucket.attributedCalls;
+    cell.unattributedCalls += bucket.unattributedCalls;
+    cell.unpricedCalls += bucket.unpricedCalls;
   }
 
   const ordered = [...cells.entries()].sort((a, b) => a[0] - b[0]);
@@ -403,6 +598,7 @@ export function buildRevenueSeries(
   let unattributedTotal = 0n;
   let attributedCalls = 0;
   let unattributedCalls = 0;
+  let unpricedCalls = 0;
 
   const buckets = ordered.map(([ms, cell]): SeriesBucket => {
     const total = cell.attributed + cell.unattributed;
@@ -410,6 +606,7 @@ export function buildRevenueSeries(
     unattributedTotal += cell.unattributed;
     attributedCalls += cell.attributedCalls;
     unattributedCalls += cell.unattributedCalls;
+    unpricedCalls += cell.unpricedCalls;
     return {
       start: new Date(ms).toISOString(),
       label: formatLabel(ms, granularity),

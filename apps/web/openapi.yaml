@@ -1,0 +1,398 @@
+openapi: 3.1.0
+info:
+  title: Accensa Indexer API
+  version: 0.1.0
+  description: |
+    The HTTP API served by `apps/web` — the indexer, the merchant-reported
+    settlement hook, and the receipt verifier. This is the single source of
+    truth for the wire shapes `@accensa/sdk` depends on.
+
+    Generated TypeScript types live at `packages/sdk/generated/api-types.ts`,
+    produced from this file by `pnpm --filter @accensa/sdk gen:api`
+    (packages/sdk/scripts/generate-api-types.mjs). See issue #169: this spec
+    exists so the SDK's wire types cannot silently drift from what this API
+    actually accepts and returns — a change here that the SDK does not follow
+    is a diff in generated code, not a runtime surprise.
+
+    Not every route below has had its manually-declared type replaced by a
+    generated one yet; `SettleHookPayload` in packages/sdk/index.ts is the
+    first, because it is the one contract a seller's own server depends on
+    directly. The rest are documented here so the spec covers the full
+    surface, and are candidates for the same treatment.
+servers:
+  - url: https://accensa-dashboard.vercel.app
+    description: Production dashboard
+paths:
+  /api/hook/settle:
+    post:
+      operationId: reportSettlement
+      summary: Report merchant-side route attribution for a settled x402 payment.
+      description: |
+        Called by `@accensa/sdk`'s `attachAccensaHook`, from the seller's own
+        server — never by a browser. Authenticated by an Ed25519 signature
+        over the raw request body (`X-Signature` header), not a session
+        cookie. See apps/web/src/app/api/hook/settle/route.ts and
+        apps/web/src/lib/settlement-report.ts for the full validation this
+        mirrors.
+      parameters:
+        - name: X-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Hex-encoded Ed25519 signature over the raw JSON request body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettlementReport'
+      responses:
+        '200':
+          description: Settlement recorded (or staged, if the chain has not indexed it yet).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementReportResult'
+        '400':
+          description: Malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid signature.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Settlement reporting is not configured on this deployment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/payments:
+    get:
+      operationId: listPayments
+      summary: Cursor-paginated payment history.
+      description: Session-authenticated; see apps/web/src/middleware.ts.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: cursor
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentsResponse'
+        '401':
+          description: Unauthorized.
+
+  /api/routes:
+    get:
+      operationId: listRouteRevenue
+      summary: Revenue grouped by attributed route and method.
+      description: Session-authenticated; see apps/web/src/middleware.ts.
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RouteRevenue'
+        '401':
+          description: Unauthorized.
+
+  /api/verify:
+    post:
+      operationId: verifyReceipt
+      summary: Verify a Merkle receipt both locally and against the on-chain ReceiptAnchor.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyResponse'
+        '400':
+          description: Malformed request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/sync:
+    get:
+      operationId: runScheduledSync
+      summary: Scheduled entry point for the indexer. Bearer-authenticated via CRON_SECRET.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+        '401':
+          description: Missing or invalid CRON_SECRET.
+        '429':
+          description: A sync ran within the cooldown window.
+    post:
+      operationId: runManualSync
+      summary: Manual entry point behind the dashboard's "Sync now" button. Session-authenticated.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+        '401':
+          description: Unauthorized.
+        '429':
+          description: A sync ran within the cooldown window.
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    SettlementReport:
+      type: object
+      description: |
+        The body POSTed to /api/hook/settle, and the exact bytes that get
+        signed. Snake-cased because it is a wire format, not an in-process
+        value. Mirrors apps/web/src/lib/settlement-report.ts's
+        parseSettlementReport.
+      required: [tx_hash, route, method]
+      properties:
+        tx_hash:
+          type: string
+          pattern: '^[0-9a-fA-F]{64}$'
+          description: Hex-encoded 32-byte Stellar transaction hash.
+        route:
+          type: string
+          maxLength: 255
+          description: The HTTP path that was paid for.
+        method:
+          type: string
+          enum: [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+        request_id:
+          type: string
+          maxLength: 64
+          nullable: true
+        payer:
+          type: string
+          pattern: '^G[A-Z2-7]{55}$'
+          nullable: true
+          description: Hint only; the indexer overwrites this with the ledger value.
+        amount:
+          type: string
+          nullable: true
+          description: Decimal string. Never a number - see apps/web/src/lib/money.ts.
+        network:
+          type: string
+          nullable: true
+        reported_at:
+          type: string
+          format: date-time
+          description: ISO-8601. Required from 2027-01-01 onward; see settlement-report.ts.
+
+    SettlementReportResult:
+      type: object
+      required: [recorded, txHash, matchedExistingPayment]
+      properties:
+        recorded:
+          type: boolean
+        txHash:
+          type: string
+        matchedExistingPayment:
+          type: boolean
+          description: False means the transfer has not been indexed yet; the report was staged.
+
+    PaymentRow:
+      type: object
+      required: [tx_hash, ledger, payer, amount, asset, ts, route, method]
+      properties:
+        tx_hash:
+          type: string
+        ledger:
+          type: integer
+          nullable: true
+        payer:
+          type: string
+        amount:
+          type: string
+          description: Decimal string with 7 places. Never a number.
+        asset:
+          type: string
+          nullable: true
+        ts:
+          type: string
+          format: date-time
+        route:
+          type: string
+          nullable: true
+        method:
+          type: string
+          nullable: true
+
+    SyncState:
+      type: object
+      required: [lastLedger, updatedAt]
+      properties:
+        lastLedger:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+
+    PaymentsResponse:
+      type: object
+      required: [payments, sync]
+      properties:
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentRow'
+        sync:
+          allOf:
+            - $ref: '#/components/schemas/SyncState'
+          nullable: true
+        next_cursor:
+          type: string
+          nullable: true
+
+    RouteRevenue:
+      type: object
+      required: [route, method, total_revenue, calls]
+      properties:
+        route:
+          type: string
+        method:
+          type: string
+        total_revenue:
+          type: string
+        calls:
+          type: integer
+
+    VerifyRequest:
+      type: object
+      required: [batchId, leaf, proof]
+      properties:
+        batchId:
+          type: integer
+          minimum: 1
+        leaf:
+          type: string
+          pattern: '^[0-9a-fA-F]{64}$'
+        proof:
+          type: array
+          items:
+            type: string
+            pattern: '^[0-9a-fA-F]{64}$'
+
+    CheckResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          nullable: true
+        error:
+          type: string
+
+    VerifyResponse:
+      type: object
+      required: [local, onchain, verified, disagreement, contract]
+      properties:
+        local:
+          $ref: '#/components/schemas/CheckResult'
+        onchain:
+          $ref: '#/components/schemas/CheckResult'
+        verified:
+          type: boolean
+        disagreement:
+          type: boolean
+        batch:
+          type: object
+          properties:
+            id:
+              type: integer
+            root:
+              type: string
+            count:
+              type: integer
+            periodStart:
+              type: integer
+            periodEnd:
+              type: integer
+        contract:
+          type: string
+
+    SyncResult:
+      type: object
+      description: |
+        Either a cooldown notice or the result of an indexing run. See
+        apps/web/src/app/api/sync/route.ts's `respond`.
+      properties:
+        success:
+          type: boolean
+        cooldown:
+          type: boolean
+        retryAfterMs:
+          type: integer
+        latestLedger:
+          type: integer
+        startLedger:
+          type: integer
+        syncedTo:
+          type: integer
+        skippedLedgers:
+          type: integer
+        drained:
+          type: boolean
+        pages:
+          type: integer
+        windows:
+          type: integer
+        scanned:
+          type: integer
+        decoded:
+          type: integer
+        inserted:
+          type: integer

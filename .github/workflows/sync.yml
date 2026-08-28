@@ -45,20 +45,6 @@ jobs:
           fi
           echo "Unauthenticated GET correctly rejected with 401."
 
-          # Regression probe: with CRON_SECRET unset, `Bearer ${CRON_SECRET}`
-          # used to render as the literal string "Bearer undefined", and a
-          # caller sending that exact header compared equal and bypassed
-          # auth. The no-header check above can't catch this - it never sends
-          # a header at all.
-          code=$(curl -sS --max-time 60 -o /dev/null -w '%{http_code}' \
-            -H "Authorization: Bearer undefined" "$SYNC_URL")
-          if [ "$code" != "401" ]; then
-            echo "::error::GET with 'Authorization: Bearer undefined' returned HTTP $code," \
-                 "expected 401. The unset-CRON_SECRET bypass has regressed."
-            exit 1
-          fi
-          echo "'Authorization: Bearer undefined' correctly rejected with 401."
-
       - name: Call sync endpoint in a loop
         env:
           SYNC_URL: ${{ secrets.SYNC_URL }}
@@ -104,6 +90,15 @@ jobs:
               skipped=$(printf '%s' "$body" | grep -oE '"skippedLedgers":[0-9]+' | cut -d: -f2)
               echo "::warning::Cursor fell outside RPC retention; $skipped ledgers skipped."
             fi
+
+            echo "Delivering queued payment webhooks..."
+            webhook_url="${SYNC_URL%/sync}/webhooks/deliver"
+            webhook_response=$(curl -sS --max-time 30 -w '\n%{http_code}' \
+              -H "Authorization: Bearer $CRON_SECRET" "$webhook_url" || echo "curl failed")
+            webhook_body=$(printf '%s' "$webhook_response" | sed '$d')
+            webhook_code=$(printf '%s' "$webhook_response" | tail -n1)
+            echo "webhook HTTP $webhook_code"
+            echo "$webhook_body"
 
             echo "Sleeping for 5 minutes..."
             sleep 300

@@ -1,3 +1,5 @@
+import { formatTimestamp } from './format-timestamp';
+
 /** When the indexer last committed progress. Null before it has ever run. */
 export interface SyncState {
   lastLedger: number;
@@ -88,7 +90,7 @@ export function describeSync(sync: SyncState | null, now: number = Date.now()): 
   // the future; treat that as"just now"rather than showing a negative age.
   const ms = Math.max(0, now - updated);
   const age = formatAge(ms);
-  const at = new Date(updated).toLocaleString();
+  const at = formatTimestamp(updated);
 
   if (ms <= LIVE_WITHIN_MS) {
     return { level: 'live', age, detail: `Indexed ${age} ago, at ${at}.` };

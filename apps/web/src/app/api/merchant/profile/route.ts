@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { revalidateTag } from 'next/cache';
 import { withClient, withMerchantClient } from '@/lib/db';
 import { getMerchantFromRequest, updateMerchantProfile, type Merchant } from '@/lib/merchants';
+import { recordMerchantConfigChange } from '@/lib/merchant-config';
 import {
   getCachedMerchantFromRequest,
   merchantProfileCacheTag,
@@ -44,9 +45,29 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const profile = await withMerchantClient(caller.id, (client) =>
-    updateMerchantProfile(client, caller.id, parsed.update),
-  );
+  const profile = await withMerchantClient(caller.id, async (client) => {
+    const updated = await updateMerchantProfile(client, caller.id, parsed.update);
+
+    // Record immutable history for each field that changed, so configuration
+    // changes can be tracked over time (historical merchant configuration).
+    if (updated) {
+      const changedFields = Object.entries(parsed.update) as [
+        keyof NonNullable<typeof parsed.update>,
+        string | string[] | null,
+      ][];
+      for (const [field, value] of changedFields) {
+        await recordMerchantConfigChange(client, {
+          merchantId: caller.id,
+          field,
+          before: null,
+          after: Array.isArray(value) ? value.join(',') : value,
+          source: 'profile_patch',
+        });
+      }
+    }
+
+    return updated;
+  });
 
   // `{ expire: 0 }` expires the tag immediately rather than the
   // stale-while-revalidate behaviour of `revalidateTag(tag, 'max')`, which

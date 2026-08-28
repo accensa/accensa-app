@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import type { VerifyResponse } from '../api/verify/route';
 import { PageContainer } from '@/components/page-container';
+import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';
 import { CopyButton } from '@/components/copy-button';
 
 const SAMPLE = {
@@ -298,11 +299,24 @@ export function Result({
           <div className="grid sm:grid-cols-2 gap-8">
             <Detail label="Batch ID" value={`#${batch.id}`} />
             <Detail label="Transaction Count" value={batch.count.toString()} />
-            <Detail
-              label="Period Start"
-              value={new Date(batch.periodStart * 1000).toLocaleString()}
-            />
-            <Detail label="Period End" value={new Date(batch.periodEnd * 1000).toLocaleString()} />
+            <Detail label="Period Start">
+              <time
+                dateTime={toISO8601(batch.periodStart * 1000)}
+                title={toISO8601(batch.periodStart * 1000)}
+                className="text-slate-900 dark:text-white font-medium text-lg"
+              >
+                {formatTimestamp(batch.periodStart * 1000)}
+              </time>
+            </Detail>
+            <Detail label="Period End">
+              <time
+                dateTime={toISO8601(batch.periodEnd * 1000)}
+                title={toISO8601(batch.periodEnd * 1000)}
+                className="text-slate-900 dark:text-white font-medium text-lg"
+              >
+                {formatTimestamp(batch.periodEnd * 1000)}
+              </time>
+            </Detail>
             <div className="sm:col-span-2">
               <Detail label="Merkle Root" value={batch.root} mono copyable />
             </div>
@@ -385,11 +399,13 @@ function Detail({
   value,
   mono,
   copyable,
+  children,
 }: {
   label: string;
-  value: string;
+  value?: string;
   mono?: boolean;
   copyable?: boolean;
+  children?: React.ReactNode;
 }) {
   return (
     <div>
@@ -397,12 +413,12 @@ function Detail({
         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 transition-colors duration-300">
           {label}
         </p>
-        {copyable && <CopyButton value={value} label={label} />}
+        {copyable && value && <CopyButton value={value} label={label} />}
       </div>
       <p
         className={`transition-colors duration-300 ${mono ? 'text-slate-900 dark:text-white font-mono text-sm bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-transparent px-3 py-2 break-all' : 'text-slate-900 dark:text-white font-medium text-lg'}`}
       >
-        {value}
+        {children ?? value}
       </p>
     </div>
   );

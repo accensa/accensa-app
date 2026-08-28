@@ -65,6 +65,48 @@ are unrecoverable — no later run can reach them. A sync that skipped ledgers t
 way reports `skippedLedgers` in its response and `sync.yml` raises a warning; it
 is the one failure here that cannot be fixed by running the job again.
 
+## Indexer scheduling — the options weighed
+
+The sleep-looping runner in `sync.yml` works, and its diagnostics are the reason
+several silent-failure modes are now caught. But as the production scheduler for
+a component that has already failed silently once, it has real costs: it holds a
+runner for ~55 min/hour doing nothing but sleeping (~660 runner-minutes/day,
+billed as occupied on any non-free plan), and if scheduling stops there are no
+runs, therefore no red runs, therefore no signal.
+
+| Option                                                                                                       | Cost                                                                                                                           | Reliability                                                                                                                                                                                                   | Notes                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Vercel Cron, paid plan**                                                                                | Pro is **$20/user/month**; the only gain over Hobby that this project needs is sub-daily cron.                                 | Minute-level schedules, run by Vercel, no runner to keep alive. Still needs external cessation monitoring — a paused project is as silent as a stopped workflow.                                              | Cleanest fit _if_ the team is already on Pro for other reasons. Buying Pro solely for cron is poor value at one merchant.                                                   |
+| **2. External scheduler** (cron-job.org, Upstash QStash, EventBridge Scheduler) hitting `/api/sync` directly | cron-job.org: **free**. QStash: free ≤ 500 msg/day, then usage-priced. EventBridge Scheduler: ~$0 at this volume.              | High. The scheduler is a dedicated, monitored service; most include their own failure alerting. Adds one third-party dependency in the critical path.                                                         | `/api/sync` is already a plain authenticated GET, so this is a config change, not a code change. **Recommended** — it removes the runner cost _and_ the blind spot, for $0. |
+| **3. Long-running worker** (Railway/Fly/Render process, or a container)                                      | ~$5/month minimum for an always-on small instance.                                                                             | Most control, most operational surface. **Re-opens the extraction that caused the original outage** — the indexer logic would move out of `apps/web` again. Note that history explicitly if this is proposed. | Only worth it if the indexer grows past what a 60 s function invocation can do. It cannot today.                                                                            |
+| **4. Keep the loop, fix the defects**                                                                        | Same ~660 runner-min/day. Free on public repos; on GitHub Team/Enterprise-billed minutes it is the most expensive option here. | Acceptable once the defects below are fixed.                                                                                                                                                                  | What this repo does today, plus the fixes in this PR.                                                                                                                       |
+
+**Decision: option 4 now, with the specific defects fixed, and option 2
+(cron-job.org or EventBridge) as the documented migration when the team wants the
+runner cost gone.** Option 2 is strictly better on cost and on the cessation
+blind spot; it is not adopted in this PR only because it needs an account and a
+secret that a maintainer must create, not a code change a contributor can land.
+
+Defects fixed in `sync.yml` in this PR:
+
+- **`cancel-in-progress: true` → `false`.** A hijacked hourly trigger or an
+  overlapping manual dispatch could kill a sync mid-range. Indexing is
+  idempotent so nothing corrupted, but the run was lost.
+- **Hour-boundary gap closed.** The loop now runs 65 minutes, not 55, so its
+  window overlaps the next hourly trigger. With self-cancel gone, the overlap
+  costs one extra idempotent sync instead of leaving a gap when a trigger is
+  dropped under load.
+- **External cessation monitor.** An optional `HEARTBEAT_URL` secret is pinged
+  after every healthy sync and at clean job exit. Point it at a dead-man's
+  switch (healthchecks.io free tier, cronitor, cron-job.org's own monitor) with
+  a grace period of ~90 min. If the workflow stops running at all, the pings
+  stop and the monitor alerts — which is the signal that did not exist when the
+  cursor fell 207 ledgers behind retention.
+
+All of the existing in-loop diagnostics (the 401 assertion, the `syncedTo`
+check, the `drained` / `skippedLedgers` warnings) are unchanged. Alerting on
+those warnings — routing them somewhere a human sees them — is separate work.
+
 ## Reading a sync response
 
 ```json
@@ -90,6 +132,45 @@ is the one failure here that cannot be fixed by running the job again.
 | `windows`                          | `getEvents` calls made. Requests are bounded to 10,000 ledgers because the RPC silently truncates wider ranges. |
 | `skippedLedgers`                   | Ledgers lost to the retention window. Should always be 0.                                                       |
 | `scanned` / `decoded` / `inserted` | Events matched, decoded as transfers, and written.                                                              |
+
+## Settling in USDC or multiple assets
+
+The indexer defaults every setting to testnet native XLM. To index USDC — or
+XLM and USDC together — set `ASSET_CONTRACT_IDS` on the `web` project to a
+comma-separated list of the Stellar Asset Contract ids whose `transfer` events
+are revenue:
+
+```
+ASSET_CONTRACT_IDS=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA,CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+```
+
+(The first id above is the testnet USDC SAC; the second is testnet native XLM.
+Confirm current ids against
+[`accensa-contracts/deployments/testnet.env`](https://github.com/accensa/accensa-contracts/blob/main/deployments/testnet.env)
+before deploying.)
+
+Each `payments` row carries its own `asset` (`"native"` or `"USDC:GA…"`),
+decoded from the transfer event's optional asset topic. Revenue **must** be
+grouped by asset and never summed across assets — a figure that added XLM and
+USDC into one number is meaningless. Any dashboard total that mixes assets is a
+bug; see `apps/web/src/lib/revenue-analytics.ts`.
+
+### RefundVault holds one token
+
+`RefundVault` is initialised with a single token at deploy time. A merchant who
+takes both XLM and USDC has **one vault and one refund asset**: a refund of a
+payment made in the other asset will be rejected by the contract (the preflight
+in `/api/refund/preflight` surfaces this before any signing prompt).
+
+If a merchant needs to refund in more than one asset, deploy **one RefundVault
+per asset** and point `NEXT_PUBLIC_REFUND_VAULT_ID` at the right one per refund
+flow. There is no multi-asset vault, and adding one is a contract change tracked
+in `accensa-contracts`, not here.
+
+A merchant also cannot **receive** USDC at all without a trustline to the USDC
+issuer. A missing trustline for a configured `ASSET_CONTRACT_IDS` asset must be
+surfaced distinctly from "no payments yet" — an empty list is also what an
+indexer outage looks like, and the two must not be indistinguishable.
 
 ## Database connection
 

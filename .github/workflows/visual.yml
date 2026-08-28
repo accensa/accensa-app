@@ -1,0 +1,50 @@
+name: Visual regression
+
+on:
+  pull_request:
+    branches: ['main']
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/visual.yml'
+  push:
+    branches: ['main']
+    paths:
+      - 'apps/web/**'
+      - '.github/workflows/visual.yml'
+
+jobs:
+  visual:
+    name: playwright (web)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: ./apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+        working-directory: .
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: .
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run visual tests
+        env:
+          JWT_SECRET_KEY: visual-regression-test-secret
+          CI: true
+        run: pnpm test:visual
+      - name: Upload failure snapshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-visual-diff
+          path: |
+            apps/web/e2e/__screenshots__
+            apps/web/test-results
+          if-no-files-found: ignore

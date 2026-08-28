@@ -4,6 +4,7 @@ import { FaqAccordion } from '@/components/faq-accordion';
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { RECEIPT_ANCHOR_ID } from '@/lib/receipt-anchor';
+import { explorerContractUrl } from '@/lib/explorer';
 import { PageContainer } from '@/components/page-container';
 import { SectionHeading } from '@/components/section-heading';
 import { CtaButton } from '@/components/cta-button';
@@ -11,8 +12,6 @@ import { CtaButton } from '@/components/cta-button';
 const REFUND_VAULT_ID =
   process.env.NEXT_PUBLIC_REFUND_VAULT_ID ??
   'CCMBM44EJUGD52G4LSMGHSXMAH2KSAQZX7VOYY4TTBF5BK4D7M4IHRQA';
-
-const explorer = (id: string) => `https://stellar.expert/explorer/testnet/contract/${id}`;
 
 const faqItems = [
   {
@@ -300,7 +299,7 @@ function FeatureCard({ title, desc }: { title: string; desc: string }) {
 function ContractCard({ name, id }: { name: string; id: string }) {
   return (
     <a
-      href={explorer(id)}
+      href={explorerContractUrl(id)}
       target="_blank"
       rel="noreferrer"
       className="relative overflow-hidden group block bg-white/40 dark:bg-white/5 backdrop-blur-2xl border border-slate-200/60 dark:border-white/5 p-8 hover:border-emerald-400 dark:hover:border-emerald-500/40 hover:shadow-2xl dark:hover:shadow-[0_0_30px_rgba(255,255,255,0.02)] transition-all duration-500 shadow-sm dark:shadow-none"

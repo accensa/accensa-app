@@ -1,0 +1,16 @@
+{
+  "name": "@accensa/reconcile-payments",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent, standalone reconstruction of the ledger-derived payments columns from Stellar chain data, and a row-level diff against the production database. Deliberately shares no decoding code with apps/web/src/app/api/sync - see README.md.",
+  "type": "module",
+  "main": "cli.mjs",
+  "scripts": {
+    "reconcile": "node cli.mjs",
+    "test": "node --test ."
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^16.0.1",
+    "pg": "^8.22.0"
+  }
+}

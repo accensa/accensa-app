@@ -8,10 +8,8 @@ import {
   type Settlement,
   type X402SettleResult,
 } from './settlement';
-import { fetchWithRetry, type RetryOptions } from './retry';
 
-export { verifyReceipt } from './merkle';
-export { fetchWithRetry, HttpError, type RetryOptions } from './retry';
+export { verifyReceipt, buildBatch, receiptLeaf, type BatchInfo } from './merkle';
 export {
   SETTLEMENT_HEADER,
   parseSettlementHeader,
@@ -21,28 +19,17 @@ export {
   type Settlement,
   type X402SettleResult,
 } from './settlement';
-export { WEBHOOK_SIGNATURE_HEADER, signWebhookSignature, verifyWebhookSignature } from './webhooks';
 
-/** Strict, typed Order and Product fetches against the Accensa indexer. */
+/** Multi-currency price formatting utilities. */
 export {
-  AccensaClient,
-  AccensaError,
-  type AccensaClientOptions,
-  type OrdersPage,
-  type ProductsPage,
-} from './src/client';
-/** Strict mappers from the indexer's wire rows to Order/Product. */
-export {
-  orderFromWire,
-  ordersFromResponse,
-  productFromWire,
-  productsFromResponse,
-  type OrdersResponse,
-  type ProductsResponse,
-} from './src/mapping';
-/** The strict Order and Product types themselves. */
-export type { Order, OrderMetadata } from './src/types/order';
-export type { Product, ProductMetadata } from './src/types/product';
+  formatPrice,
+  formatPriceCompact,
+  assetSymbol,
+  toStroops,
+  fromStroops,
+  TOKENS,
+  type TokenMeta,
+} from './src/price-formatter';
 
 /**
  * This package deliberately ships no paywall middleware.
@@ -68,22 +55,10 @@ export interface AccensaHookOptions {
   indexerUrl: string;
   /** Ed25519 private key in hex format to sign the settlement report. */
   privateKeyHex: string;
-  /**
-   * Identifies which key signed this report, when multiple keys are active
-   * during a rollover. Passed to the indexer as the X-Key-Id header.
-   */
-  keyId?: string;
   /** Abandon a report after this many milliseconds. Defaults to 5000. */
   timeoutMs?: number;
   /** Injected in tests. Defaults to global fetch. */
   fetchImpl?: typeof fetch;
-  /**
-   * Retry policy for delivering the report (#123). Defaults to 3 retries
-   * with exponential backoff starting at 200ms; a 4xx response from the
-   * indexer is never retried, since the request itself won't become valid by
-   * asking again.
-   */
-  retry?: RetryOptions;
   /**
    * Called when reporting fails, with the payload that could not be delivered.
    * Reporting is best-effort by design — a paid request must not fail because
@@ -103,55 +78,6 @@ export interface AccensaHookOptions {
  * endpoint needs and far shorter than the default TCP timeout.
  */
 export const DEFAULT_TIMEOUT_MS = 5_000;
-
-/** PKCS#8 wrapper for a raw 32-byte Ed25519 private seed (RFC 8410). */
-const ED25519_PKCS8_PREFIX = '302e020100300506032b657004220420';
-
-function privateKeyPkcs8(privateKeyHex: string): ArrayBuffer {
-  if (!/^[0-9a-fA-F]{64}$/.test(privateKeyHex)) {
-    throw new Error('Ed25519 private key must be exactly 32 bytes encoded as hex');
-  }
-  const result = new Uint8Array(48);
-  for (let i = 0; i < ED25519_PKCS8_PREFIX.length; i += 2) {
-    result[i / 2] = Number.parseInt(ED25519_PKCS8_PREFIX.slice(i, i + 2), 16);
-  }
-  for (let i = 0; i < 32; i += 1) {
-    result[16 + i] = Number.parseInt(privateKeyHex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return result.buffer;
-}
-
-async function signSettlementPayload(payload: string, privateKeyHex: string): Promise<string> {
-  const data = new TextEncoder().encode(payload);
-  const pkcs8 = privateKeyPkcs8(privateKeyHex);
-  const subtle = globalThis.crypto?.subtle;
-
-  if (subtle) {
-    try {
-      const key = await subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
-      const signature = await subtle.sign({ name: 'Ed25519' }, key, data);
-      return Array.from(new Uint8Array(signature), (byte) =>
-        byte.toString(16).padStart(2, '0'),
-      ).join('');
-    } catch {
-      // Ed25519 is not available in every WebCrypto implementation; try Node below.
-    }
-  }
-
-  try {
-    const crypto = await import('node:crypto');
-    const privateKey = crypto.createPrivateKey({
-      key: Buffer.from(pkcs8),
-      format: 'der',
-      type: 'pkcs8',
-    });
-    return crypto.sign(null, Buffer.from(data), privateKey).toString('hex');
-  } catch {
-    throw new Error(
-      'Ed25519 signing unavailable: WebCrypto Ed25519 support and Node.js crypto are missing',
-    );
-  }
-}
 
 /**
  * The body POSTed to `/api/hook/settle`, and the exact bytes that get signed.
@@ -228,25 +154,41 @@ export async function reportSettlement(
   try {
     const payload = JSON.stringify(body);
 
-    const signatureHex = await signSettlementPayload(payload, opts.privateKeyHex);
+    let signatureHex = '';
+    if (typeof process !== 'undefined' && process.versions && process.versions.node) {
+      // Node.js environment
+      const crypto = await import('node:crypto');
+      const keyBuffer = Buffer.from(opts.privateKeyHex, 'hex');
+      const privateKey = crypto.createPrivateKey({
+        key: Buffer.concat([
+          Buffer.from('302e020100300506032b657004220420', 'hex'), // PKCS#8 Ed25519 header
+          keyBuffer,
+        ]),
+        format: 'der',
+        type: 'pkcs8',
+      });
+      signatureHex = crypto.sign(null, Buffer.from(payload), privateKey).toString('hex');
+    } else {
+      // Browser/Edge has no node:crypto. Fail loudly rather than skip signing:
+      // an unsigned report is rejected with 401 by the hook anyway, and a
+      // silent no-op here would look like a delivered report that never landed.
+      throw new Error('Ed25519 signing requires Node.js crypto in this version');
+    }
 
-    // A transient 5xx from the indexer (or a dropped connection) is retried
-    // with exponential backoff (#123) — a 4xx, or the abort above firing,
-    // still fails on the first attempt, since retrying either changes nothing.
-    await fetchWithRetry(
-      `${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Signature': signatureHex,
-          ...(opts.keyId ? { 'X-Key-Id': opts.keyId } : {}),
-        },
-        body: payload,
-        signal: controller.signal,
+    const response = await doFetch(`${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Signature': signatureHex,
       },
-      { fetchImpl: doFetch, ...opts.retry },
-    );
+      body: payload,
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      report(new Error(`Accensa returned ${response.status} for ${settlement.txHash}`), body);
+      return false;
+    }
     return true;
   } catch (error) {
     report(error, body);

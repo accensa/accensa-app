@@ -1,6 +1,16 @@
 import React from 'react';
 import { renderToString } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+  }),
+  usePathname: () => '/dashboard',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 import Dashboard from './page';
 
 describe('Dashboard totals, pagination honesty, and contrast', () => {

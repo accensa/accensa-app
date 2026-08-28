@@ -5,6 +5,7 @@ import {
   buildRevenueSeries,
   buildRouteBreakdown,
   filterByAsset,
+  filterByRange,
   fraction,
   RANGE_DAYS,
   UNATTRIBUTED_LABEL,
@@ -327,5 +328,50 @@ describe('buildRevenueSeries', () => {
       expect(series.calls).toBe(0);
       expect(series.buckets.every((b) => b.totalFraction === 0)).toBe(true);
     }
+  });
+});
+
+describe('filterByRange', () => {
+  const now = Date.parse('2026-03-10T12:00:00.000Z');
+
+  it('returns everything for the all-time range', () => {
+    const rows = [
+      payment({ ts: '2020-01-01T00:00:00.000Z' }),
+      payment({ ts: '2026-03-10T00:00:00.000Z' }),
+    ];
+    expect(filterByRange(rows, 'all', now)).toBe(rows);
+  });
+
+  it('keeps only the last 7 days, aligned to midnight UTC', () => {
+    // now is 2026-03-10T12:00Z, so the 7-day window starts at 2026-03-04T00:00Z
+    // (midnight of the sixth day back) — the same boundary buildRevenueSeries uses.
+    const rows = [
+      payment({ ts: '2026-03-03T23:00:00.000Z', route: '/old' }), // before the window start
+      payment({ ts: '2026-03-04T00:00:00.000Z', route: '/edge' }), // exactly the window start
+      payment({ ts: '2026-03-09T18:00:00.000Z', route: '/recent' }),
+    ];
+    const kept = filterByRange(rows, '7d', now).map((p) => p.route);
+    expect(kept).toEqual(['/edge', '/recent']);
+  });
+
+  it('scopes a route breakdown to the selected range', () => {
+    const rows = [
+      payment({ ts: '2026-01-01T00:00:00.000Z', amount: '100.0000000', route: '/a' }),
+      payment({ ts: '2026-03-09T00:00:00.000Z', amount: '25.0000000', route: '/a' }),
+      payment({ ts: '2026-03-09T00:00:00.000Z', amount: '75.0000000', route: '/b' }),
+    ];
+
+    const allTime = buildRouteBreakdown(filterByRange(rows, 'all', now), 'native');
+    expect(allTime.total).toBe('200.0000000');
+
+    const last30 = buildRouteBreakdown(filterByRange(rows, '30d', now), 'native');
+    expect(last30.total).toBe('100.0000000');
+    // Shares are computed against the in-range total, not the all-time total.
+    const routeA = last30.routes.find((r) => r.route === '/a');
+    expect(routeA?.share).toBeCloseTo(0.25, 5);
+  });
+
+  it('drops rows with an unparseable timestamp from a bounded range', () => {
+    expect(filterByRange([payment({ ts: 'nonsense' })], '30d', now)).toHaveLength(0);
   });
 });

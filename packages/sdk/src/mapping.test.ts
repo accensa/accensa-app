@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { AccensaContractError } from './errors';
 import {
   orderFromWire,
   ordersFromResponse,
@@ -100,21 +101,27 @@ describe('ordersFromResponse', () => {
     expect(nextCursor).toBeNull();
   });
 
-  it('throws on a malformed row rather than dropping it', () => {
-    expect(() =>
+  it('throws AccensaContractError on a malformed row rather than dropping it', () => {
+    try {
       ordersFromResponse({
         payments: [
           { tx_hash: 'a'.repeat(64), amount: '1000', ts: '2026-08-20T07:22:16Z' },
           { amount: '1000', ts: '2026-08-20T07:22:16Z' }, // no tx_hash
         ],
-      }),
-    ).toThrow(/row at index 1/);
+      });
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AccensaContractError);
+      expect((error as AccensaContractError).index).toBe(1);
+      expect(String(error)).toContain('row at index 1');
+    }
   });
 
-  it('throws when the body is not a payments envelope', () => {
+  it('throws AccensaContractError when the body is not a payments envelope', () => {
+    expect(() => ordersFromResponse({ payments: 'nope' })).toThrow(AccensaContractError);
     expect(() => ordersFromResponse({ payments: 'nope' })).toThrow(/payments/);
-    expect(() => ordersFromResponse([])).toThrow(/payments/);
-    expect(() => ordersFromResponse(null)).toThrow(/payments/);
+    expect(() => ordersFromResponse([])).toThrow(AccensaContractError);
+    expect(() => ordersFromResponse(null)).toThrow(AccensaContractError);
   });
 });
 
@@ -179,16 +186,22 @@ describe('productsFromResponse', () => {
     expect(truncated).toBe(false);
   });
 
-  it('throws on a malformed row', () => {
-    expect(() =>
+  it('throws AccensaContractError on a malformed row', () => {
+    try {
       productsFromResponse({
         routes: [{ route: '/api/hello', calls: 5 }],
-      }),
-    ).toThrow(/row at index 0/);
+      });
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AccensaContractError);
+      expect((error as AccensaContractError).index).toBe(0);
+      expect(String(error)).toContain('row at index 0');
+    }
   });
 
-  it('throws when the body is not a routes envelope', () => {
+  it('throws AccensaContractError when the body is not a routes envelope', () => {
+    expect(() => productsFromResponse({ routes: 'nope' })).toThrow(AccensaContractError);
     expect(() => productsFromResponse({ routes: 'nope' })).toThrow(/routes/);
-    expect(() => productsFromResponse(null)).toThrow(/routes/);
+    expect(() => productsFromResponse(null)).toThrow(AccensaContractError);
   });
 });

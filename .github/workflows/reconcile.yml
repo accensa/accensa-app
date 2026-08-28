@@ -1,0 +1,59 @@
+name: Reconcile Payments
+
+# Independent proof that `payments` can be rebuilt from the Stellar ledger
+# alone - see scripts/reconcile-payments/README.md and issue #170. Runs on a
+# schedule and fails loudly on any row-level mismatch. A reconciliation nobody
+# runs is the same as no reconciliation, which is what let a seven-day
+# indexer outage pass unnoticed - see the issue for the full history.
+#
+# Required repository secrets:
+#   DATABASE_URL       same production Postgres connection string the
+#                       indexer uses (apps/web's DATABASE_URL)
+#   MERCHANT_ADDRESS   same merchant Stellar account the indexer watches
+#   STELLAR_RPC_URL    optional; defaults to the public testnet RPC
+#   ASSET_CONTRACT_IDS optional; defaults to apps/web's default SAC
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 5 * * *' # daily
+
+concurrency:
+  group: reconcile-payments
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Rebuild from chain and diff against production
+        working-directory: ./scripts/reconcile-payments
+        env:
+          MERCHANT_ADDRESS: ${{ secrets.MERCHANT_ADDRESS }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          STELLAR_RPC_URL: ${{ secrets.STELLAR_RPC_URL }}
+          ASSET_CONTRACT_IDS: ${{ secrets.ASSET_CONTRACT_IDS }}
+        run: |
+          if [ -z "$MERCHANT_ADDRESS" ] || [ -z "$DATABASE_URL" ]; then
+            echo "::error::MERCHANT_ADDRESS and DATABASE_URL secrets are required."
+            exit 1
+          fi
+          # Full retention window: the RPC does not serve anything older, so
+          # there is nothing beyond this to reconstruct or to fault the tool for.
+          node cli.mjs --merchant "$MERCHANT_ADDRESS" --database-url "$DATABASE_URL" --out report.json
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconcile-payments-report
+          path: scripts/reconcile-payments/report.json
+          retention-days: 30

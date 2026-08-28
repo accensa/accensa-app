@@ -3,8 +3,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getBatch, RECEIPT_ANCHOR_ID, type BatchRecord } from '@/lib/receipt-anchor';
+import { explorerContractUrl } from '@/lib/explorer';
 import { ArrowUpRight } from 'lucide-react';
 import { PageContainer } from '@/components/page-container';
+import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';
 
 /**
  * A batch is immutable once anchored, so this can be cached hard. Revalidating
@@ -78,8 +80,16 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
           </Detail>
           <div className="grid sm:grid-cols-3 gap-6">
             <Detail label="Receipts">{batch.count}</Detail>
-            <Detail label="Period start">{period.start.toLocaleString()}</Detail>
-            <Detail label="Period end">{period.end.toLocaleString()}</Detail>
+            <Detail label="Period start">
+              <time dateTime={toISO8601(period.start)} title={toISO8601(period.start)}>
+                {formatTimestamp(period.start)}
+              </time>
+            </Detail>
+            <Detail label="Period end">
+              <time dateTime={toISO8601(period.end)} title={toISO8601(period.end)}>
+                {formatTimestamp(period.end)}
+              </time>
+            </Detail>
           </div>
           <Detail label="Contract" mono>
             {RECEIPT_ANCHOR_ID}
@@ -94,7 +104,7 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
             Verify a receipt in this batch
           </Link>
           <a
-            href={`https://stellar.expert/explorer/testnet/contract/${RECEIPT_ANCHOR_ID}`}
+            href={explorerContractUrl(RECEIPT_ANCHOR_ID)}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 px-6 py-3 border border-slate-200 dark:border-white/15 bg-white dark:bg-transparent text-slate-700 dark:text-slate-200 font-bold text-sm hover:bg-slate-50 dark:hover:bg-white/5 transition-colors shadow-sm dark:shadow-none"
