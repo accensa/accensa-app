@@ -34,7 +34,10 @@ export function Nav() {
 
   return (
     <>
-      <nav className="px-6 py-4 md:py-6 fixed w-full top-0 z-50 bg-white/50 dark:bg-white/5 backdrop-blur-3xl border-b border-slate-200/50 dark:border-white/10 dark:shadow-[0_4px_30px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.1)] transition-colors duration-300">
+      <nav
+        data-testid="site-nav"
+        className="px-6 py-4 md:py-6 fixed w-full top-0 z-50 bg-white/50 dark:bg-white/5 backdrop-blur-3xl border-b border-slate-200/50 dark:border-white/10 dark:shadow-[0_4px_30px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.1)] transition-colors duration-300"
+      >
         <div className="w-full mx-auto flex items-center justify-between relative z-50">
           <Link
             href="/"

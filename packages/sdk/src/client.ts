@@ -16,6 +16,21 @@
 import { ordersFromResponse, productsFromResponse } from './mapping';
 import type { Order } from './types/order';
 import type { Product } from './types/product';
+import {
+  AccensaAuthError,
+  AccensaContractError,
+  AccensaError,
+  AccensaNetworkError,
+} from './errors';
+
+// Re-exported so `import { AccensaError } from '@accensa/sdk'` keeps working and
+// the classes stay available from the client module.
+export {
+  AccensaAuthError,
+  AccensaContractError,
+  AccensaError,
+  AccensaNetworkError,
+} from './errors';
 import type { SyncEvent } from './types/sync-event';
 
 export interface AccensaClientOptions {
@@ -29,6 +44,8 @@ export interface AccensaClientOptions {
   headers?: Record<string, string>;
   /** Injected in tests. Defaults to global fetch. */
   fetchImpl?: typeof fetch;
+  /** Optional request timeout in milliseconds. */
+  timeoutMs?: number;
 }
 
 /** A page of {@link Order}s as `/api/payments` returns them. */
@@ -43,17 +60,6 @@ export interface ProductsPage {
   products: Product[];
   /** Whether more product groups exist than the limit (rolled into "(other)"). */
   truncated: boolean;
-}
-
-/** Thrown when the indexer responds with a non-2xx status. */
-export class AccensaError extends Error {
-  readonly status?: number;
-
-  constructor(message: string, status?: number) {
-    super(message);
-    this.name = 'AccensaError';
-    this.status = status;
-  }
 }
 
 export class AccensaClient {
@@ -160,20 +166,44 @@ export class AccensaClient {
   private async getJson(path: string): Promise<unknown> {
     const doFetch = this.fetchImpl ?? globalThis.fetch;
     if (typeof doFetch !== 'function') {
-      throw new AccensaError('No fetch implementation available');
+      throw new AccensaNetworkError('No fetch implementation available');
     }
 
-    const response = await doFetch(`${this.indexerUrl}${path}`, {
-      method: 'GET',
-      headers: this.headers,
-    });
+    const url = `${this.indexerUrl}${path}`;
+    let response: Response;
+    try {
+      response = await doFetch(url, {
+        method: 'GET',
+        headers: this.headers,
+      });
+    } catch (cause) {
+      throw new AccensaNetworkError(`Failed to reach the Accensa indexer at ${path}`, {
+        url,
+        cause,
+      });
+    }
 
     if (!response.ok) {
-      throw new AccensaError(`Accensa returned ${response.status} for ${path}`, response.status);
+      if (response.status === 401 || response.status === 403) {
+        throw new AccensaAuthError(
+          `Accensa rejected the request with ${response.status} for ${path}`,
+          {
+            status: response.status,
+            path,
+          },
+        );
+      }
+      throw new AccensaError(`Accensa returned ${response.status} for ${path}`, {
+        status: response.status,
+      });
     }
 
-    const body: unknown = await response.json();
-    return body;
+    try {
+      const body: unknown = await response.json();
+      return body;
+    } catch (cause) {
+      throw new AccensaContractError(`Accensa returned a non-JSON body for ${path}`, { cause });
+    }
   }
 }
 

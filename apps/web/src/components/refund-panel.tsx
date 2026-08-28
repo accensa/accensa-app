@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { formatAmount, assetLabel } from '@/lib/money';
 import { readStatus, truncateAddress } from '@/lib/freighter';
 import { submitRefund, type RefundOutcome } from '@/lib/refund-submit';
+import { useOnline } from '@/components/network-status';
 import type { RefundPreflightResponse } from '@/app/api/refund/preflight/route';
 
 /**
@@ -42,6 +43,7 @@ export function RefundPanel({
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const [merchant, setMerchant] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const online = useOnline();
 
   useEffect(() => {
     let live = true;
@@ -55,6 +57,10 @@ export function RefundPanel({
 
   const check = useCallback(async () => {
     if (!merchant || payment.ledger === null) return;
+    if (!navigator.onLine) {
+      setError('You are offline. Reconnect before checking a refund.');
+      return;
+    }
     setError(null);
     setPhase({ kind: 'checking' });
     try {
@@ -79,6 +85,10 @@ export function RefundPanel({
 
   const confirm = useCallback(async () => {
     if (!merchant || payment.ledger === null) return;
+    if (!navigator.onLine) {
+      setError('You are offline. Reconnect before signing a refund.');
+      return;
+    }
     setPhase({ kind: 'submitting' });
     const outcome = await submitRefund({
       txHash: payment.tx_hash,
@@ -132,7 +142,9 @@ export function RefundPanel({
       return (
         <div className="space-y-3">
           <Note tone="warn">{preflight.message}</Note>
-          <SmallButton onClick={check}>Re-check</SmallButton>
+          <SmallButton onClick={check} disabled={!online}>
+            Re-check
+          </SmallButton>
         </div>
       );
     }
@@ -143,7 +155,9 @@ export function RefundPanel({
           <Note tone="warn">
             Could not confirm whether this refund would succeed: {preflight.message}
           </Note>
-          <SmallButton onClick={check}>Retry check</SmallButton>
+          <SmallButton onClick={check} disabled={!online}>
+            Retry check
+          </SmallButton>
         </div>
       );
     }
@@ -155,8 +169,13 @@ export function RefundPanel({
           <span className="font-mono">{truncateAddress(payment.payer)}</span>. Checked against the
           live contract just now — float, refund window, and pause state all pass.
         </Note>
+        {!online && (
+          <Note tone="warn">
+            You are offline. The refund cannot be signed or submitted until your connection returns.
+          </Note>
+        )}
         <div className="flex flex-wrap gap-3">
-          <SmallButton onClick={confirm} tone="primary">
+          <SmallButton onClick={confirm} tone="primary" disabled={!online}>
             Sign and refund
           </SmallButton>
           <SmallButton onClick={() => setPhase({ kind: 'idle' })}>Cancel</SmallButton>
@@ -168,7 +187,12 @@ export function RefundPanel({
   return (
     <div className="space-y-3">
       {error && <Note tone="warn">{error}</Note>}
-      <SmallButton onClick={check} disabled={phase.kind === 'checking'}>
+      {!online && !error && (
+        <Note tone="warn">
+          You are offline. Refunds are unavailable until your connection returns.
+        </Note>
+      )}
+      <SmallButton onClick={check} disabled={phase.kind === 'checking' || !online}>
         {phase.kind === 'checking' ? 'Checking…' : 'Refund this payment'}
       </SmallButton>
       <p className="text-[11px] text-slate-400 dark:text-slate-500">

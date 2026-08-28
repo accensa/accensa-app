@@ -11,6 +11,16 @@ We welcome contributions from the community! Whether it's a bug fix, new feature
 5. **Create a new branch** for your feature or bug fix (`git checkout -b feature/my-new-feature` or `bugfix/issue-123`).
 6. **Make your changes** and test them thoroughly.
 
+## Scratch files
+
+Anything that is tooling residue rather than part of the project — a PR body you
+passed to `gh pr create --body-file`, a dump of issue data, a one-off migration
+or fix script — goes under `.scratch/` at the repo root. That directory is
+`.gitignore`d, so it cannot be committed by accident.
+
+`body.txt` and `issues.json` were both tracked at the repo root once. Do not
+re-create that: if you need a file like that, put it in `.scratch/`.
+
 ## Code Style
 
 This project uses [Prettier](https://prettier.io/) for code formatting. Before committing, run:

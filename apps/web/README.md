@@ -6,6 +6,13 @@ The dashboard and API routes are secured using a Stellar Wallet Auth model (simi
 
 See [SECURITY.md](./SECURITY.md) and [DESIGN.md](./DESIGN.md) for full details on the access model and session handling.
 
+## Payment webhooks
+
+`WEBHOOK_URL` queues a signed POST for each newly indexed payment. Delivery
+runs on `GET /api/webhooks/deliver`, not inside the indexing loop — see the
+root README for the retry policy and Ed25519 signature scheme
+(`WEBHOOK_SIGNING_KEY`). Terminal failures are listed on the dashboard.
+
 ## Getting Started
 
 First, run the development server:

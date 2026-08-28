@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 import { getBatch, RECEIPT_ANCHOR_ID, type BatchRecord } from '@/lib/receipt-anchor';
 import { ArrowUpRight } from 'lucide-react';
 import { PageContainer } from '@/components/page-container';
+import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';
 
 /**
  * A batch is immutable once anchored, so this can be cached hard. Revalidating
@@ -78,8 +79,16 @@ export default async function BatchPage({ params }: { params: Promise<{ id: stri
           </Detail>
           <div className="grid sm:grid-cols-3 gap-6">
             <Detail label="Receipts">{batch.count}</Detail>
-            <Detail label="Period start">{period.start.toLocaleString()}</Detail>
-            <Detail label="Period end">{period.end.toLocaleString()}</Detail>
+            <Detail label="Period start">
+              <time dateTime={toISO8601(period.start)} title={toISO8601(period.start)}>
+                {formatTimestamp(period.start)}
+              </time>
+            </Detail>
+            <Detail label="Period end">
+              <time dateTime={toISO8601(period.end)} title={toISO8601(period.end)}>
+                {formatTimestamp(period.end)}
+              </time>
+            </Detail>
           </div>
           <Detail label="Contract" mono>
             {RECEIPT_ANCHOR_ID}

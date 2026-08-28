@@ -36,9 +36,11 @@ export function useSyncEvents(options: UseSyncEventsOptions = {}): SyncStreamSta
   // Keep the latest callbacks in refs so the effect below never needs to
   // re-subscribe just because the caller inlined a new function identity.
   const onSyncRef = useRef(onSync);
-  onSyncRef.current = onSync;
   const onConnectionChangeRef = useRef(onConnectionChange);
-  onConnectionChangeRef.current = onConnectionChange;
+  useEffect(() => {
+    onSyncRef.current = onSync;
+    onConnectionChangeRef.current = onConnectionChange;
+  }, [onSync, onConnectionChange]);
 
   useEffect(() => {
     let source: EventSource | null = null;
