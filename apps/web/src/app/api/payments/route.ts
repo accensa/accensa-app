@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { withClient, withMerchantClient, ensureSchema, getSyncState } from '@/lib/db';
 import { getMerchantFromRequest } from '@/lib/merchants';
-import { isHash32 } from '@/lib/receipt-anchor';
+import { getMaxBatchSize, isHash32 } from '@/lib/receipt-anchor';
 import type { SyncState } from '@/lib/sync-status';
 
 export const dynamic = 'force-dynamic';
@@ -22,7 +22,16 @@ export interface PaymentsResponse {
   payments: PaymentRow[];
   /** Null until the indexer has run at least once. */
   sync: SyncState | null;
+  /** Opaque keyset cursor for the next page; null when the list is exhausted. */
   next_cursor?: string | null;
+  /** Total number of indexed payments for this merchant. */
+  total: number;
+  /** Sum of every payment amount, as a decimal string. */
+  total_amount: string;
+  /** Raw asset when every payment is in one asset, else null. */
+  total_asset: string | null;
+  /** ceil(total / limit); 0 when there are no payments. */
+  total_pages: number;
   /** Total count of all settled payments for this merchant. */
   total_count?: number;
   /** Sum of all settled payment amounts for this merchant. */
@@ -39,7 +48,8 @@ export async function GET(request: Request) {
   let limit = 100;
   if (limitParam !== null) {
     const parsed = Number.parseFloat(limitParam);
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000) {
+    const maxLimit = await getMaxBatchSize().catch(() => 1000); // Fallback to 1000 if network fails
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > maxLimit) {
       return NextResponse.json(
         { error: 'limit must be an integer between 1 and 1000' },
         { status: 400 },
@@ -48,9 +58,27 @@ export async function GET(request: Request) {
     limit = parsed;
   }
 
+  // Page-based (offset) pagination, e.g. ?page=2&limit=50. Absent means page 1,
+  // which keeps every existing no-parameter caller (the routes page, the SDK's
+  // first page) on exactly the behaviour they had.
+  const pageParam = searchParams.get('page');
+  let page = 1;
+  if (pageParam !== null) {
+    const parsed = Number.parseFloat(pageParam);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      return NextResponse.json({ error: 'page must be an integer >= 1' }, { status: 400 });
+    }
+    page = parsed;
+  }
+
+  // Cursor-based (keyset) pagination, used by @accensa/sdk. The two schemes are
+  // mutually exclusive: a request cannot offset and keyset at the same time.
   const cursor = searchParams.get('cursor');
   let parsedCursor: { ts: string; txHash: string } | null = null;
   if (cursor) {
+    if (pageParam !== null) {
+      return NextResponse.json({ error: 'page and cursor cannot be combined' }, { status: 400 });
+    }
     try {
       const decoded = Buffer.from(cursor, 'base64').toString('utf8');
       const parts = decoded.split('|');
@@ -67,6 +95,8 @@ export async function GET(request: Request) {
     }
   }
 
+  const offset = (page - 1) * limit;
+
   try {
     const merchant = await withClient((client) => getMerchantFromRequest(client, request));
     if (!merchant) {
@@ -78,6 +108,22 @@ export async function GET(request: Request) {
       async (client) => {
         await ensureSchema(client);
 
+      // Window functions evaluate over the full filtered row set before LIMIT
+      // and OFFSET are applied, so one query returns both the page and the
+      // aggregates the dashboard header needs (total count, sum, single-asset
+      // detection via min = max).
+      let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method,
+                         COUNT(*) OVER() AS total,
+                         COALESCE(SUM(amount) OVER(), 0) AS total_amount,
+                         CASE WHEN MIN(COALESCE(asset, 'native')) OVER() =
+                                   MAX(COALESCE(asset, 'native')) OVER()
+                              THEN MIN(COALESCE(asset, 'native')) OVER() END AS total_asset
+                  FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
+      const params: (string | number)[] = [merchant.id];
+      if (parsedCursor) {
+        query += ` AND (ts < $${params.length + 1} OR (ts = $${params.length + 1} AND tx_hash < $${params.length + 2}))`;
+        params.push(parsedCursor.ts, parsedCursor.txHash);
+      }
         const countRes = await client.query<{ total_count: string; total_amount: string | null }>(
           `SELECT count(*)::text AS total_count, coalesce(sum(amount), 0)::text AS total_amount FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`,
           [merchant.id],
@@ -99,6 +145,14 @@ export async function GET(request: Request) {
           params.push(parsedCursor.ts, parsedCursor.txHash);
         }
 
+      if (!parsedCursor) {
+        query += ` OFFSET $${params.length + 1}`;
+        params.push(offset);
+      }
+
+      const result = await client.query(query, params);
+      return { rows: result.rows, sync: await getSyncState(client, merchant.id) };
+    });
         query += ` ORDER BY ts DESC, tx_hash DESC LIMIT $${params.length + 1}`;
         params.push(limit);
 
@@ -111,6 +165,13 @@ export async function GET(request: Request) {
         };
       },
     );
+
+    // The fake databases in tests do not return the window columns; tolerate
+    // their absence so aggregate handling is uniform.
+    const total = rows.length > 0 ? Number(rows[0].total ?? 0) : 0;
+    const totalAmount = rows.length > 0 ? String(rows[0].total_amount ?? 0) : '0';
+    const totalAsset = rows.length > 0 ? (rows[0].total_asset ?? null) : null;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
 
     const next_cursor =
       rows.length === limit
@@ -132,6 +193,10 @@ export async function GET(request: Request) {
       })),
       sync,
       next_cursor,
+      total,
+      total_amount: totalAmount,
+      total_asset: totalAsset,
+      total_pages: totalPages,
       total_count: totalCount,
       total_amount: totalAmount,
     };

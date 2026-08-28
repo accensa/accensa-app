@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
+import { rateLimit } from '@/lib/rate-limit';
 
 /**
  * No fallback secret, deliberately.
@@ -14,6 +15,24 @@ import { jwtVerify } from 'jose';
 const secretKey = process.env.JWT_SECRET_KEY;
 const key = secretKey ? new TextEncoder().encode(secretKey) : null;
 
+function getClientIp(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  const realIp = request.headers.get('x-real-ip');
+  if (realIp) {
+    return realIp;
+  }
+  return '127.0.0.1';
+}
+
+function isPublicApiRoute(path: string): boolean {
+  return (
+    path.startsWith('/api/verify') || path.startsWith('/api/auth') || path.startsWith('/api/hook/')
+  );
+}
+
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
@@ -24,10 +43,9 @@ export async function middleware(request: NextRequest) {
   // carries its own stronger auth: an Ed25519 signature verified over the raw request
   // bytes plus a five-minute timestamp bound. Gating it here would 401 every legitimate
   // settlement report before its own verification ever ran.
-  const isPublicApi =
-    path.startsWith('/api/verify') || path.startsWith('/api/auth') || path.startsWith('/api/hook/');
+  const publicApi = isPublicApiRoute(path);
   const isCronSync = path === '/api/sync' && request.method === 'GET';
-  const isPrivateApi = path.startsWith('/api/') && !isPublicApi && !isCronSync;
+  const isPrivateApi = path.startsWith('/api/') && !publicApi && !isCronSync;
   const isDashboard = path.startsWith('/dashboard');
 
   if (isPrivateApi || isDashboard) {
@@ -82,6 +100,27 @@ export async function middleware(request: NextRequest) {
   // means a misconfigured deployment never even reaches the route.
   if (isCronSync && !process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  if (publicApi) {
+    const ip = getClientIp(request);
+    const { success, limit, reset } = await rateLimit(ip);
+
+    if (!success) {
+      const retryAfterSeconds = Math.ceil((reset - Date.now()) / 1000);
+      return NextResponse.json(
+        { error: 'Too Many Requests' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(retryAfterSeconds),
+            'X-RateLimit-Limit': String(limit),
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': String(reset),
+          },
+        },
+      );
+    }
   }
 
   return NextResponse.next();

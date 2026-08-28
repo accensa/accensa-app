@@ -71,6 +71,27 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Examples',
+      items: [
+        {
+          type: 'link',
+          label: 'Demo Merchant (accensa-app)',
+          href: 'https://github.com/accensa/accensa-app/tree/main/apps/demo-merchant',
+        },
+        {
+          type: 'link',
+          label: 'HTTP Seller (facilitator)',
+          href: 'https://github.com/accensa/x402-facilitator-stellar/tree/main/examples/http-seller',
+        },
+        {
+          type: 'link',
+          label: 'MCP Agent (facilitator)',
+          href: 'https://github.com/accensa/x402-facilitator-stellar/tree/main/examples/mcp-agent',
+        },
+      ],
+    },
+    {
+      type: 'category',
       label: 'General Guides',
       items: ['developer', 'contributing', 'troubleshooting', 'faq'],
     },

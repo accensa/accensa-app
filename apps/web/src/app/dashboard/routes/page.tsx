@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { formatAmount, assetLabel } from '@/lib/money';
 import { PageContainer } from '@/components/page-container';
