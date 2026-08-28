@@ -404,6 +404,53 @@ export async function setLastSyncedLedger(
 }
 
 /**
+ * Handles a chain rollback: purges indexed payments from ledgers the
+ * corrected head no longer covers and rewinds the sync cursor to that head —
+ * atomically.
+ *
+ * Stellar consensus means closed ledgers are rarely overturned, but a node
+ * that lost state and re-synced from a snapshot, or a failover to a lagging
+ * peer, can report a head *below* the cursor. Payments indexed from the lost
+ * ledgers describe a chain that no longer exists; the next run re-indexes the
+ * corrected range, so the purge is a rewind, not data loss. Staged rows with a
+ * NULL ledger (merchant-reported attribution awaiting the chain) are
+ * untouched: `ledger > $2` cannot match them, and the re-indexed transfer
+ * fills them in later.
+ *
+ * The same advisory lock `setLastSyncedLedger` takes serializes this against
+ * a concurrent forward run, and the cursor write deliberately omits that
+ * function's forward-only `WHERE last_ledger < EXCLUDED.last_ledger` guard —
+ * rewinding is the point. Both statements commit together, so a crash cannot
+ * leave a cursor pointing past purged data.
+ *
+ * @returns The number of payment rows removed.
+ */
+export async function rollbackSyncToLedger(
+  client: Client,
+  merchantId: number,
+  ledger: number,
+): Promise<{ purged: number }> {
+  await client.query('BEGIN');
+  try {
+    await client.query('SELECT pg_advisory_xact_lock($1)', [merchantId]);
+    const res = await client.query(`DELETE FROM payments WHERE merchant_id = $1 AND ledger > $2`, [
+      merchantId,
+      ledger,
+    ]);
+    await client.query(
+      `INSERT INTO sync_state (merchant_id, last_ledger, updated_at) VALUES ($1, $2, now())
+       ON CONFLICT (merchant_id) DO UPDATE SET last_ledger = EXCLUDED.last_ledger, updated_at = now()`,
+      [merchantId, ledger],
+    );
+    await client.query('COMMIT');
+    return { purged: res.rowCount ?? 0 };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  }
+}
+
+/**
  * Persists a nonce issued by /api/auth/challenge so /api/auth/verify can
  * confirm it was this server that minted it, and that it has not already
  * been used. Scoped to the merchant the challenge was issued for, so a nonce

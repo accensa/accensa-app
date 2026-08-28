@@ -6,6 +6,7 @@ import {
   ensureSchema,
   getLastSyncedLedger,
   getSyncState,
+  rollbackSyncToLedger,
   setLastSyncedLedger,
 } from '@/lib/db';
 import {
@@ -169,7 +170,21 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
     {
       const { sequence: latestLedger } = await rpc<{ sequence: number }>('getLatestLedger', {});
 
-      const cursor = await getLastSyncedLedger(client, merchant.id);
+      let cursor = await getLastSyncedLedger(client, merchant.id);
+
+      // A chain head lower than the processed cursor means the node rolled
+      // back — a re-org, or a failover to a peer that lost its tail. Ledgers
+      // past the head no longer exist on the canonical chain, so payments
+      // indexed from them describe a chain that is gone: purge them and
+      // rewind the cursor to the corrected head before working out where to
+      // resume. Without this the early return below would report `drained`
+      // while the local ledger silently keeps rolled-back payments.
+      let rollback: { purged: number } | null = null;
+      if (cursor !== null && latestLedger < cursor) {
+        rollback = await rollbackSyncToLedger(client, merchant.id, latestLedger);
+        cursor = latestLedger;
+      }
+
       const resumeFrom = cursor !== null ? cursor + 1 : latestLedger - COLD_START_LOOKBACK;
       const retentionFloor = latestLedger - MAX_LOOKBACK;
       const startLedger = Math.max(resumeFrom, retentionFloor, 1);
@@ -191,6 +206,13 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
           scanned: 0,
           decoded: 0,
           inserted: 0,
+          // After a rollback there is nothing left to re-scan this
+          // invocation — the corrected head is the whole valid range — but
+          // the rewind was the work. Surface it so the run is not mistaken
+          // for a no-op.
+          ...(rollback
+            ? { rollback: true, rolledBackTo: latestLedger, purged: rollback.purged }
+            : {}),
         };
       }
 

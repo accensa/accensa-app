@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { Client } from 'pg';
-import { withClient, ensureSchema, setLastSyncedLedger, getLastSyncedLedger } from './db';
+import {
+  withClient,
+  ensureSchema,
+  setLastSyncedLedger,
+  getLastSyncedLedger,
+  rollbackSyncToLedger,
+} from './db';
 import { insertPaymentsInTransaction } from './insert-payments';
 import { getMerchantByAddress } from './merchants';
 
@@ -237,6 +243,60 @@ describe('Database Integration', () => {
       expect(res.rows.map((r) => Number(r.ledger))).toEqual([100, 101, 102]);
       const cursor = await getLastSyncedLedger(client, merchant!.id);
       expect(cursor).toBe(500);
+    });
+  });
+
+  it('purges rolled-back ledgers and rewinds the cursor, keeping staged rows', async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('Skipping integration test as DATABASE_URL is missing');
+      return;
+    }
+
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO merchants (address) VALUES ($1) ON CONFLICT (address) DO NOTHING`,
+        ['GROLLBACKMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'],
+      );
+      return getMerchantByAddress(client, 'GROLLBACKMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX');
+    });
+    expect(merchant).not.toBeNull();
+
+    // Three indexed payments at ledgers 100-102, plus one staged,
+    // merchant-reported row whose ledger the chain has not filled in yet.
+    await withMerchantClient(merchant!.id, async (client) => {
+      await client.query(
+        `INSERT INTO payments (merchant_id, tx_hash, ledger) VALUES
+         ($1, $2, 100), ($1, $3, 101), ($1, $4, 102)`,
+        [merchant!.id, 'd'.repeat(63) + '0', 'd'.repeat(63) + '1', 'd'.repeat(63) + '2'],
+      );
+      await client.query(
+        `INSERT INTO payments (merchant_id, tx_hash, ledger, route) VALUES ($1, $2, NULL, '/api/x')`,
+        [merchant!.id, 'd'.repeat(63) + '3'],
+      );
+      await setLastSyncedLedger(client, merchant!.id, 102);
+    });
+
+    // The node rolled back to head 100: everything indexed past it is gone.
+    const { purged } = await withMerchantClient(merchant!.id, async (client) => {
+      await ensureSchema(client);
+      return rollbackSyncToLedger(client, merchant!.id, 100);
+    });
+    expect(purged).toBe(2);
+
+    await withMerchantClient(merchant!.id, async (client) => {
+      const res = await client.query(
+        `SELECT tx_hash, ledger FROM payments WHERE merchant_id = $1 ORDER BY ledger NULLS LAST`,
+        [merchant!.id],
+      );
+      // Ledger 100 survived; 101 and 102 were purged; the staged NULL-ledger
+      // row (attribution awaiting the chain) was left alone.
+      expect(res.rows.map((r) => (r.ledger === null ? null : Number(r.ledger)))).toEqual([
+        100,
+        null,
+      ]);
+      // The cursor rewound with the purge, so the next run resumes from 101.
+      expect(await getLastSyncedLedger(client, merchant!.id)).toBe(100);
     });
   });
 

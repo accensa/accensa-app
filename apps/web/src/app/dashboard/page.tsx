@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { formatAmount, sumAmounts, assetLabel } from '@/lib/money';
 import { describeSync, type SyncState } from '@/lib/sync-status';
 import { CSV_BOM, paymentsCsvFilename, paymentsToCsv } from '@/lib/payments-csv';

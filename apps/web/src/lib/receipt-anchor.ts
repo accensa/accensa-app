@@ -114,4 +114,10 @@ export async function getBatch(batchId: number): Promise<BatchRecord> {
   };
 }
 
+/** Reads the max batch size configured on the contract. */
+export async function getMaxBatchSize(): Promise<number> {
+  const result = await simulate('max_batch_size', []);
+  return Number(result);
+}
+
 export { Address };
