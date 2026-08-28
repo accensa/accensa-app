@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "start": "node server.js",
+    "agent": "node agent.js",
+    "drive": "node drive.js",
     "test": "echo \"demo-merchant is an example server; no tests\""
   },
   "keywords": [],
   "license": "MIT",
   "description": "Example x402 seller with webhook listener and real-time SSE updates",
   "dependencies": {
+    "@stellar/stellar-sdk": "^16.0.1",
     "@x402/core": "^2.21.0",
     "@x402/express": "^2.21.0",
     "@x402/stellar": "^2.21.0",

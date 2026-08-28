@@ -172,17 +172,48 @@ resourceServer.onAfterSettle(async (ctx) => {
 
 // ---------------------------------------------------------------------------
 // 3. Configure the routes
+//
+// Several priced routes at deliberately different magnitudes, so the dashboard
+// has real per-route attribution to show: grouping, sorting and filtering by
+// route, per-route totals, and the CSV export's stroop decimal handling all
+// get exercised against genuinely different prices. Amounts are in stroops
+// (1 XLM = 10,000,000 stroops).
 // ---------------------------------------------------------------------------
 const routesConfig = {
+  // Cheap and frequent — the "everyday" call. 0.0001 XLM.
   '/api/hello': {
     accepts: {
       scheme: 'exact',
-      price: { asset: XLM_SAC, amount: '1000' }, // 1000 stroops = 0.0001 XLM
+      price: { asset: XLM_SAC, amount: '1000' }, // 1000 stroops
+      network: NETWORK,
+      payTo: process.env.MERCHANT_ADDRESS || 'GAQW...REPLACE_WITH_REAL_ADDRESS',
+    },
+  },
+  // Mid price — 0.0025 XLM. A different magnitude from /api/hello so per-route
+  // totals differ by more than call count.
+  '/api/insights/daily': {
+    accepts: {
+      scheme: 'exact',
+      price: { asset: XLM_SAC, amount: '25000' }, // 25,000 stroops
+      network: NETWORK,
+      payTo: process.env.MERCHANT_ADDRESS || 'GAQW...REPLACE_WITH_REAL_ADDRESS',
+    },
+  },
+  // Expensive and rare — 0.1 XLM. A third, much larger magnitude so decimal
+  // handling and totals are exercised at a genuinely different scale.
+  '/api/analytics/full': {
+    accepts: {
+      scheme: 'exact',
+      price: { asset: XLM_SAC, amount: '1000000' }, // 1,000,000 stroops
       network: NETWORK,
       payTo: process.env.MERCHANT_ADDRESS || 'GAQW...REPLACE_WITH_REAL_ADDRESS',
     },
   },
 };
+
+// /api/free is deliberately NOT in routesConfig: the x402 middleware only
+// intercepts configured routes, so this route passes straight through — the
+// free/paid boundary is visible in one server.
 
 const httpServer = new x402HTTPResourceServer(resourceServer, routesConfig);
 
@@ -201,6 +232,39 @@ app.get('/api/hello', (_req, res) => {
   res.json({
     message: 'Payment verified!',
     data: 'This is the premium Accensa content.',
+    route: '/api/hello',
+    price: '0.0001 XLM',
+  });
+});
+
+app.get('/api/insights/daily', (_req, res) => {
+  res.json({
+    message: 'Payment verified!',
+    data: 'Your daily insights digest.',
+    route: '/api/insights/daily',
+    price: '0.0025 XLM',
+  });
+});
+
+app.get('/api/analytics/full', (_req, res) => {
+  res.json({
+    message: 'Payment verified!',
+    data: 'The full analytics report, exported.',
+    route: '/api/analytics/full',
+    price: '0.1 XLM',
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5b. Route — free (no payment required)
+// ---------------------------------------------------------------------------
+
+app.get('/api/free', (_req, res) => {
+  res.json({
+    message: 'No payment needed!',
+    data: 'Public content, served without an x402 gate.',
+    route: '/api/free',
+    price: 'free',
   });
 });
 
@@ -301,7 +365,13 @@ app.get('/', (_req, res) => {
     transition: background .15s;
   }
   .pay-btn:hover { background: var(--accent-dim); }
-  .pay-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .pay-btn:disabled { opacity: .6; cursor: not-allowed; }
+  .pay-btn .spinner {
+    display: none; width: 1em; height: 1em; flex: none;
+    border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 50%; animation: spin .6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .event-list { list-style: none; }
   .event-list li {
     padding: .75rem 0; border-bottom: 1px solid var(--border);
@@ -327,10 +397,25 @@ app.get('/', (_req, res) => {
   </div>
 
   <div class="card">
-    <h2>Premium Endpoint</h2>
-    <button class="pay-btn" id="pay-btn" onclick="callHello()">
-      Pay &amp; Call /api/hello
-    </button>
+    <h2>Paid Endpoints</h2>
+    <p style="margin-bottom:1rem;font-size:.875rem;color:var(--muted);">
+      Each route costs a different amount, so the dashboard can show per-route
+      attribution.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:.75rem;">
+      <button class="pay-btn" id="pay-btn-hello" onclick="callRoute('/api/hello')">
+        <span class="spinner" aria-hidden="true"></span><span class="label">Pay &amp; Call /api/hello &mdash; 0.0001 XLM</span>
+      </button>
+      <button class="pay-btn" id="pay-btn-insights" onclick="callRoute('/api/insights/daily')">
+        <span class="spinner" aria-hidden="true"></span><span class="label">Pay &amp; Call /api/insights/daily &mdash; 0.0025 XLM</span>
+      </button>
+      <button class="pay-btn" id="pay-btn-analytics" onclick="callRoute('/api/analytics/full')">
+        <span class="spinner" aria-hidden="true"></span><span class="label">Pay &amp; Call /api/analytics/full &mdash; 0.1 XLM</span>
+      </button>
+      <button class="pay-btn" id="pay-btn-free" onclick="callRoute('/api/free')" style="background:var(--surface);color:var(--text);border:1px solid var(--border);">
+        <span class="spinner" aria-hidden="true"></span><span class="label">Call /api/free &mdash; free</span>
+      </button>
+    </div>
     <p id="pay-result" style="margin-top:.75rem;font-size:.875rem;"></p>
   </div>
 
@@ -346,7 +431,6 @@ app.get('/', (_req, res) => {
 const dot = document.getElementById('dot');
 const connText = document.getElementById('conn-text');
 const eventsList = document.getElementById('events');
-const payBtn = document.getElementById('pay-btn');
 const payResult = document.getElementById('pay-result');
 let hasEvents = false;
 
@@ -398,20 +482,39 @@ function showToast(data) {
   }, 4000);
 }
 
-// ---- Pay button (calls the x402-gated endpoint) ----
-async function callHello() {
-  payBtn.disabled = true;
-  payBtn.textContent = 'Paying\u2026';
+// ---- Pay button (calls the x402-gated endpoints, or the free route) ----
+// Marks the button as processing (spinner + "Preparing transaction\u2026") the
+// moment it is clicked, disables it to prevent double-submits, and resets the
+// state in a finally so it always recovers whether the call succeeds or fails.
+async function callRoute(route) {
+  const id = {
+    '/api/hello': 'pay-btn-hello',
+    '/api/insights/daily': 'pay-btn-insights',
+    '/api/analytics/full': 'pay-btn-analytics',
+    '/api/free': 'pay-btn-free',
+  }[route];
+  const btn = document.getElementById(id);
+  const spinner = btn.querySelector('.spinner');
+  const label = btn.querySelector('.label');
+  const originalLabel = label.textContent;
+  // Enter processing state immediately on click.
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  label.textContent = 'Preparing transaction\u2026';
+  btn.setAttribute('aria-busy', 'true');
   payResult.textContent = '';
   try {
-    const res = await fetch('/api/hello');
+    const res = await fetch(route);
     const json = await res.json();
     payResult.textContent = JSON.stringify(json);
   } catch (err) {
     payResult.textContent = 'Error: ' + err.message;
   } finally {
-    payBtn.disabled = false;
-    payBtn.textContent = 'Pay & Call /api/hello';
+    // Reset state whether the call succeeded or failed.
+    btn.disabled = false;
+    spinner.style.display = 'none';
+    label.textContent = originalLabel;
+    btn.removeAttribute('aria-busy');
   }
 }
 
@@ -428,7 +531,12 @@ connectSSE();
 app.listen(PORT, () => {
   console.log(`Demo merchant server running on port ${PORT}`);
   console.log(`Dashboard: http://localhost:${PORT}/`);
-  console.log(`Protected route: http://localhost:${PORT}/api/hello`);
+  console.log(`Protected routes:`);
+  for (const route of Object.keys(routesConfig)) {
+    const price = routesConfig[route].accepts.price;
+    console.log(`  - http://localhost:${PORT}${route} (${price.amount} stroops)`);
+  }
+  console.log(`Free route: http://localhost:${PORT}/api/free (no payment)`);
   console.log(`Reporting attribution to: ${ACCENSA_URL}/api/hook/settle`);
   console.log(`Webhook endpoint: POST http://localhost:${PORT}/api/webhooks/accensa`);
   console.log(`SSE stream: GET http://localhost:${PORT}/api/events`);

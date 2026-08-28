@@ -16,13 +16,23 @@
   },
   "exports": {
     ".": "./index.ts",
-    "./merkle": "./merkle.ts"
+    "./errors": "./src/errors.ts",
+    "./merkle": "./merkle.ts",
+    "./types": "./src/types/index.ts",
+    "./receipt-anchor-client": "./receipt-anchor-client.ts",
+    "./webhooks": "./webhooks.ts",
+    "./retry": "./retry.ts",
+    "./react-native": "./src/react-native.ts"
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "gen:vectors": "node scripts/generate-vectors.mjs"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^16.0.1"
   },
   "peerDependencies": {
     "express": ">=4"

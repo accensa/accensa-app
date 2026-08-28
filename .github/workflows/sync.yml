@@ -5,19 +5,32 @@ name: Trigger Indexer Sync
 # To achieve a reliable 5-minute interval, this workflow triggers hourly
 # and loops internally with a sleep, keeping the runner alive.
 #
+# The scheduling options (paid Vercel Cron, an external scheduler, a
+# long-running worker, or keeping this approach) are compared in DEPLOYMENT.md
+# under "Indexer scheduling". This file is option 4: keep the loop, fix its
+# specific defects.
+#
 # Required repository secrets:
-#   SYNC_URL      https://accensa-dashboard.vercel.app/api/sync
-#   CRON_SECRET   must match the CRON_SECRET set on the Vercel project
+#   SYNC_URL       https://accensa-dashboard.vercel.app/api/sync
+#   CRON_SECRET    must match the CRON_SECRET set on the Vercel project
+# Optional:
+#   HEARTBEAT_URL  a dead-man's-switch check URL (healthchecks.io, cronitor,
+#                  cron-job.org…). Pinged after every healthy sync and once
+#                  when the job ends. If the pings stop, the monitor alerts —
+#                  this is the only signal that scheduling has ceased entirely,
+#                  the failure mode that cost 207 ledgers.
 
 on:
   workflow_dispatch:
   schedule:
     - cron: '0 * * * *'
 
-# Never let two syncs overlap; the later one wins.
+# Do NOT cancel an in-flight sync when the next hourly trigger (or a manual
+# dispatch) fires. Indexing is idempotent, so an overlap just means one extra
+# run; a cancel mid-flight throws away a run that was doing real work.
 concurrency:
   group: indexer-sync
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   sync:
@@ -45,33 +58,58 @@ jobs:
           fi
           echo "Unauthenticated GET correctly rejected with 401."
 
+          # Regression probe: with CRON_SECRET unset, `Bearer ${CRON_SECRET}`
+          # used to render as the literal string "Bearer undefined", and a
+          # caller sending that exact header compared equal and bypassed
+          # auth. The no-header check above can't catch this - it never sends
+          # a header at all.
+          code=$(curl -sS --max-time 60 -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer undefined" "$SYNC_URL")
+          if [ "$code" != "401" ]; then
+            echo "::error::GET with 'Authorization: Bearer undefined' returned HTTP $code," \
+                 "expected 401. The unset-CRON_SECRET bypass has regressed."
+            exit 1
+          fi
+          echo "'Authorization: Bearer undefined' correctly rejected with 401."
+
       - name: Call sync endpoint in a loop
         env:
           SYNC_URL: ${{ secrets.SYNC_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          HEARTBEAT_URL: ${{ secrets.HEARTBEAT_URL }}
         run: |
           if [ -z "$SYNC_URL" ]; then
             echo "SYNC_URL secret is not set"; exit 1
           fi
 
-          # Run for 55 minutes to allow 5 minutes for the next hourly job to start
-          END_TIME=$(( $(date +%s) + 3300 ))
+          heartbeat() {
+            [ -n "$HEARTBEAT_URL" ] || return 0
+            curl -fsS --max-time 15 -o /dev/null "$HEARTBEAT_URL$1" \
+              || echo "::warning::heartbeat ping failed (monitor may alert)"
+          }
+
+          # Run for 65 minutes: the window deliberately overlaps the next hourly
+          # trigger. A self-cancel is no longer possible (cancel-in-progress:
+          # false), so the overlap costs one extra idempotent sync and removes
+          # the hour-boundary gap where a dropped trigger left no runner alive.
+          END_TIME=$(( $(date +%s) + 3900 ))
 
           while [ $(date +%s) -lt $END_TIME ]; do
             echo "Triggering sync at $(date)..."
             response=$(curl -sS --max-time 120 -w '\n%{http_code}' \
               -H "Authorization: Bearer $CRON_SECRET" "$SYNC_URL" || echo "curl failed")
-            
+
             body=$(printf '%s' "$response" | sed '$d')
             code=$(printf '%s' "$response" | tail -n1)
 
             echo "HTTP $code"
             echo "$body"
 
+            healthy=1
             if [ "$code" != "200" ]; then
-              echo "::warning::Sync failed with HTTP $code"
+              echo "::warning::Sync failed with HTTP $code"; healthy=0
             elif printf '%s' "$body" | grep -q '"success":false'; then
-              echo "::warning::Sync reported failure"
+              echo "::warning::Sync reported failure"; healthy=0
             elif printf '%s' "$body" | grep -q '"cooldown":true'; then
               echo "Skipped: a sync ran within the cooldown window."
             elif ! printf '%s' "$body" | grep -q '"syncedTo"'; then
@@ -79,6 +117,7 @@ jobs:
               # so there is nothing to be gained by polling it for another hour.
               echo "::error::Reply carries no syncedTo cursor, so no indexing took place." \
                    "The /api/sync route is not running the indexer."
+              heartbeat /fail
               exit 1
             elif printf '%s' "$body" | grep -q '"drained":false'; then
               echo "::warning::Incomplete sync: paging stopped against the time budget."
@@ -91,6 +130,12 @@ jobs:
               echo "::warning::Cursor fell outside RPC retention; $skipped ledgers skipped."
             fi
 
+            [ "$healthy" -eq 1 ] && heartbeat ""
+
             echo "Sleeping for 5 minutes..."
             sleep 300
           done
+
+          # One ping at clean exit so a monitor with a period > the loop length
+          # still sees the job completing on schedule.
+          heartbeat ""

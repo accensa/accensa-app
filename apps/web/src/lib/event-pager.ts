@@ -10,6 +10,29 @@ export interface EventPage {
   cursor?: string;
 }
 
+export type EventConsumer = (events: RawEvent[]) => void | Promise<void>;
+
+/**
+ * Thrown when a `getEvents` page fetch fails, carrying the exact ledger window
+ * that was being read at the time (#135). Without this, an RPC error or a
+ * parsing failure bubbles up as a bare error with no way to tell which ledgers
+ * were affected — the window is only ever in scope at the call site below.
+ */
+export class LedgerWindowFetchError extends Error {
+  readonly startLedger: number;
+  readonly endLedger: number;
+
+  constructor(startLedger: number, endLedger: number, cause: unknown) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    super(`Failed to fetch events for ledger window [${startLedger}, ${endLedger}]: ${reason}`, {
+      cause,
+    });
+    this.name = 'LedgerWindowFetchError';
+    this.startLedger = startLedger;
+    this.endLedger = endLedger;
+  }
+}
+
 export interface DrainResult {
   events: RawEvent[];
   /**
@@ -36,6 +59,10 @@ export interface DrainResult {
  * covers more than the RPC's whole retention window in one invocation.
  */
 export const LEDGER_WINDOW = 10_000;
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) && value! > 0 ? Math.floor(value!) : fallback;
+}
 
 /**
  * Reads every page of one bounded `getEvents` window.
@@ -64,7 +91,12 @@ export async function drainEvents(
 
   for (;;) {
     // A cursor supersedes startLedger; sending both is rejected by the RPC.
-    const page = await fetchPage(cursor ? { cursor } : { startLedger, endLedger });
+    let page: EventPage;
+    try {
+      page = await fetchPage(cursor ? { cursor } : { startLedger, endLedger });
+    } catch (cause) {
+      throw new LedgerWindowFetchError(startLedger, endLedger ?? startLedger, cause);
+    }
     pages++;
     events.push(...page.events);
 
@@ -81,7 +113,10 @@ export async function drainEvents(
 }
 
 export interface SweepResult {
+  /** Events returned when no `onEvents` consumer is supplied. */
   events: RawEvent[];
+  /** Total events fetched, including events delivered to `onEvents`. */
+  scanned: number;
   /**
    * The last ledger known to be fully consumed, and so the furthest the sync
    * cursor may advance. Only ever a completed window boundary, so it is safe
@@ -113,17 +148,29 @@ export async function sweepLedgerRange(
     endLedger: number;
     windowSize?: number;
     withinBudget?: () => boolean;
+    /** Called for each window in ledger order before the cursor advances. */
+    onEvents?: EventConsumer;
   },
 ): Promise<SweepResult> {
-  const { startLedger, endLedger, windowSize = LEDGER_WINDOW, withinBudget } = opts;
+  const { startLedger, endLedger, withinBudget, onEvents } = opts;
+  const windowSize = positiveInteger(opts.windowSize, LEDGER_WINDOW);
   const events: RawEvent[] = [];
+  let scanned = 0;
+  const emit = async (windowEvents: RawEvent[]) => {
+    scanned += windowEvents.length;
+    if (onEvents) {
+      await onEvents(orderEvents(windowEvents));
+    } else {
+      events.push(...orderEvents(windowEvents));
+    }
+  };
   let sweptThrough = startLedger - 1;
   let pages = 0;
   let windows = 0;
 
   while (sweptThrough < endLedger) {
     if (withinBudget && !withinBudget()) {
-      return { events, sweptThrough, complete: false, pages, windows };
+      return { events, scanned, sweptThrough, complete: false, pages, windows };
     }
 
     const from = sweptThrough + 1;
@@ -136,13 +183,165 @@ export async function sweepLedgerRange(
 
     windows++;
     pages += window.pages;
-    events.push(...window.events);
 
     if (!window.drained) {
-      return { events, sweptThrough, complete: false, pages, windows };
+      await emit(window.events);
+      return { events, scanned, sweptThrough, complete: false, pages, windows };
     }
+    await emit(window.events);
     sweptThrough = to;
   }
 
-  return { events, sweptThrough, complete: true, pages, windows };
+  return { events, scanned, sweptThrough, complete: true, pages, windows };
+}
+
+/**
+ * Gap in ledgers that triggers parallel fetching instead of sequential.
+ *
+ * Below this threshold the overhead of coordinating parallel fetches is not
+ * worth the cost; above it the RPC round-trip savings dominate.
+ */
+export const PARALLEL_SYNC_THRESHOLD = LEDGER_WINDOW;
+
+/** Maximum number of ledger windows fetched concurrently. */
+export const PARALLEL_CONCURRENCY = 10;
+
+/**
+ * Keeps commits deterministic even when an RPC returns same-ledger events in
+ * an unexpected order. The sort is stable in modern runtimes, and the id tie
+ * breaker makes the intended order explicit for test doubles and retries.
+ */
+function orderEvents(events: RawEvent[]): RawEvent[] {
+  return [...events].sort((a, b) => {
+    const ledgerDifference = (a.ledger ?? 0) - (b.ledger ?? 0);
+    if (ledgerDifference !== 0) return ledgerDifference;
+    return (a.id ?? '').localeCompare(b.id ?? '');
+  });
+}
+
+/**
+ * Fetches page from the RPC for one ledger window.
+ *
+ * Extracted so it can be called from `Promise.all` without closures.
+ */
+async function fetchWindow(
+  fetchPage: (params: {
+    startLedger?: number;
+    endLedger?: number;
+    cursor?: string;
+  }) => Promise<EventPage>,
+  startLedger: number,
+  endLedger: number,
+  withinBudget?: () => boolean,
+): Promise<DrainResult> {
+  return drainEvents(fetchPage, { startLedger, endLedger, withinBudget });
+}
+
+/**
+ * Sweeps `[startLedger, endLedger]` using parallel window fetches.
+ *
+ * Identical contract to `sweepLedgerRange` -- same return type, same cursor
+ * semantics, same budget behaviour -- but fetches up to `concurrency` ledger
+ * windows in parallel instead of one at a time.  This dramatically reduces
+ * wall-clock time when the indexer must catch up after extended downtime.
+ *
+ * Events are emitted in window order through `onEvents`, after all fetches in
+ * the current batch have resolved. Awaiting that callback before advancing to
+ * the next window makes sequential database commits explicit. Without a
+ * callback, events are returned in the same order for callers that want to
+ * process them after the sweep.
+ *
+ * If any window in a batch fails to drain (budget exhausted or RPC error), the
+ * cursor advances only through the windows that completed successfully. Events
+ * from the incomplete window are emitted too, but later windows are discarded
+ * and will be fetched again on the next run.
+ */
+export async function parallelSweepLedgerRange(
+  fetchPage: (params: {
+    startLedger?: number;
+    endLedger?: number;
+    cursor?: string;
+  }) => Promise<EventPage>,
+  opts: {
+    startLedger: number;
+    endLedger: number;
+    windowSize?: number;
+    concurrency?: number;
+    withinBudget?: () => boolean;
+    /** Called for each completed window in ledger order. */
+    onEvents?: EventConsumer;
+  },
+): Promise<SweepResult> {
+  const { startLedger, endLedger, withinBudget, onEvents } = opts;
+  const windowSize = positiveInteger(opts.windowSize, LEDGER_WINDOW);
+  const batchSize = positiveInteger(opts.concurrency, PARALLEL_CONCURRENCY);
+
+  const events: RawEvent[] = [];
+  let scanned = 0;
+  const emit = async (windowEvents: RawEvent[]) => {
+    scanned += windowEvents.length;
+    if (onEvents) {
+      await onEvents(orderEvents(windowEvents));
+    } else {
+      events.push(...orderEvents(windowEvents));
+    }
+  };
+  let nextWindowStart = startLedger;
+  let sweptThrough = startLedger - 1;
+  let pages = 0;
+  let windows = 0;
+
+  while (nextWindowStart <= endLedger) {
+    if (withinBudget && !withinBudget()) {
+      return { events, scanned, sweptThrough, complete: false, pages, windows };
+    }
+
+    const batch: Array<{ from: number; to: number }> = [];
+    while (batch.length < batchSize && nextWindowStart <= endLedger) {
+      const from = nextWindowStart;
+      const to = Math.min(from + windowSize - 1, endLedger);
+      batch.push({ from, to });
+      nextWindowStart = to + 1;
+    }
+
+    // Fetch every window in this batch concurrently.  Promise.all is used
+    // rather than allSettled: an RPC failure after retries should abort the
+    // run so the cursor does not advance past a gap the caller never saw.
+    const results = await Promise.all(
+      batch.map((range) => fetchWindow(fetchPage, range.from, range.to, withinBudget)),
+    );
+
+    // Advance the cursor through completed windows in order.  Stop at the
+    // first window that did not fully drain -- later windows in the same
+    // batch may have fetched events too, but the cursor must not skip over
+    // unread ranges.
+    let batchFailed = false;
+    for (let j = 0; j < results.length; j++) {
+      const result = results[j];
+      pages += result.pages;
+
+      if (!result.drained) {
+        batchFailed = true;
+        // Emit events already returned by the partial window. The consumer's
+        // writes are idempotent, so the next run can safely retry the window.
+        await emit(result.events);
+        break;
+      }
+
+      await emit(result.events);
+      sweptThrough = batch[j].to;
+      windows++;
+    }
+
+    if (batchFailed) break;
+  }
+
+  return {
+    events,
+    scanned,
+    sweptThrough,
+    complete: sweptThrough >= endLedger,
+    pages,
+    windows,
+  };
 }

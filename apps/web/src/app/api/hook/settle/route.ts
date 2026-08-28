@@ -20,6 +20,7 @@ async function verifyingMerchant(
   merchants: Merchant[],
   raw: string,
   signatureHex: string,
+  keyId?: string | null,
 ): Promise<Merchant | null> {
   const crypto = await import('node:crypto');
   let signature: Buffer;
@@ -31,22 +32,36 @@ async function verifyingMerchant(
 
   for (const merchant of merchants) {
     if (!merchant.publicKeyHex) continue;
-    try {
-      const keyBuffer = Buffer.from(merchant.publicKeyHex, 'hex');
-      const publicKey = crypto.createPublicKey({
-        key: Buffer.concat([
-          Buffer.from('302a300506032b6570032100', 'hex'), // SubjectPublicKeyInfo Ed25519 header
-          keyBuffer,
-        ]),
-        format: 'der',
-        type: 'spki',
-      });
-      if (crypto.verify(null, Buffer.from(raw, 'utf8'), publicKey, signature)) {
-        return merchant;
+    const publicKeys = merchant.publicKeyHex
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
+
+    for (const pubKeyHex of publicKeys) {
+      try {
+        const keyBuffer = Buffer.from(pubKeyHex, 'hex');
+        const publicKey = crypto.createPublicKey({
+          key: Buffer.concat([
+            Buffer.from('302a300506032b6570032100', 'hex'), // SubjectPublicKeyInfo Ed25519 header
+            keyBuffer,
+          ]),
+          format: 'der',
+          type: 'spki',
+        });
+        if (crypto.verify(null, Buffer.from(raw, 'utf8'), publicKey, signature)) {
+          if (keyId) {
+            console.info(`[accensa] settlement reported with key id: ${keyId}`);
+          } else if (publicKeys.length > 1) {
+            const prefix = pubKeyHex.substring(0, 8);
+            const msg = `[accensa] settlement reported with key: ${prefix}... (key rotation)`;
+            console.info(msg);
+          }
+          return merchant;
+        }
+      } catch {
+        // A malformed key for one merchant must not block checking the rest.
+        continue;
       }
-    } catch {
-      // A malformed key for one merchant must not block checking the rest.
-      continue;
     }
   }
   return null;
@@ -84,7 +99,7 @@ export async function POST(request: Request) {
   const merchant = await withClient(async (client) => {
     await ensureSchema(client);
     const merchants = await listMerchants(client);
-    return await verifyingMerchant(merchants, raw, signature);
+    return await verifyingMerchant(merchants, raw, signature, request.headers.get('x-key-id'));
   });
 
   if (!merchant) {

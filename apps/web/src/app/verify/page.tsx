@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import type { VerifyResponse } from '../api/verify/route';
 import { PageContainer } from '@/components/page-container';
+import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';
 import { CopyButton } from '@/components/copy-button';
 
 const SAMPLE = {
@@ -15,22 +16,22 @@ const SAMPLE = {
 const FORGED_LEAF = '16b138aabc889c21114436424e13132bd8928d2c21b4ac5a9ac5198104efb42c';
 
 /** Strip optional 0x prefix and surrounding whitespace, returning lowercase hex. */
-function normalizeHex(input: string): string {
+export function normalizeHex(input: string): string {
   return input.trim().replace(/^0x/i, '').toLowerCase();
 }
 
 /** A hex-encoded 32-byte hash is exactly 64 hex characters. */
-function isHex64(value: string): boolean {
+export function isHex64(value: string): boolean {
   return /^[0-9a-f]{64}$/.test(normalizeHex(value));
 }
 
-interface FieldErrors {
+export interface FieldErrors {
   batchId?: string;
   leaf?: string;
   proof?: string;
 }
 
-function validate(batchId: string, leaf: string, proof: string): FieldErrors {
+export function validate(batchId: string, leaf: string, proof: string): FieldErrors {
   const errors: FieldErrors = {};
 
   if (!batchId.trim()) {
@@ -298,11 +299,24 @@ export function Result({
           <div className="grid sm:grid-cols-2 gap-8">
             <Detail label="Batch ID" value={`#${batch.id}`} />
             <Detail label="Transaction Count" value={batch.count.toString()} />
-            <Detail
-              label="Period Start"
-              value={new Date(batch.periodStart * 1000).toLocaleString()}
-            />
-            <Detail label="Period End" value={new Date(batch.periodEnd * 1000).toLocaleString()} />
+            <Detail label="Period Start">
+              <time
+                dateTime={toISO8601(batch.periodStart * 1000)}
+                title={toISO8601(batch.periodStart * 1000)}
+                className="text-slate-900 dark:text-white font-medium text-lg"
+              >
+                {formatTimestamp(batch.periodStart * 1000)}
+              </time>
+            </Detail>
+            <Detail label="Period End">
+              <time
+                dateTime={toISO8601(batch.periodEnd * 1000)}
+                title={toISO8601(batch.periodEnd * 1000)}
+                className="text-slate-900 dark:text-white font-medium text-lg"
+              >
+                {formatTimestamp(batch.periodEnd * 1000)}
+              </time>
+            </Detail>
             <div className="sm:col-span-2">
               <Detail label="Merkle Root" value={batch.root} mono copyable />
             </div>
@@ -329,7 +343,9 @@ function CheckCard({
           <p className="text-slate-900 dark:text-white font-bold text-lg transition-colors duration-300">
             {title}
           </p>
-          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 transition-colors duration-300">{source}</p>
+          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 transition-colors duration-300">
+            {source}
+          </p>
         </div>
         <div
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest border transition-colors duration-300 ${result.ok ? 'bg-emerald-50 dark:bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' : 'bg-red-50 dark:bg-red-500/5 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20'}`}
@@ -383,11 +399,13 @@ function Detail({
   value,
   mono,
   copyable,
+  children,
 }: {
   label: string;
-  value: string;
+  value?: string;
   mono?: boolean;
   copyable?: boolean;
+  children?: React.ReactNode;
 }) {
   return (
     <div>
@@ -395,12 +413,12 @@ function Detail({
         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 transition-colors duration-300">
           {label}
         </p>
-        {copyable && <CopyButton value={value} label={label} />}
+        {copyable && value && <CopyButton value={value} label={label} />}
       </div>
       <p
         className={`transition-colors duration-300 ${mono ? 'text-slate-900 dark:text-white font-mono text-sm bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-transparent px-3 py-2 break-all' : 'text-slate-900 dark:text-white font-medium text-lg'}`}
       >
-        {value}
+        {children ?? value}
       </p>
     </div>
   );

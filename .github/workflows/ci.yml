@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Check formatting
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # Lints apps/web and packages/sdk from the root.
@@ -51,7 +51,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Test SDK
@@ -86,7 +86,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Test web
@@ -105,7 +105,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # Typechecks apps/web and packages/sdk from the root.
@@ -125,7 +125,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build Next.js app
