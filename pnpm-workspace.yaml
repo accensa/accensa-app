@@ -1,14 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
-onlyBuiltDependencies:
-  - '@sentry/cli'
-  - '@swc/core'
-  - core-js
-  - core-js-pure
-  - esbuild
-  - sharp
-  - unrs-resolver
+  - 'scripts/*'
 allowBuilds:
   '@sentry/cli': true
   '@swc/core': true

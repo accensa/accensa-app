@@ -1,0 +1,51 @@
+name: Indexer staleness check
+
+# External-of-the-sync check for cursor lag and cessation (issue #90).
+# Runs on its own schedule so that if sync.yml stops being scheduled, this
+# still fires and the failure is visible. Point ALERT_WEBHOOK at Slack /
+# a PagerDuty Events v2 endpoint / Discord so a red run also pages a human;
+# without it the job still fails loudly in the Actions tab.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 */2 * * *'
+
+concurrency:
+  group: indexer-stale-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Poll /api/health
+        env:
+          HEALTH_URL: ${{ secrets.HEALTH_URL }}
+          ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
+        run: |
+          if [ -z "$HEALTH_URL" ]; then echo "HEALTH_URL secret is not set"; exit 1; fi
+
+          resp=$(curl -sS --max-time 30 -w '\n%{http_code}' "$HEALTH_URL" || echo $'\n000')
+          body=$(printf '%s' "$resp" | sed '$d')
+          code=$(printf '%s' "$resp" | tail -n1)
+          echo "HTTP $code"
+          echo "$body"
+
+          status=$(printf '%s' "$body" | grep -oE '"status":"[a-z]+"' | head -1 | cut -d'"' -f4)
+
+          if [ "$code" != "200" ] || [ "$status" = "critical" ]; then
+            msg="Accensa indexer health: HTTP $code status=${status:-unknown}. $body"
+            if [ -n "$ALERT_WEBHOOK" ]; then
+              curl -sS -X POST -H 'Content-Type: application/json' \
+                --data "$(printf '{"text":%s}' "$(printf '%s' "$msg" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')")" \
+                "$ALERT_WEBHOOK" || true
+            fi
+            echo "::error::$msg"
+            exit 1
+          fi
+
+          if [ "$status" = "warn" ]; then
+            echo "::warning::indexer health is 'warn' — cursor lag rising, see /api/health"
+          fi
+          echo "indexer health OK"

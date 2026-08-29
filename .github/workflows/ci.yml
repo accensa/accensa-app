@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Check formatting
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # Lints apps/web and packages/sdk from the root.
@@ -51,12 +51,16 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Test SDK
         working-directory: ./packages/sdk
         run: pnpm test
+      - name: Verify generated API types are reproducible
+        run: |
+          pnpm --filter @accensa/sdk gen:api
+          git diff --exit-code -- packages/sdk/generated/api-types.ts
       - name: Verify conformance vectors are reproducible
         run: |
           node packages/sdk/scripts/generate-vectors.mjs
@@ -86,13 +90,32 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Test web
         working-directory: ./apps/web
         env:
           DATABASE_URL: postgres://postgres:password@localhost:5432/accensa_test
+        run: pnpm test
+
+  test-reconcile:
+    name: test (reconcile-payments)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # Unit tests only: synthetic and fixture data, no live RPC or database.
+      # The live reconciliation itself runs on a schedule, in reconcile.yml.
+      - name: Test reconcile-payments
+        working-directory: ./scripts/reconcile-payments
         run: pnpm test
 
   typecheck:
@@ -105,7 +128,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # Typechecks apps/web and packages/sdk from the root.
@@ -125,7 +148,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install pnpm
-        run: npm install -g pnpm@9
+        run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build Next.js app

@@ -9,5 +9,11 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    env: {
+      // Give the suite a defined Stellar network so explorer-link helpers do not
+      // fall back (and warn) on every render. Tests that exercise the unset and
+      // invalid cases pass the value explicitly.
+      NEXT_PUBLIC_STELLAR_NETWORK: 'testnet',
+    },
   },
 });

@@ -9,6 +9,9 @@ import {
   attachAccensaHook,
   reportSettlement,
   toSettleHookPayload,
+  AccensaAuthError,
+  AccensaError,
+  AccensaNetworkError,
   type Settlement,
 } from './index';
 
@@ -85,7 +88,8 @@ async function runHook(
   middleware(req, res, next);
   res.emit('finish');
   // reportSettlement is deliberately not awaited by the middleware.
-  await new Promise((resolve) => setImmediate(resolve));
+  await vi.waitFor(() => expect(next).toHaveBeenCalledOnce());
+  await new Promise((resolve) => setTimeout(resolve, 10));
   return next;
 }
 
@@ -110,6 +114,22 @@ describe('toSettleHookPayload', () => {
 });
 
 describe('reportSettlement', () => {
+  it('reports loudly when signing is unavailable', async () => {
+    const onError = vi.fn();
+    const fetchImpl = okFetch();
+    const originalImport = globalThis.crypto;
+    vi.stubGlobal('crypto', {
+      subtle: { importKey: vi.fn().mockRejectedValue(new Error('unsupported')) },
+    });
+    vi.stubGlobal('process', undefined);
+    vi.stubGlobal('Buffer', undefined);
+    await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
+    expect(String(onError.mock.calls[0][0])).toContain('Ed25519 signing unavailable');
+    expect(fetchImpl).not.toHaveBeenCalled();
+    vi.stubGlobal('crypto', originalImport);
+    vi.unstubAllGlobals();
+  });
+
   it('posts the signed payload to the settle endpoint', async () => {
     const fetchImpl = okFetch();
     const result = await reportSettlement(settlement, opts({ fetchImpl }));
@@ -134,19 +154,55 @@ describe('reportSettlement', () => {
     expect(fetchImpl.mock.calls[0][0]).toBe(`https://accensa.test${SETTLE_ENDPOINT}`);
   });
 
+  it('never logs the private key on signing failure', async () => {
+    const onError = vi.fn();
+    const veryBadKeyHex = 'abc';
+    const fetchImpl = vi.fn();
+    const options = opts({ privateKeyHex: veryBadKeyHex, onError, fetchImpl });
+    await expect(reportSettlement(settlement, options)).resolves.toBe(false);
+
+    expect(onError).toHaveBeenCalledOnce();
+    const errorStr = String(onError.mock.calls[0][0]);
+    expect(errorStr).not.toContain(veryBadKeyHex);
+
+    // Also test fallback console.error
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const optionsFallback = opts({ privateKeyHex: 'def', onError: undefined });
+    await expect(reportSettlement(settlement, optionsFallback)).resolves.toBe(false);
+    expect(String(consoleSpy.mock.calls[0][0])).not.toContain('def');
+    expect(String(consoleSpy.mock.calls[0][2])).not.toContain('def');
+  });
+
   it('reports a non-2xx response as a failure without throwing', async () => {
     const onError = vi.fn();
     const fetchImpl = vi.fn(async () => new globalThis.Response(null, { status: 401 }));
 
     await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
+    const reported = onError.mock.calls[0][0];
+    expect(reported).toBeInstanceOf(AccensaAuthError);
+    expect(reported).toBeInstanceOf(AccensaError);
+    expect(reported).toMatchObject({ status: 401, path: SETTLE_ENDPOINT });
+    expect(String(reported)).toContain('401');
     expect(onError.mock.calls[0][0]).toBeInstanceOf(Error);
     expect(String(onError.mock.calls[0][0])).toContain('401');
+    expect(String(onError.mock.calls[0][0])).not.toContain(PRIVATE_KEY_HEX);
     // A 4xx means the request itself is wrong (#123) — it must not be retried.
     expect(fetchImpl).toHaveBeenCalledOnce();
     // The payload comes back with the error so a caller can retry or log it.
     const payload = onError.mock.calls[0][1];
     const expected = toSettleHookPayload(settlement);
     expect(payload).toEqual({ ...expected, reported_at: payload.reported_at });
+  });
+
+  it('reports a non-auth non-2xx response as a plain AccensaError', async () => {
+    const onError = vi.fn();
+    const fetchImpl = vi.fn(async () => new globalThis.Response(null, { status: 500 }));
+
+    await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
+    const reported = onError.mock.calls[0][0];
+    expect(reported).toBeInstanceOf(AccensaError);
+    expect(reported).not.toBeInstanceOf(AccensaAuthError);
+    expect(reported).toMatchObject({ status: 500 });
   });
 
   it('resolves false in a runtime with no fetch at all', async () => {
@@ -156,8 +212,20 @@ describe('reportSettlement', () => {
     const onError = vi.fn();
 
     await expect(reportSettlement(settlement, opts({ onError }))).resolves.toBe(false);
+    expect(onError.mock.calls[0][0]).toBeInstanceOf(AccensaNetworkError);
     expect(String(onError.mock.calls[0][0])).toContain('No fetch implementation');
     vi.unstubAllGlobals();
+  });
+
+  it('wraps a rejected fetch in AccensaNetworkError with the URL and cause', async () => {
+    const onError = vi.fn();
+    const fetchImpl = failingFetch('ECONNREFUSED');
+
+    await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
+    const reported = onError.mock.calls[0][0] as AccensaNetworkError;
+    expect(reported).toBeInstanceOf(AccensaNetworkError);
+    expect(reported.url).toBe(`https://accensa.test${SETTLE_ENDPOINT}`);
+    expect(String(reported.cause)).toContain('ECONNREFUSED');
   });
 
   it('uses global fetch when no implementation is injected', async () => {
@@ -254,6 +322,10 @@ describe('reportSettlement — retry (#123)', () => {
 });
 
 describe('reportSettlement — network timeout', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /** A fetch that never answers, exactly like a dropped connection. */
   const hangingFetch = () =>
     vi.fn<typeof fetch>(
@@ -275,7 +347,11 @@ describe('reportSettlement — network timeout', () => {
 
     expect(result).toBe(false);
     expect(onError).toHaveBeenCalledOnce();
-    expect((onError.mock.calls[0][0] as Error).name).toBe('AbortError');
+    // The abort surfaces as a network error carrying the AbortError as cause.
+    const reported = onError.mock.calls[0][0] as AccensaNetworkError;
+    expect(reported).toBeInstanceOf(AccensaNetworkError);
+    expect(reported.cause).toBeInstanceOf(DOMException);
+    expect((reported.cause as DOMException).name).toBe('AbortError');
   });
 
   it('passes an abort signal to fetch', async () => {
@@ -289,14 +365,27 @@ describe('reportSettlement — network timeout', () => {
     const onError = vi.fn();
     const fetchImpl = hangingFetch();
 
-    const pending = reportSettlement(settlement, opts({ fetchImpl, onError }));
-    await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS - 1);
-    expect(onError).not.toHaveBeenCalled();
+    // Replace WebCrypto with promise-only operations so signing resolves on the
+    // microtask queue. A real importKey/sign completes on the libuv threadpool,
+    // letting the fake-timer abort outpace the fetch registration and leave the
+    // abort listener attached to an already-aborted signal.
+    const subtle = {
+      importKey: vi.fn(async () => ({})),
+      sign: vi.fn(async () => new Uint8Array(64)),
+    };
+    vi.stubGlobal('crypto', { subtle });
+    try {
+      const pending = reportSettlement(settlement, opts({ fetchImpl, onError }));
+      await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS - 1);
+      expect(onError).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(1);
-    await expect(pending).resolves.toBe(false);
-    expect(onError).toHaveBeenCalledOnce();
-  });
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toBe(false);
+      expect(onError).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }, 10_000);
 
   it('clears the timer once the request succeeds, leaving nothing pending', async () => {
     vi.useFakeTimers();

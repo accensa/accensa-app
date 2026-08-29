@@ -118,6 +118,40 @@ This makes a realistic mix of calls — five cheap, two mid, one expensive, and
 three free — so the dashboard's route column shows several distinct values and
 per-route totals differ.
 
+## Relationship to the facilitator's examples
+
+The [x402-facilitator-stellar](https://github.com/accensa/x402-facilitator-stellar)
+repository contains two examples:
+
+- `examples/http-seller` — a minimal, focused seller that shows the smallest
+  possible x402 integration.
+- `examples/mcp-agent` — a minimal buyer agent that pays for resources.
+
+Both are deliberately minimal: they demonstrate the protocol in isolation. This
+demo-merchant is the third example and the most complete one. It shows the
+**full merchant path** — an x402 Express seller using `ExactStellarScheme`,
+with route attribution reporting to an Accensa deployment, a webhook listener
+for real-time updates, and an SSE stream for a live frontend. The agent and
+driver scripts show the buyer side end to end.
+
+A reviewer evaluating the SCF RFP §5 adoption-strategy criterion should see:
+
+1. The facilitator's examples prove the protocol works in isolation.
+2. This demo-merchant proves the protocol works in a realistic merchant
+   context — agent pays, facilitator settles, indexer attributes, merchant
+   sees revenue.
+
+## Local-only requirements
+
+- The `MERCHANT_ADDRESS` must be set to a real Stellar address before starting
+  the server. Without it, the routes use a placeholder address that cannot
+  receive payments.
+- Webhook signature verification (`WEBHOOK_SECRET`) is optional for local
+  development. When unset, all signatures are accepted. In production, set
+  this to match the Accensa deployment's `WEBHOOK_SECRET`.
+- The `HOOK_API_KEY` is required for route attribution to be reported to
+  Accensa. Without it, settlements succeed but attribution is not recorded.
+
 ## Notes
 
 - The demo intentionally has **no product, cart, or order model**: it exists to

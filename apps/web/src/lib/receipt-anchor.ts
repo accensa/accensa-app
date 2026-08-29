@@ -9,6 +9,12 @@ import {
   scValToNative,
   xdr,
 } from '@stellar/stellar-sdk';
+import {
+  createReceiptAnchorAbi,
+  DEFAULT_RECEIPT_ANCHOR_ABI_VERSION,
+  type BatchRecord,
+  type ReceiptAnchorAbi,
+} from '@accensa/sdk/receipt-anchor';
 
 /**
  * Reads the ReceiptAnchor contract on Stellar.
@@ -17,6 +23,12 @@ import {
  * submitted, and no fees are paid. That matters for the public verifier: an
  * agent operator must be able to check a receipt without an account, a wallet,
  * or any trust in this service.
+ *
+ * Method names and result shapes are not hard-coded here - they come from
+ * `@accensa/sdk`'s ABI registry (see `packages/sdk/receipt-anchor.ts`, issue
+ * #172), keyed by `RECEIPT_ANCHOR_ABI_VERSION`. Soroban contracts are
+ * immutable once deployed, so if `RECEIPT_ANCHOR_ID` ever points at a
+ * differently-versioned build, this is the one line that needs to change.
  */
 
 export const RECEIPT_ANCHOR_ID =
@@ -35,12 +47,19 @@ const NETWORK_PASSPHRASE = process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TE
 const SIMULATION_SOURCE =
   process.env.MERCHANT_ADDRESS ?? 'GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6';
 
-export interface BatchRecord {
-  root: string;
-  count: number;
-  periodStart: number;
-  periodEnd: number;
+/**
+ * Which ABI `RECEIPT_ANCHOR_ID` speaks. Defaults to the only version this
+ * contract has ever shipped as of #172; see `packages/sdk/receipt-anchor.ts`
+ * for how to register support for a differently-versioned deployment.
+ */
+const RECEIPT_ANCHOR_ABI_VERSION =
+  process.env.RECEIPT_ANCHOR_ABI_VERSION ?? DEFAULT_RECEIPT_ANCHOR_ABI_VERSION;
+
+function abi(): ReceiptAnchorAbi {
+  return createReceiptAnchorAbi(RECEIPT_ANCHOR_ABI_VERSION);
 }
+
+export type { BatchRecord };
 
 /** A hex string of exactly 32 bytes. */
 export function isHash32(value: string): boolean {
@@ -88,30 +107,28 @@ export async function verifyReceiptOnChain(
   leaf: string,
   proof: string[],
 ): Promise<boolean> {
-  const result = await simulate('verify_receipt', [
+  const a = abi();
+  const result = await simulate(a.verifyReceiptMethod, [
     nativeToScVal(batchId, { type: 'u64' }),
     hexToScValBytes(leaf),
     xdr.ScVal.scvVec(proof.map(hexToScValBytes)),
   ]);
-  return result === true;
+  return a.decodeVerifyResult(result);
 }
 
 /** Reads an anchored batch. Throws if the batch does not exist. */
 export async function getBatch(batchId: number): Promise<BatchRecord> {
-  const raw = (await simulate('get_batch', [nativeToScVal(batchId, { type: 'u64' })])) as Record<
-    string,
-    unknown
-  >;
+  const a = abi();
+  const raw = (await simulate(a.getBatchMethod, [
+    nativeToScVal(batchId, { type: 'u64' }),
+  ])) as Record<string, unknown>;
+  return a.decodeBatch(raw);
+}
 
-  const root = raw.root;
-  return {
-    root: Buffer.isBuffer(root)
-      ? root.toString('hex')
-      : Buffer.from(root as Uint8Array).toString('hex'),
-    count: Number(raw.count),
-    periodStart: Number(raw.period_start),
-    periodEnd: Number(raw.period_end),
-  };
+/** Reads the max batch size configured on the contract. */
+export async function getMaxBatchSize(): Promise<number> {
+  const result = await simulate('max_batch_size', []);
+  return Number(result);
 }
 
 export { Address };

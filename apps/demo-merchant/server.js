@@ -365,7 +365,13 @@ app.get('/', (_req, res) => {
     transition: background .15s;
   }
   .pay-btn:hover { background: var(--accent-dim); }
-  .pay-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .pay-btn:disabled { opacity: .6; cursor: not-allowed; }
+  .pay-btn .spinner {
+    display: none; width: 1em; height: 1em; flex: none;
+    border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 50%; animation: spin .6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .event-list { list-style: none; }
   .event-list li {
     padding: .75rem 0; border-bottom: 1px solid var(--border);
@@ -398,16 +404,16 @@ app.get('/', (_req, res) => {
     </p>
     <div style="display:flex;flex-direction:column;gap:.75rem;">
       <button class="pay-btn" id="pay-btn-hello" onclick="callRoute('/api/hello')">
-        Pay &amp; Call /api/hello &mdash; 0.0001 XLM
+        <span class="spinner" aria-hidden="true"></span><span class="label">Pay &amp; Call /api/hello &mdash; 0.0001 XLM</span>
       </button>
       <button class="pay-btn" id="pay-btn-insights" onclick="callRoute('/api/insights/daily')">
-        Pay &amp; Call /api/insights/daily &mdash; 0.0025 XLM
+        <span class="spinner" aria-hidden="true"></span><span class="label">Pay &amp; Call /api/insights/daily &mdash; 0.0025 XLM</span>
       </button>
       <button class="pay-btn" id="pay-btn-analytics" onclick="callRoute('/api/analytics/full')">
-        Pay &amp; Call /api/analytics/full &mdash; 0.1 XLM
+        <span class="spinner" aria-hidden="true"></span><span class="label">Pay &amp; Call /api/analytics/full &mdash; 0.1 XLM</span>
       </button>
       <button class="pay-btn" id="pay-btn-free" onclick="callRoute('/api/free')" style="background:var(--surface);color:var(--text);border:1px solid var(--border);">
-        Call /api/free &mdash; free
+        <span class="spinner" aria-hidden="true"></span><span class="label">Call /api/free &mdash; free</span>
       </button>
     </div>
     <p id="pay-result" style="margin-top:.75rem;font-size:.875rem;"></p>
@@ -477,6 +483,9 @@ function showToast(data) {
 }
 
 // ---- Pay button (calls the x402-gated endpoints, or the free route) ----
+// Marks the button as processing (spinner + "Preparing transaction\u2026") the
+// moment it is clicked, disables it to prevent double-submits, and resets the
+// state in a finally so it always recovers whether the call succeeds or fails.
 async function callRoute(route) {
   const id = {
     '/api/hello': 'pay-btn-hello',
@@ -485,9 +494,14 @@ async function callRoute(route) {
     '/api/free': 'pay-btn-free',
   }[route];
   const btn = document.getElementById(id);
-  const original = btn.textContent;
+  const spinner = btn.querySelector('.spinner');
+  const label = btn.querySelector('.label');
+  const originalLabel = label.textContent;
+  // Enter processing state immediately on click.
   btn.disabled = true;
-  btn.textContent = 'Paying\u2026';
+  spinner.style.display = 'inline-block';
+  label.textContent = 'Preparing transaction\u2026';
+  btn.setAttribute('aria-busy', 'true');
   payResult.textContent = '';
   try {
     const res = await fetch(route);
@@ -496,8 +510,11 @@ async function callRoute(route) {
   } catch (err) {
     payResult.textContent = 'Error: ' + err.message;
   } finally {
+    // Reset state whether the call succeeded or failed.
     btn.disabled = false;
-    btn.textContent = original;
+    spinner.style.display = 'none';
+    label.textContent = originalLabel;
+    btn.removeAttribute('aria-busy');
   }
 }
 

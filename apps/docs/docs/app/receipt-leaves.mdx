@@ -1,0 +1,52 @@
+---
+sidebar_position: 2
+title: Receipt leaves
+---
+
+# Receipt leaf definition
+
+A receipt leaf is the 32-byte value that `ReceiptAnchor::verify_receipt` (and
+`verifyReceipt` in `@accensa/sdk`) hashes up a Merkle tree. The **tree
+algorithm** is pinned by the shared conformance vectors in
+[`packages/sdk/merkle-vectors.json`](https://github.com/accensa/accensa-app/blob/main/packages/sdk/merkle-vectors.json):
+sorted-pair SHA-256, odd nodes promoted unchanged, proofs in leaf-to-root
+order. That algorithm is identical in the SDK, the Soroban contract, and the
+merchant anchoring flow.
+
+The **leaf preimage** for a live payment is defined here, once.
+
+## Production leaf
+
+```
+leaf = SHA-256( tx_hash as 32 raw bytes )
+```
+
+- `tx_hash` is the hex-encoded SHA-256 of the Stellar transaction that paid
+  the merchant — the same 64 hex characters stored on `payments.tx_hash`.
+- Decode the hex to 32 bytes, then SHA-256 those bytes. Do not hash the hex
+  string. Do not include amount, payer, asset, or ledger: those can be read
+  from the transaction itself once inclusion is proven.
+- `receiptLeaf()` in `@accensa/sdk` is the canonical implementation. The
+  dashboard preview, the recorded `payments.receipt_leaf` column, and any
+  third-party verifier must call it (or byte-identical code).
+
+A third party who knows only the payment's transaction hash can recompute the
+leaf, `GET /api/receipts/:txHash` for the proof, and check it against the
+anchored root — locally via `verifyReceipt` or on-chain via `verify_receipt`.
+
+## Why not the vector labels?
+
+The fixtures in `merkle-vectors.json` hash UTF-8 labels (`"receipt-001:150.00"`)
+so the SDK tests and the contract tests can agree without a live ledger. They
+pin the tree, not the preimage. Production batches always use `receiptLeaf(tx_hash)`.
+
+## Selection and period
+
+Unanchored payments are selected by **ledger sequence**, not wall-clock time.
+Ledger numbers are monotonic; a merchant's clock is not. The tree is built in
+`(ledger ASC, tx_hash ASC)` order so the same set always produces the same
+root. `period_start` / `period_end` written to `anchor_batch` are Unix seconds
+taken from the first and last payment in that order.
+
+The same selection hashed (`sha256` of the `tx_hash` list, one per line) is
+the idempotency key. Submitting it twice does not create a second batch.

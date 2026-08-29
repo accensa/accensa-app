@@ -1,9 +1,15 @@
+---
+title: Troubleshooting
+description: 'Diagnose missing payments, attribution, sync failures, and refund policy errors in an Accensa deployment.'
+keywords: [x402, Stellar, troubleshooting]
+---
+
 # Troubleshooting
 
 ## No payments appearing
 
 - **Trustline missing**: Ensure the payer has a trustline to the asset.
-- **Wrong asset**: Verify the asset passed matches the `ACCEPTED_ASSETS`.
+- **Wrong asset**: Verify the asset contract ID matches `ASSET_CONTRACT_IDS`.
 - **Cursor stalled**: Check if `/api/sync` is returning failures or `skippedLedgers`.
 
 ## Attribution missing but payments present
@@ -16,7 +22,7 @@ If payments are on the dashboard but missing route attribution:
 
 ## Sync reporting `skippedLedgers`
 
-- Your RPC provider may be limiting queries. Check `SOROBAN_RPC_URL` logs.
+- Your RPC provider may be limiting queries or the cursor fell behind RPC event retention. Check `STELLAR_RPC_URL` logs.
 
 ## Refund rejected by policy
 

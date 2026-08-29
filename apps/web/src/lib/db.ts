@@ -25,29 +25,6 @@ export async function withClient<T>(fn: (client: Client) => Promise<T>): Promise
 }
 
 /**
- * Opens a connection scoped to one merchant for the lifetime of the request.
- *
- * `accensa.merchant_id` backs the row-level security policies on `payments`
- * and `sync_state` (see migrations/003_multi_merchant.sql) — it is the second
- * line of defence behind the application's own `WHERE merchant_id = $1`
- * clauses, so a query that forgets that clause returns nothing instead of
- * every merchant's data. Set once per connection, not per statement, since
- * `withClient` already opens and tears down a fresh `Client` per request.
- */
-export async function withMerchantClient<T>(
-  merchantId: number,
-  fn: (client: Client) => Promise<T>,
-): Promise<T> {
-  return withClient(async (client) => {
-    await client.query('SELECT set_config($1, $2, false)', [
-      'accensa.merchant_id',
-      String(merchantId),
-    ]);
-    return fn(client);
-  });
-}
-
-/**
  * Brings the schema up to the canonical shape.
  *
  * Idempotent, and safe against either historical layout - see
@@ -116,175 +93,71 @@ export async function ensureSchema(client: Client): Promise<void> {
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_route ON payments(route);`);
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_payer ON payments(payer);`);
 
-  // Auth challenge nonces — issued by /api/auth/challenge, consumed by
-  // /api/auth/verify. Prevents replay of unrelated signed transactions.
+  // Mapping from an on-chain ReceiptAnchor batch to the payments that formed
+  // it. `selection_hash` is sha256 of the selected tx_hashes in ledger order,
+  // so submitting the same set twice hits this unique key instead of anchoring
+  // a second batch. `status` is what makes the gap between "the contract
+  // accepted the transaction" and "we wrote the proofs" recoverable:
+  //   previewed  — tree built, nothing submitted
+  //   submitted  — on-chain succeeded, proofs not yet persisted (retry this)
+  //   recorded   — payments carry batch_id + proof; serveable
   await client.query(`
- CREATE TABLE IF NOT EXISTS challenge_nonces (
-   nonce VARCHAR(64) PRIMARY KEY,
-   issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-   consumed BOOLEAN NOT NULL DEFAULT false
- );
- `);
-  await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_challenge_nonces_issued ON challenge_nonces(issued_at DESC);`,
-  );
-
-  await ensureMultiMerchantSchema(client);
-}
-
-/**
- * Migrates the schema from single-merchant-by-env-var to multi-merchant-by-row.
- *
- * See migrations/003_multi_merchant.sql for the same steps as a standalone
- * SQL file, and DESIGN.md for the reasoning. This is the copy that actually
- * runs — `ensureSchema` is invoked defensively at the top of nearly every
- * DB-touching handler, the same pattern 001 and 002 already used.
- *
- * A fresh, unmigrated deployment with `MERCHANT_ADDRESS` set backfills its one
- * merchant automatically, so upgrading requires no manual SQL and no new
- * environment variables.
- */
-async function ensureMultiMerchantSchema(client: Client): Promise<void> {
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS merchants (
-      id                 SERIAL PRIMARY KEY,
-      address            VARCHAR(56) UNIQUE NOT NULL,
-      public_key_hex     VARCHAR(64),
-      asset_contract_ids TEXT,
-      refund_vault_id    VARCHAR(56),
-      webhook_url        TEXT,
-      created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    CREATE TABLE IF NOT EXISTS receipt_batches (
+      selection_hash VARCHAR(64) PRIMARY KEY,
+      batch_id BIGINT UNIQUE,
+      root VARCHAR(64) NOT NULL,
+      count INT NOT NULL,
+      period_start BIGINT NOT NULL,
+      period_end BIGINT NOT NULL,
+      start_ledger BIGINT NOT NULL,
+      end_ledger BIGINT NOT NULL,
+      anchor_tx VARCHAR(64),
+      status VARCHAR(20) NOT NULL,
+      proofs JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
 
-  if (process.env.MERCHANT_ADDRESS) {
-    await client.query(
-      `INSERT INTO merchants (address, public_key_hex)
-       VALUES ($1, $2)
-       ON CONFLICT (address) DO NOTHING`,
-      [process.env.MERCHANT_ADDRESS, process.env.MERCHANT_PUBLIC_KEY ?? null],
+  await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS batch_id BIGINT;`);
+  await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_leaf VARCHAR(64);`);
+  await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_proof JSONB;`);
+  await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_batch_id ON payments(batch_id);`);
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id BIGSERIAL PRIMARY KEY,
+      payment_tx_hash VARCHAR(64) NOT NULL,
+      url TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      attempts INT NOT NULL DEFAULT 0,
+      last_status_code INT,
+      last_error TEXT,
+      next_retry_at TIMESTAMPTZ,
+      delivered_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (payment_tx_hash, url)
     );
-  }
-
-  await client.query(
-    `ALTER TABLE payments ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES merchants(id);`,
-  );
-  await client.query(`
-    DO $$
-    DECLARE v_merchant_id int;
-    BEGIN
-      SELECT id INTO v_merchant_id FROM merchants ORDER BY id ASC LIMIT 1;
-      IF v_merchant_id IS NOT NULL THEN
-        UPDATE payments SET merchant_id = v_merchant_id WHERE merchant_id IS NULL;
-      END IF;
-    END $$;
   `);
   await client.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM payments WHERE merchant_id IS NULL) THEN
-        ALTER TABLE payments ALTER COLUMN merchant_id SET NOT NULL;
-      END IF;
-    END $$;
-  `);
-  await client.query(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name = 'payments' AND constraint_type = 'PRIMARY KEY' AND constraint_name = 'payments_pkey'
-      ) THEN
-        ALTER TABLE payments DROP CONSTRAINT payments_pkey;
-      END IF;
-    END $$;
-  `);
-  await client.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name = 'payments' AND constraint_type = 'PRIMARY KEY'
-      ) AND NOT EXISTS (SELECT 1 FROM payments WHERE merchant_id IS NULL) THEN
-        ALTER TABLE payments ADD CONSTRAINT payments_pkey PRIMARY KEY (merchant_id, tx_hash);
-      END IF;
-    END $$;
+    CREATE TABLE IF NOT EXISTS webhook_attempts (
+      id BIGSERIAL PRIMARY KEY,
+      delivery_id BIGINT NOT NULL REFERENCES webhook_deliveries(id) ON DELETE CASCADE,
+      attempt_number INT NOT NULL,
+      status_code INT,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
   await client.query(
-    `CREATE INDEX IF NOT EXISTS idx_payments_merchant_ts ON payments(merchant_id, ts DESC);`,
+    `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
+     ON webhook_deliveries (next_retry_at) WHERE status = 'pending';`,
   );
-
   await client.query(
-    `ALTER TABLE sync_state ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES merchants(id);`,
+    `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries (status);`,
   );
-  await client.query(`
-    DO $$
-    DECLARE v_merchant_id int;
-    BEGIN
-      SELECT id INTO v_merchant_id FROM merchants ORDER BY id ASC LIMIT 1;
-      IF v_merchant_id IS NOT NULL THEN
-        UPDATE sync_state SET merchant_id = v_merchant_id WHERE merchant_id IS NULL;
-      END IF;
-    END $$;
-  `);
-  await client.query(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name = 'sync_state' AND constraint_type = 'CHECK' AND constraint_name = 'sync_state_singleton'
-      ) THEN
-        ALTER TABLE sync_state DROP CONSTRAINT sync_state_singleton;
-      END IF;
-      IF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_name = 'sync_state' AND constraint_type = 'PRIMARY KEY' AND constraint_name = 'sync_state_pkey'
-      ) THEN
-        ALTER TABLE sync_state DROP CONSTRAINT sync_state_pkey;
-      END IF;
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'sync_state' AND column_name = 'id'
-      ) THEN
-        ALTER TABLE sync_state ALTER COLUMN id DROP DEFAULT;
-        ALTER TABLE sync_state DROP COLUMN id;
-      END IF;
-      IF NOT EXISTS (SELECT 1 FROM sync_state WHERE merchant_id IS NULL) THEN
-        ALTER TABLE sync_state ALTER COLUMN merchant_id SET NOT NULL;
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.table_constraints
-          WHERE table_name = 'sync_state' AND constraint_type = 'PRIMARY KEY'
-        ) THEN
-          ALTER TABLE sync_state ADD CONSTRAINT sync_state_pkey PRIMARY KEY (merchant_id);
-        END IF;
-      END IF;
-    END $$;
-  `);
-
-  await client.query(
-    `ALTER TABLE challenge_nonces ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES merchants(id);`,
-  );
-
-  // Defence in depth: even the role this app connects as (the table owner,
-  // which Postgres RLS normally exempts) is bound by these policies because
-  // they are FORCEd, not merely ENABLEd. A query that omits its own
-  // merchant_id filter gets zero rows back instead of every tenant's data.
-  await client.query(`ALTER TABLE payments ENABLE ROW LEVEL SECURITY;`);
-  await client.query(`ALTER TABLE payments FORCE ROW LEVEL SECURITY;`);
-  await client.query(`DROP POLICY IF EXISTS payments_merchant_isolation ON payments;`);
-  await client.query(`
-    CREATE POLICY payments_merchant_isolation ON payments
-      USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
-      WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);
-  `);
-
-  await client.query(`ALTER TABLE sync_state ENABLE ROW LEVEL SECURITY;`);
-  await client.query(`ALTER TABLE sync_state FORCE ROW LEVEL SECURITY;`);
-  await client.query(`DROP POLICY IF EXISTS sync_state_merchant_isolation ON sync_state;`);
-  await client.query(`
-    CREATE POLICY sync_state_merchant_isolation ON sync_state
-      USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
-      WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);
-  `);
 }
 
 /**
@@ -307,7 +180,6 @@ async function ensureMultiMerchantSchema(client: Client): Promise<void> {
  */
 export async function recordSettlement(
   client: Client,
-  merchantId: number,
   s: {
     txHash: string;
     route: string;
@@ -320,53 +192,47 @@ export async function recordSettlement(
   const reportedAt = s.reportedAt ?? new Date().toISOString();
   const updated = await client.query(
     `UPDATE payments
- SET route = $3, method = $4, request_id = $5, hook_reported_at = $6
- WHERE merchant_id = $1 AND tx_hash = $2 AND (hook_reported_at IS NULL OR hook_reported_at < $6)`,
-    [merchantId, s.txHash, s.route, s.method, s.requestId ?? null, reportedAt],
+ SET route = $2, method = $3, request_id = $4, hook_reported_at = $5
+ WHERE tx_hash = $1 AND (hook_reported_at IS NULL OR hook_reported_at < $5)`,
+    [s.txHash, s.route, s.method, s.requestId ?? null, reportedAt],
   );
 
   if ((updated.rowCount ?? 0) > 0) return { matchedExistingPayment: true };
 
   await client.query(
-    `INSERT INTO payments (merchant_id, tx_hash, payer, route, method, request_id, ts, hook_reported_at)
- VALUES ($1, $2, $3, $4, $5, $6, NULL, $7)
- ON CONFLICT (merchant_id, tx_hash) DO UPDATE
+    `INSERT INTO payments (tx_hash, payer, route, method, request_id, ts, hook_reported_at)
+ VALUES ($1, $2, $3, $4, $5, NULL, $6)
+ ON CONFLICT (tx_hash) DO UPDATE
  SET route = EXCLUDED.route,
  method = EXCLUDED.method,
  request_id = EXCLUDED.request_id,
  hook_reported_at = EXCLUDED.hook_reported_at
  WHERE payments.hook_reported_at IS NULL OR payments.hook_reported_at < EXCLUDED.hook_reported_at`,
-    [merchantId, s.txHash, s.payer ?? null, s.route, s.method, s.requestId ?? null, reportedAt],
+    [s.txHash, s.payer ?? null, s.route, s.method, s.requestId ?? null, reportedAt],
   );
 
   return { matchedExistingPayment: false };
 }
 
-export async function getLastSyncedLedger(
-  client: Client,
-  merchantId: number,
-): Promise<number | null> {
+export async function getLastSyncedLedger(client: Client): Promise<number | null> {
   const res = await client.query<{ last_ledger: string }>(
-    `SELECT last_ledger FROM sync_state WHERE merchant_id = $1`,
-    [merchantId],
+    `SELECT last_ledger FROM sync_state WHERE id = 1`,
   );
   return res.rows.length ? Number(res.rows[0].last_ledger) : null;
 }
 
 /**
- * The indexer's own record of when it last committed progress for a merchant.
+ * The indexer's own record of when it last committed progress.
  *
  * Read by /api/payments so the dashboard can say how current its data is,
  * rather than implying the freshness of its own poll.
  */
 export async function getSyncState(
   client: Client,
-  merchantId: number,
 ): Promise<{ lastLedger: number; updatedAt: string } | null> {
-  const res = await client.query<{
-    last_ledger: string;
-    updated_at: Date | string;
-  }>(`SELECT last_ledger, updated_at FROM sync_state WHERE merchant_id = $1`, [merchantId]);
+  const res = await client.query<{ last_ledger: string; updated_at: Date | string }>(
+    `SELECT last_ledger, updated_at FROM sync_state WHERE id = 1`,
+  );
   if (!res.rows.length) return null;
   const { last_ledger, updated_at } = res.rows[0];
   return {
@@ -375,20 +241,62 @@ export async function getSyncState(
   };
 }
 
-export async function setLastSyncedLedger(
-  client: Client,
-  merchantId: number,
-  ledger: number,
-): Promise<void> {
-  // Advisory lock keyed by merchant so concurrent syncs for different
-  // merchants never block each other, only concurrent runs for the same one.
-  await client.query('SELECT pg_advisory_xact_lock($1)', [merchantId]);
+export async function setLastSyncedLedger(client: Client, ledger: number): Promise<void> {
+  // Use advisory lock to prevent concurrent double-processing of ranges
+  await client.query('SELECT pg_advisory_xact_lock(1)');
   await client.query(
-    `INSERT INTO sync_state (merchant_id, last_ledger, updated_at) VALUES ($1, $2, now())
-     ON CONFLICT (merchant_id) DO UPDATE SET last_ledger = EXCLUDED.last_ledger, updated_at = now()
+    `INSERT INTO sync_state (id, last_ledger, updated_at) VALUES (1, $1, now())
+     ON CONFLICT (id) DO UPDATE SET last_ledger = EXCLUDED.last_ledger, updated_at = now()
      WHERE sync_state.last_ledger < EXCLUDED.last_ledger`,
     [merchantId, ledger],
   );
+}
+
+/**
+ * Handles a chain rollback: purges indexed payments from ledgers the
+ * corrected head no longer covers and rewinds the sync cursor to that head —
+ * atomically.
+ *
+ * Stellar consensus means closed ledgers are rarely overturned, but a node
+ * that lost state and re-synced from a snapshot, or a failover to a lagging
+ * peer, can report a head *below* the cursor. Payments indexed from the lost
+ * ledgers describe a chain that no longer exists; the next run re-indexes the
+ * corrected range, so the purge is a rewind, not data loss. Staged rows with a
+ * NULL ledger (merchant-reported attribution awaiting the chain) are
+ * untouched: `ledger > $2` cannot match them, and the re-indexed transfer
+ * fills them in later.
+ *
+ * The same advisory lock `setLastSyncedLedger` takes serializes this against
+ * a concurrent forward run, and the cursor write deliberately omits that
+ * function's forward-only `WHERE last_ledger < EXCLUDED.last_ledger` guard —
+ * rewinding is the point. Both statements commit together, so a crash cannot
+ * leave a cursor pointing past purged data.
+ *
+ * @returns The number of payment rows removed.
+ */
+export async function rollbackSyncToLedger(
+  client: Client,
+  merchantId: number,
+  ledger: number,
+): Promise<{ purged: number }> {
+  await client.query('BEGIN');
+  try {
+    await client.query('SELECT pg_advisory_xact_lock($1)', [merchantId]);
+    const res = await client.query(`DELETE FROM payments WHERE merchant_id = $1 AND ledger > $2`, [
+      merchantId,
+      ledger,
+    ]);
+    await client.query(
+      `INSERT INTO sync_state (merchant_id, last_ledger, updated_at) VALUES ($1, $2, now())
+       ON CONFLICT (merchant_id) DO UPDATE SET last_ledger = EXCLUDED.last_ledger, updated_at = now()`,
+      [merchantId, ledger],
+    );
+    await client.query('COMMIT');
+    return { purged: res.rowCount ?? 0 };
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  }
 }
 
 /**

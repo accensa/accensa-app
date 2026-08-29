@@ -1,6 +1,7 @@
 ---
 title: 'Developer Guide'
-description: 'SDK references and Indexer API structure for technical integrators.'
+description: 'Integrate the Accensa SDK and use its indexer APIs for route attribution, payment history, receipt verification, and refunds.'
+keywords: [x402, Stellar, SDK, API]
 ---
 
 ## SDK Reference
@@ -20,8 +21,8 @@ const app = express();
 // then the standard x402 middleware.
 app.use(
   attachAccensaHook({
-    indexerUrl: process.env.ACCENSA_INDEXER_URL,
-    apiKey: process.env.HOOK_API_KEY,
+    indexerUrl: process.env.ACCENSA_URL,
+    privateKeyHex: process.env.MERCHANT_PRIVATE_KEY,
   }),
 );
 app.use(x402Middleware());
@@ -33,36 +34,56 @@ app.get('/api/data', (req, res) => {
 
 ## Backend API Reference
 
-The Accensa backend exposes a JSON REST API consumed by the dashboard. You can also query it directly.
-
-### `GET /health`
-
-Liveness probe. Returns `{"status":"ok"}`.
+The Accensa backend exposes a JSON REST API consumed by the dashboard and integrators.
 
 ### `GET /api/payments`
 
-Returns all historically tracked payments. `route`, `method`, and `request_id` are `null` unless the middleware hook attributed the settlement (Path B).
+Returns tracked payments for the authenticated merchant session, sorted newest first with cursor pagination support. `route` and `method` are populated when the middleware hook attributed the settlement (Path B).
+
+**Query Parameters:**
+
+- `limit` _(optional)_: Integer between `1` and `1000` (default: `100`).
+- `cursor` _(optional)_: Base64-encoded pagination cursor (`<iso_timestamp>|<tx_hash>`).
+
+**Response Headers:**
+
+- `Cache-Control`: `no-store, no-cache, must-revalidate, max-age=0`
 
 **Response Shape:**
 
 ```json
-[
-  {
-    "tx_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
-    "ledger": 12847294,
-    "payer": "GB3A...",
-    "amount": 0.001,
-    "asset": "USDC",
-    "timestamp": "2026-07-13T10:00:00Z",
-    "route": "/api/data",
-    "method": "GET",
-    "request_id": "req-8f3b"
-  }
-]
+{
+  "payments": [
+    {
+      "tx_hash": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "ledger": 12847294,
+      "payer": "GB3A...",
+      "amount": "0.0010000",
+      "asset": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "ts": "2026-07-13T10:00:00.000Z",
+      "route": "/api/data",
+      "method": "GET"
+    }
+  ],
+  "sync": {
+    "updatedAt": "2026-07-13T10:05:00.000Z",
+    "lastLedger": 12847300
+  },
+  "next_cursor": "MjAyNi0wNy0xM1QxMDowMDowMC4wMDBafDZiODZiMjczZmYzNGZjZTE5ZDZiODA0ZWZmNWEzZjU3NDdhZGE0ZWFhMjJmMWQ0OWMwMWU1MmRkYjc4NzViNGI="
+}
 ```
 
-### `POST /hook/settle`
+### `POST /api/hook/settle`
 
-Path B ingestion endpoint called by the SDK middleware hook. Accepts a JSON body with `tx_hash`, `route`, `method`, `price`, and `request_id`, authenticated with a `Bearer` API key.
+Path B ingestion endpoint called by the SDK middleware hook (`attachAccensaHook`). Accepts a JSON settlement report with `tx_hash`, `route`, `method`, `amount`, and `request_id`.
 
-Route-level aggregation (`GET /api/routes`) is computed in the dashboard today; a dedicated aggregation endpoint is tracked as an open issue.
+**Authentication:**
+The report is signed with the merchant's Ed25519 private key. The payload signature is verified against registered merchant public keys.
+
+### `POST /api/verify`
+
+Cryptographically verifies that a receipt leaf and Merkle proof belong to an anchored batch. Checks both local computation and the on-chain `ReceiptAnchor` Soroban contract.
+
+### `POST /api/refund/preflight`
+
+Preflights a proposed refund against the `RefundVault` Soroban contract before prompting the merchant's wallet to sign. Checks float balance, refund window, and previous refund records.

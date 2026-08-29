@@ -1,12 +1,27 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { Client } from 'pg';
+import {
+  withClient,
+  ensureSchema,
+  setLastSyncedLedger,
+  getLastSyncedLedger,
+  rollbackSyncToLedger,
+} from './db';
+import { insertPaymentsInTransaction } from './insert-payments';
+import { getMerchantByAddress } from './merchants';
 
-async function withMerchantClient<T>(
-  merchantId: number,
-  fn: (client: Client) => Promise<T>,
-): Promise<T> {
-  return withClient(async (client) => {
-    // Ensure the non-superuser role exists
+/**
+ * Brings the schema up and grants the non-superuser test role everything it
+ * needs to drive RLS as the app would.
+ *
+ * Run once up front (not per connection) so `withMerchantClient` can be called
+ * concurrently without racing on catalog rows. On PostgreSQL 15 the `public`
+ * schema is no longer world-writable, so the role must be granted CREATE on it
+ * and be made the owner of the tables it re-runs DDL against via `ensureSchema`.
+ */
+async function setupTestDatabase(): Promise<void> {
+  await withClient(async (client) => {
+    await ensureSchema(client);
     await client.query(`
       DO $$
       BEGIN
@@ -15,9 +30,21 @@ async function withMerchantClient<T>(
         END IF;
       END $$;
     `);
+    await client.query('GRANT USAGE, CREATE ON SCHEMA public TO test_app_user');
+    for (const table of ['payments', 'sync_state', 'challenge_nonces', 'merchants']) {
+      await client.query(`ALTER TABLE IF EXISTS ${table} OWNER TO test_app_user`).catch(() => {});
+    }
     await client.query('GRANT ALL ON ALL TABLES IN SCHEMA public TO test_app_user');
     await client.query('GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO test_app_user');
+    await client.query('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO test_app_user');
+  });
+}
 
+async function withMerchantClient<T>(
+  merchantId: number,
+  fn: (client: Client) => Promise<T>,
+): Promise<T> {
+  return withClient(async (client) => {
     // Switch to non-superuser so RLS policies are enforced
     await client.query('SET SESSION AUTHORIZATION test_app_user');
 
@@ -28,11 +55,14 @@ async function withMerchantClient<T>(
     return fn(client);
   });
 }
-import { withClient, ensureSchema, setLastSyncedLedger, getLastSyncedLedger } from './db';
-import { insertPaymentsInTransaction } from './insert-payments';
-import { getMerchantByAddress } from './merchants';
 
 describe('Database Integration', () => {
+  beforeAll(async () => {
+    if (process.env.DATABASE_URL) {
+      await setupTestDatabase();
+    }
+  });
+
   it('should ensure schema and perform basic operations', async () => {
     if (!process.env.DATABASE_URL) {
       console.warn('Skipping integration test as DATABASE_URL is missing');
@@ -209,9 +239,64 @@ describe('Database Integration', () => {
         [merchant!.id],
       );
       expect(res.rows).toHaveLength(3);
-      expect(res.rows.map((r) => r.ledger)).toEqual([100, 101, 102]);
+      // ledger is BIGINT and comes back as a string from pg's default parser.
+      expect(res.rows.map((r) => Number(r.ledger))).toEqual([100, 101, 102]);
       const cursor = await getLastSyncedLedger(client, merchant!.id);
       expect(cursor).toBe(500);
+    });
+  });
+
+  it('purges rolled-back ledgers and rewinds the cursor, keeping staged rows', async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('Skipping integration test as DATABASE_URL is missing');
+      return;
+    }
+
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO merchants (address) VALUES ($1) ON CONFLICT (address) DO NOTHING`,
+        ['GROLLBACKMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'],
+      );
+      return getMerchantByAddress(client, 'GROLLBACKMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX');
+    });
+    expect(merchant).not.toBeNull();
+
+    // Three indexed payments at ledgers 100-102, plus one staged,
+    // merchant-reported row whose ledger the chain has not filled in yet.
+    await withMerchantClient(merchant!.id, async (client) => {
+      await client.query(
+        `INSERT INTO payments (merchant_id, tx_hash, ledger) VALUES
+         ($1, $2, 100), ($1, $3, 101), ($1, $4, 102)`,
+        [merchant!.id, 'd'.repeat(63) + '0', 'd'.repeat(63) + '1', 'd'.repeat(63) + '2'],
+      );
+      await client.query(
+        `INSERT INTO payments (merchant_id, tx_hash, ledger, route) VALUES ($1, $2, NULL, '/api/x')`,
+        [merchant!.id, 'd'.repeat(63) + '3'],
+      );
+      await setLastSyncedLedger(client, merchant!.id, 102);
+    });
+
+    // The node rolled back to head 100: everything indexed past it is gone.
+    const { purged } = await withMerchantClient(merchant!.id, async (client) => {
+      await ensureSchema(client);
+      return rollbackSyncToLedger(client, merchant!.id, 100);
+    });
+    expect(purged).toBe(2);
+
+    await withMerchantClient(merchant!.id, async (client) => {
+      const res = await client.query(
+        `SELECT tx_hash, ledger FROM payments WHERE merchant_id = $1 ORDER BY ledger NULLS LAST`,
+        [merchant!.id],
+      );
+      // Ledger 100 survived; 101 and 102 were purged; the staged NULL-ledger
+      // row (attribution awaiting the chain) was left alone.
+      expect(res.rows.map((r) => (r.ledger === null ? null : Number(r.ledger)))).toEqual([
+        100,
+        null,
+      ]);
+      // The cursor rewound with the purge, so the next run resumes from 101.
+      expect(await getLastSyncedLedger(client, merchant!.id)).toBe(100);
     });
   });
 
@@ -269,7 +354,7 @@ describe('Database Integration', () => {
       );
       const payment = res.rows[0];
       // Ledger-owned columns were written by the indexer...
-      expect(payment.ledger).toBe(300);
+      expect(Number(payment.ledger)).toBe(300);
       expect(payment.payer).toBe('G' + 'C'.repeat(55));
       expect(payment.amount).toBe('5000');
       expect(payment.ts).toBeInstanceOf(Date);

@@ -99,3 +99,60 @@ export async function listMerchants(client: Client): Promise<Merchant[]> {
   );
   return res.rows.map(fromRow);
 }
+
+/**
+ * A partial write to the mutable fields of a `Merchant`.
+ *
+ * `address` and `id` are the merchant's identity and are never written here.
+ * A key present with value `null` clears that column back to the
+ * deployment-wide default; an absent key leaves the column untouched.
+ */
+export interface MerchantProfileUpdate {
+  publicKeyHex?: string | null;
+  assetContractIds?: string[] | null;
+  refundVaultId?: string | null;
+  webhookUrl?: string | null;
+}
+
+/**
+ * Applies a partial profile update and returns the merchant's new state.
+ *
+ * Only columns present in `update` are written, so a caller that omits a
+ * field can never accidentally null it out.
+ */
+export async function updateMerchantProfile(
+  client: Client,
+  merchantId: number,
+  update: MerchantProfileUpdate,
+): Promise<Merchant | null> {
+  const sets: string[] = [];
+  const params: (string | null)[] = [];
+
+  if ('publicKeyHex' in update) {
+    params.push(update.publicKeyHex ?? null);
+    sets.push(`public_key_hex = $${params.length + 1}`);
+  }
+  if ('assetContractIds' in update) {
+    params.push(update.assetContractIds?.length ? update.assetContractIds.join(',') : null);
+    sets.push(`asset_contract_ids = $${params.length + 1}`);
+  }
+  if ('refundVaultId' in update) {
+    params.push(update.refundVaultId ?? null);
+    sets.push(`refund_vault_id = $${params.length + 1}`);
+  }
+  if ('webhookUrl' in update) {
+    params.push(update.webhookUrl ?? null);
+    sets.push(`webhook_url = $${params.length + 1}`);
+  }
+
+  if (sets.length === 0) {
+    return getMerchantById(client, merchantId);
+  }
+
+  const res = await client.query<MerchantRow>(
+    `UPDATE merchants SET ${sets.join(', ')} WHERE id = $1
+     RETURNING id, address, public_key_hex, asset_contract_ids, refund_vault_id, webhook_url`,
+    [merchantId, ...params],
+  );
+  return res.rows.length ? fromRow(res.rows[0]) : null;
+}

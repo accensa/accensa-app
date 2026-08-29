@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { fetchWithRetry, HttpError } from './retry';
+import { fetchWithRetry, HttpError, retryAfterMs } from './retry';
 
 const ok = () => new Response(null, { status: 200 });
 const status = (code: number) => new Response(null, { status: code });
@@ -177,6 +177,102 @@ describe('fetchWithRetry', () => {
 
     expect(response.ok).toBe(true);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a 429 by default', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => status(429));
+
+    await expect(
+      fetchWithRetry('https://example.test', undefined, { ...FAST, fetchImpl }),
+    ).rejects.toThrow(HttpError);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it('retries a 429 when retryOn429 is set, waiting out Retry-After', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn<typeof fetch>();
+      const rateLimited = new Response(null, {
+        status: 429,
+        headers: { 'Retry-After': '1' },
+      });
+      fetchImpl.mockResolvedValueOnce(rateLimited);
+      fetchImpl.mockResolvedValueOnce(ok());
+
+      const pending = fetchWithRetry('https://example.test', undefined, {
+        baseDelayMs: 10,
+        fetchImpl,
+        retryOn429: true,
+      });
+      await vi.advanceTimersByTimeAsync(1_000);
+      const response = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('falls back to exponential backoff when a 429 has no Retry-After', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn<typeof fetch>();
+      fetchImpl.mockResolvedValueOnce(status(429));
+      fetchImpl.mockResolvedValueOnce(ok());
+      const onRetry = vi.fn();
+
+      const pending = fetchWithRetry('https://example.test', undefined, {
+        baseDelayMs: 100,
+        fetchImpl,
+        retryOn429: true,
+        onRetry,
+      });
+      await vi.advanceTimersByTimeAsync(100);
+      const response = await pending;
+
+      expect(response.ok).toBe(true);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(onRetry).toHaveBeenCalledTimes(1);
+      expect(onRetry.mock.calls[0][2]).toBe(100);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('throws HttpError(429) after exhausting retries with retryOn429', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi.fn<typeof fetch>(async () => status(429));
+
+      const pending = fetchWithRetry('https://example.test', undefined, {
+        baseDelayMs: 10,
+        maxRetries: 2,
+        fetchImpl,
+        retryOn429: true,
+      });
+      const result = pending.catch((e: unknown) => e);
+      // 2 retries: 10ms then 20ms backoff (no Retry-After header).
+      for (let i = 0; i < 2; i++) await vi.advanceTimersByTimeAsync(10 * 2 ** i);
+      const error = await result;
+
+      expect(error).toBeInstanceOf(HttpError);
+      expect((error as HttpError).status).toBe(429);
+      expect(fetchImpl).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('parses a Retry-After HTTP-date into milliseconds', () => {
+    const later = new Date(Date.now() + 5_000).toUTCString();
+    const ms = retryAfterMs(new Response(null, { headers: { 'Retry-After': later } }));
+    expect(ms).toBeGreaterThanOrEqual(4_000);
+    expect(ms).toBeLessThanOrEqual(5_000);
+  });
+
+  it('returns undefined Retry-After when the header is absent', () => {
+    expect(retryAfterMs(ok())).toBeUndefined();
   });
 });
 

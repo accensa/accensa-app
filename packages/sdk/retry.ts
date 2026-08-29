@@ -34,6 +34,27 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Reads the server's `Retry-After` hint from a response, if present.
+ *
+ * Returns milliseconds to wait. Handles both the HTTP-date form and the
+ * integer-seconds form the rate-limit middlewares in common use actually send
+ * (a bare number of seconds, per RFC 9110). Returns undefined when the header
+ * is absent or unparseable, so callers fall back to their own backoff.
+ */
+export function retryAfterMs(response: Response): number | undefined {
+  const header = response.headers.get('retry-after');
+  if (!header) return undefined;
+
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+
+  const date = Date.parse(header);
+  if (Number.isFinite(date)) return Math.max(0, date - Date.now());
+
+  return undefined;
+}
+
 export interface RetryOptions {
   /** Retry attempts after the first try. Defaults to 3. */
   maxRetries?: number;
@@ -43,6 +64,13 @@ export interface RetryOptions {
   fetchImpl?: typeof fetch;
   /** Which HTTP status codes are worth retrying. Defaults to 500-599. */
   isRetryableStatus?: (status: number) => boolean;
+  /**
+   * Also retry HTTP 429 (Too Many Requests), honouring the response's
+   * `Retry-After` header when present and falling back to the exponential
+   * backoff otherwise. Defaults to false, keeping 429 a fast, non-retried
+   * failure unless a caller opts in (#155).
+   */
+  retryOn429?: boolean;
   /** Called before each retry's delay, e.g. for logging. Never called for the final failure. */
   onRetry?: (attempt: number, error: unknown, delayMs: number) => void;
 }
@@ -56,6 +84,11 @@ export interface RetryOptions {
  * an `AbortError` means the caller already decided to stop waiting — retrying
  * either would just fail the same way again, or defeat a timeout the caller
  * set on purpose.
+ *
+ * Rate limits are the exception to the 4xx rule: a 429 is transient by
+ * design, and the server says exactly how long to wait. Callers that opt in
+ * via `retryOn429` get automatic retries that honour `Retry-After`; without
+ * it, 429 stays a fast, explicit failure.
  *
  * The returned promise resolves only to a 2xx response; every other outcome
  * throws (`HttpError` for a non-retryable or exhausted-retries HTTP status,
@@ -71,6 +104,7 @@ export async function fetchWithRetry(
     baseDelayMs = 200,
     fetchImpl = fetch,
     isRetryableStatus = isRetryableStatusDefault,
+    retryOn429 = false,
     onRetry,
   } = options;
 
@@ -87,13 +121,18 @@ export async function fetchWithRetry(
 
     if (response) {
       if (response.ok) return response;
-      if (!isRetryableStatus(response.status)) throw new HttpError(response);
+      const rateLimited = retryOn429 && response.status === 429;
+      if (!rateLimited && !isRetryableStatus(response.status)) throw new HttpError(response);
     }
 
     const error = response ? new HttpError(response) : networkError;
     if (attempt >= maxRetries) throw error;
 
-    const delayMs = baseDelayMs * 2 ** attempt;
+    // A rate limit should be waited out as long as the server asked; any other
+    // retryable failure backs off exponentially from the base delay.
+    const delayMs = response && response.status === 429
+      ? (retryAfterMs(response) ?? baseDelayMs * 2 ** attempt)
+      : baseDelayMs * 2 ** attempt;
     onRetry?.(attempt + 1, error, delayMs);
     await delay(delayMs);
   }

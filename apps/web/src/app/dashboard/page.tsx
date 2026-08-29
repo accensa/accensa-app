@@ -11,6 +11,8 @@ import { RefundPanel } from '@/components/refund-panel';
 import { CopyButton } from '@/components/copy-button';
 import { useOnline } from '@/components/network-status';
 import { describeFailure, isAbortError } from '@/lib/network-status';
+import { explorerTxUrl } from '@/lib/explorer';
+import { focusRestorer, getFocusable, wrapTabTarget } from '@/lib/dialog-focus';
 
 interface Payment {
   tx_hash: string;
@@ -29,7 +31,6 @@ type LoadState =
   | { status: 'error'; message: string };
 
 const POLL_INTERVAL_MS = 15_000;
-const explorerUrl = (hash: string) => `https://stellar.expert/explorer/testnet/tx/${hash}`;
 
 function truncate(value: string, head = 8, tail = 6) {
   return value.length <= head + tail + 1 ? value : `${value.slice(0, head)}…${value.slice(-tail)}`;
@@ -61,7 +62,6 @@ function saveRefundedToStorage(refunded: ReadonlySet<string>): void {
 export default function Dashboard() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [selected, setSelected] = useState<Payment | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [reloadToken, setReloadToken] = useState(0);
   // Refunds issued in this session. The indexer does not watch RefundVault
   // events yet, so a refund is otherwise invisible until someone opens the
@@ -71,6 +71,10 @@ export default function Dashboard() {
     (txHash: string) => setRefunded((prev) => new Set(prev).add(txHash)),
     [],
   );
+  // Stable identity: PaymentModal's focus-management effect depends on it, and a
+  // fresh closure every render (the dashboard re-renders on every 15s poll)
+  // would re-trap focus mid-interaction.
+  const closeModal = useCallback(() => setSelected(null), []);
   const online = useOnline();
 
   const reload = useCallback(() => setReloadToken((n) => n + 1), []);
@@ -111,14 +115,6 @@ export default function Dashboard() {
       clearInterval(timer);
     };
   }, [reloadToken, online]);
-
-  useEffect(() => {
-    if (!selected) return;
-    closeButtonRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelected(null);
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [selected]);
 
   const payments = state.status === 'ready' ? state.payments : [];
   const total = sumAmounts(payments.map((p) => p.amount));
@@ -298,7 +294,7 @@ export default function Dashboard() {
       {selected && (
         <PaymentModal
           selected={selected}
-          onClose={() => setSelected(null)}
+          onClose={closeModal}
           refunded={refunded}
           onRefunded={markRefunded}
         />
@@ -306,6 +302,8 @@ export default function Dashboard() {
     </main>
   );
 }
+
+const PAYMENT_MODAL_HEADING_ID = 'payment-details-heading';
 
 export function PaymentModal({
   selected,
@@ -318,18 +316,67 @@ export function PaymentModal({
   refunded: ReadonlySet<string>;
   onRefunded: (tx_hash: string) => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // A real modal dialog: focus moves in on open, Tab is trapped inside, Escape
+  // and a backdrop click both close, and focus returns to whatever opened it.
+  useEffect(() => {
+    const restoreFocus = focusRestorer(
+      typeof document === 'undefined' ? null : (document.activeElement as HTMLElement | null),
+    );
+
+    const dialog = dialogRef.current;
+    if (dialog) {
+      const focusable = getFocusable(dialog);
+      (focusable[0] ?? dialog).focus();
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key === 'Tab' && dialog) {
+        const target = wrapTabTarget(
+          getFocusable(dialog),
+          document.activeElement as HTMLElement | null,
+          event.shiftKey,
+        );
+        if (target) {
+          event.preventDefault();
+          target.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      restoreFocus();
+    };
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#04090f]/40 dark:bg-black/80 backdrop-blur-sm transition-colors duration-300"
       onClick={onClose}
     >
       <div
-        className="bg-white/40 dark:bg-white/5 backdrop-blur-2xl border border-slate-200 dark:border-white/10 w-full max-w-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_0_50px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] animate-in zoom-in-95 duration-200 transition-colors duration-300 max-h-[90vh] flex flex-col"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={PAYMENT_MODAL_HEADING_ID}
+        tabIndex={-1}
+        className="bg-white/40 dark:bg-white/5 backdrop-blur-2xl border border-slate-200 dark:border-white/10 w-full max-w-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_0_50px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] animate-in zoom-in-95 duration-200 transition-colors duration-300 max-h-[90vh] flex flex-col outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 md:px-8 md:py-6 border-b border-slate-200/60 dark:border-white/20 flex justify-between items-center bg-slate-50 dark:bg-[#0a111a] transition-colors duration-300 shrink-0">
           <div className="flex items-center gap-2">
-            <h3 className="text-lg font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300">
+            <h3
+              id={PAYMENT_MODAL_HEADING_ID}
+              className="text-lg font-black tracking-tight text-slate-900 dark:text-white transition-colors duration-300"
+            >
               Payment Details
             </h3>
             {refunded.has(selected.tx_hash) && (
@@ -342,7 +389,9 @@ export function PaymentModal({
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close payment details"
             className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-white transition-colors"
           >
             ✕
@@ -385,7 +434,7 @@ export function PaymentModal({
 
           <div className="pt-6 mt-6 border-t border-slate-100 dark:border-white/10 transition-colors duration-300">
             <a
-              href={explorerUrl(selected.tx_hash)}
+              href={explorerTxUrl(selected.tx_hash)}
               target="_blank"
               rel="noreferrer"
               className="flex items-center justify-center gap-1.5 w-full py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-white/10 hover:border-slate-300 dark:hover:border-white/20 shadow-sm dark:shadow-none transition-all font-bold text-sm tracking-wide uppercase"

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+description: 'Deploy the Accensa merchant back-office, connect the SDK, sync Stellar payments, and anchor your first receipt batch.'
+keywords: [x402, Stellar, Soroban, receipt anchoring]
 ---
 
 # Merchant Onboarding Path
@@ -12,11 +14,13 @@ This guide walks you through deploying your own Accensa back-office, configuring
 2. Provision a PostgreSQL database (e.g., using Vercel Postgres or Supabase).
 3. Set the `DATABASE_URL` environment variable.
 
-## 2. Configure the merchant address, asset(s) and RPC
+## 2. Configure environment variables and RPC
 
-1. Set `MERCHANT_ADDRESS` to your Stellar public key.
-2. Set `ACCEPTED_ASSETS` to a comma-separated list of Stellar assets you accept (e.g., `native` for XLM).
-3. Set `SOROBAN_RPC_URL` to your preferred Stellar RPC endpoint.
+1. Set `DATABASE_URL` to your Postgres connection string.
+2. Set `JWT_SECRET_KEY` to a secure random string for merchant session authentication.
+3. Set `CRON_SECRET` to a secure bearer token for authorized cron syncs.
+4. Set `ASSET_CONTRACT_IDS` to a comma-separated list of Stellar Asset Contract IDs you settle in (defaults to testnet native XLM SAC `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`).
+5. Set `STELLAR_RPC_URL` to your preferred Stellar RPC endpoint (defaults to `https://soroban-testnet.stellar.org`).
 
 ## 3. Generate and configure the signing key
 
@@ -55,7 +59,7 @@ Send a request to your paywalled endpoint. Check your Accensa dashboard to see t
 
 ## 6. Set up the sync schedule
 
-Set up a cron job or external scheduler (e.g., GitHub Actions) to call `POST /api/sync` on your Accensa dashboard URL to index on-chain events.
+Set up a cron job or scheduler (e.g. Vercel Cron or GitHub Actions) to call `GET /api/sync` on your Accensa deployment with `Authorization: Bearer <CRON_SECRET>` to index on-chain events. Merchants can also manually trigger a sync from the dashboard via `POST /api/sync`.
 
 ## 7. Deploy the contracts and anchor your first batch
 

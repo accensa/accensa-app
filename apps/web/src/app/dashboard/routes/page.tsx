@@ -6,11 +6,13 @@ import { formatAmount, assetLabel } from '@/lib/money';
 import { PageContainer } from '@/components/page-container';
 import { useOnline } from '@/components/network-status';
 import { describeFailure, isAbortError } from '@/lib/network-status';
+import { fetchAllPayments } from '@/lib/payments-fetch';
 import { RevenueChart } from '@/components/revenue-chart';
 import {
   assetOptions,
   buildRevenueSeries,
   buildRouteBreakdown,
+  filterByRange,
   UNATTRIBUTED_LABEL,
   type RangeKey,
   type RevenuePayment,
@@ -37,12 +39,12 @@ const RANGES: { key: RangeKey; label: string }[] = [
 const EMPTY: RevenuePayment[] = [];
 
 type LoadState =
-  | { status: 'loading' }
-  | { status: 'ready'; payments: RevenuePayment[] }
+  | { status: 'loading'; loaded: number }
+  | { status: 'ready'; payments: RevenuePayment[]; truncated: boolean }
   | { status: 'error'; message: string };
 
 export default function RoutesPage() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' });
+  const [state, setState] = useState<LoadState>({ status: 'loading', loaded: 0 });
   const [asset, setAsset] = useState<string | null>(null);
   const [range, setRange] = useState<RangeKey>('30d');
   const online = useOnline();
@@ -51,12 +53,21 @@ export default function RoutesPage() {
     if (!online) return;
     const controller = new AbortController();
     (async () => {
+      // Reset to a loading state on (re)connect — the effect also re-runs after
+      // the browser comes back online, where the previous view may be an error.
+      setState({ status: 'loading', loaded: 0 });
       try {
-        const res = await fetch('/api/payments', { signal: controller.signal });
-        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-        const data = await res.json();
+        // Page through the whole history, not just the newest 1,000 rows: every
+        // figure on this page aggregates over a date range, and "All time" has
+        // to mean it.
+        const { payments, truncated } = await fetchAllPayments({
+          signal: controller.signal,
+          onProgress: (loaded) => {
+            if (!controller.signal.aborted) setState({ status: 'loading', loaded });
+          },
+        });
         if (!controller.signal.aborted) {
-          setState({ status: 'ready', payments: data.payments ?? [] });
+          setState({ status: 'ready', payments, truncated });
         }
       } catch (error) {
         if (!controller.signal.aborted && !isAbortError(error)) {
@@ -71,18 +82,22 @@ export default function RoutesPage() {
   // error branches would otherwise be a fresh array on every render, and each
   // aggregation below would recompute for nothing.
   const payments = useMemo(() => (state.status === 'ready' ? state.payments : EMPTY), [state]);
+
+  // The asset selector lists every asset ever earned in, so changing the date
+  // range never makes the selected asset disappear — only the figures narrow.
   const assets = useMemo(() => assetOptions(payments), [payments]);
+  const inRange = useMemo(() => filterByRange(payments, range), [payments, range]);
 
   // Default to whichever asset the merchant actually earns in, once known.
   const selectedAsset = asset ?? assets[0]?.key ?? null;
 
   const breakdown = useMemo(
-    () => (selectedAsset ? buildRouteBreakdown(payments, selectedAsset) : null),
-    [payments, selectedAsset],
+    () => (selectedAsset ? buildRouteBreakdown(inRange, selectedAsset) : null),
+    [inRange, selectedAsset],
   );
   const series = useMemo(
-    () => (selectedAsset ? buildRevenueSeries(payments, { asset: selectedAsset, range }) : null),
-    [payments, selectedAsset, range],
+    () => (selectedAsset ? buildRevenueSeries(inRange, { asset: selectedAsset, range }) : null),
+    [inRange, selectedAsset, range],
   );
 
   return (
@@ -113,9 +128,27 @@ export default function RoutesPage() {
           </p>
         </header>
 
+        {state.status === 'loading' && (
+          <p
+            className="text-sm text-slate-500 dark:text-slate-400 py-12"
+            role="status"
+            aria-live="polite"
+          >
+            Loading payment history
+            {state.loaded > 0 ? ` — ${state.loaded.toLocaleString()} so far` : '…'}
+          </p>
+        )}
+
         {state.status === 'error' && (
           <p className="text-sm text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/20 p-4">
             {state.message}
+          </p>
+        )}
+
+        {state.status === 'ready' && state.truncated && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 p-3">
+            History is unusually large: these figures cover the most recent{' '}
+            {payments.length.toLocaleString()} payments, not older ones.
           </p>
         )}
 

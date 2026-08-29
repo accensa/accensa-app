@@ -25,8 +25,12 @@ export async function middleware(request: NextRequest) {
   // bytes plus a five-minute timestamp bound. Gating it here would 401 every legitimate
   // settlement report before its own verification ever ran.
   const isPublicApi =
-    path.startsWith('/api/verify') || path.startsWith('/api/auth') || path.startsWith('/api/hook/');
-  const isCronSync = path === '/api/sync' && request.method === 'GET';
+    path.startsWith('/api/verify') ||
+    path.startsWith('/api/auth') ||
+    path.startsWith('/api/hook/') ||
+    path.startsWith('/api/receipts/');
+  const isCronSync =
+    (path === '/api/sync' || path === '/api/webhooks/deliver') && request.method === 'GET';
   const isPrivateApi = path.startsWith('/api/') && !isPublicApi && !isCronSync;
   const isDashboard = path.startsWith('/dashboard');
 
@@ -46,42 +50,20 @@ export async function middleware(request: NextRequest) {
     }
 
     try {
-      const { payload } = await jwtVerify(sessionCookie, key, { algorithms: ['HS256'] });
-      const merchantAddress = typeof payload.publicKey === 'string' ? payload.publicKey : null;
-      if (isPrivateApi && !merchantAddress) {
-        // A session with no identifiable merchant cannot be scoped to any
-        // tenant's data — treat it the same as no session at all.
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      }
-
-      // Route handlers trust this header for merchant scoping instead of each
-      // re-verifying and re-decoding the session cookie themselves. It is only
-      // ever set here, after jwtVerify has succeeded, so a request cannot
-      // forge it — Next.js middleware runs before the request reaches a route
-      // handler and this header is set on the *outgoing* request, overwriting
-      // any value a caller tried to smuggle in.
-      const headers = new Headers(request.headers);
-      headers.set('x-accensa-merchant', merchantAddress ?? '');
-      return NextResponse.next({ request: { headers } });
+      await jwtVerify(sessionCookie, key, { algorithms: ['HS256'] });
+      return NextResponse.next();
     } catch {
       if (isPrivateApi) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       return NextResponse.redirect(new URL('/login', request.url));
     }
   }
 
-  // Enforce CRON_SECRET for GET /api/sync.
-  //
-  // The bearer-token comparison itself lives in the route handler
-  // (isAuthorizedCronRequest, src/lib/cron-auth.ts): it needs node:crypto's
-  // constant-time compare, which this middleware's Edge runtime doesn't
-  // have. Re-implementing that comparison here with `!==` is exactly how it
-  // previously drifted - an unset CRON_SECRET rendered this template literal
-  // as the string "Bearer undefined", which a request carrying that literal
-  // header then matched. So this only asserts what is true unconditionally:
-  // with no secret configured, no header can ever be valid, and denying here
-  // means a misconfigured deployment never even reaches the route.
-  if (isCronSync && !process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // Enforce CRON_SECRET for GET /api/sync and GET /api/webhooks/deliver
+  if (isCronSync) {
+    const authHeader = request.headers.get('authorization');
+    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
   }
 
   return NextResponse.next();

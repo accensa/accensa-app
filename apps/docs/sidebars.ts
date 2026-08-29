@@ -21,6 +21,7 @@ const sidebars: SidebarsConfig = {
       label: 'accensa-app',
       items: [
         'app/overview',
+        'app/receipt-leaves',
         'onboarding',
         'user-guides',
         {
@@ -38,12 +39,12 @@ const sidebars: SidebarsConfig = {
         {
           type: 'link',
           label: 'Mechanics',
-          href: 'https://github.com/accensa/accensa-contracts/blob/main/docs/mechanics.mdx',
+          href: 'https://github.com/accensa/accensa-contracts/blob/main/docs/mechanics.md',
         },
         {
           type: 'link',
           label: 'Contracts',
-          href: 'https://github.com/accensa/accensa-contracts/blob/main/docs/contracts.mdx',
+          href: 'https://github.com/accensa/accensa-contracts/blob/main/docs/contracts.md',
         },
         {
           type: 'link',
@@ -66,6 +67,27 @@ const sidebars: SidebarsConfig = {
           type: 'link',
           label: 'GitHub Repository',
           href: 'https://github.com/accensa/x402-facilitator-stellar',
+        },
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Examples',
+      items: [
+        {
+          type: 'link',
+          label: 'Demo Merchant (accensa-app)',
+          href: 'https://github.com/accensa/accensa-app/tree/main/apps/demo-merchant',
+        },
+        {
+          type: 'link',
+          label: 'HTTP Seller (facilitator)',
+          href: 'https://github.com/accensa/x402-facilitator-stellar/tree/main/examples/http-seller',
+        },
+        {
+          type: 'link',
+          label: 'MCP Agent (facilitator)',
+          href: 'https://github.com/accensa/x402-facilitator-stellar/tree/main/examples/mcp-agent',
         },
       ],
     },

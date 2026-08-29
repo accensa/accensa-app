@@ -19,6 +19,13 @@ dist/
 # full copies of the tree.
 .claude/
 
+# Local scratch: PR bodies passed to `gh pr create --body-file`, issue dumps,
+# one-off fix scripts. See CONTRIBUTING.md — keep these under .scratch/ so they
+# never end up tracked at the repo root (body.txt / issues.json did once).
+.scratch/
+/body.txt
+/issues.json
+
 # This is a pnpm workspace; pnpm-lock.yaml is the only lockfile.
 # Stray npm/yarn lockfiles drift from it and change which package manager
 # Vercel detects for a project.

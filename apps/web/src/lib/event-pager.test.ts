@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import {
   drainEvents,
   sweepLedgerRange,
+  parallelSweepLedgerRange,
   EVENTS_PAGE_LIMIT,
   LEDGER_WINDOW,
+  LedgerWindowFetchError,
   type EventPage,
 } from './event-pager';
 import type { RawEvent } from './stellar-events';
@@ -107,6 +109,54 @@ describe('drainEvents', () => {
     expect(result.drained).toBe(false);
     expect(result.pages).toBe(2);
     expect(result.events).toHaveLength(400);
+  });
+
+  it('wraps a failed fetch in a LedgerWindowFetchError carrying the window (#135)', async () => {
+    const rpcError = new Error('RPC getEvents: [-32001] request exceeded processing limit');
+    const fetchPage = async (): Promise<EventPage> => {
+      throw rpcError;
+    };
+
+    await expect(
+      drainEvents(fetchPage, { startLedger: 12_345, endLedger: 22_345 }),
+    ).rejects.toThrow(LedgerWindowFetchError);
+
+    try {
+      await drainEvents(fetchPage, { startLedger: 12_345, endLedger: 22_345 });
+      expect.unreachable('drainEvents should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(LedgerWindowFetchError);
+      const wrapped = error as LedgerWindowFetchError;
+      expect(wrapped.startLedger).toBe(12_345);
+      expect(wrapped.endLedger).toBe(22_345);
+      expect(wrapped.cause).toBe(rpcError);
+      expect(wrapped.message).toContain('12345');
+      expect(wrapped.message).toContain('22345');
+    }
+  });
+
+  it('falls back to startLedger for the window end when a later page has no endLedger', async () => {
+    // A cursor-following page omits endLedger entirely (see the "supersedes
+    // startLedger" comment above) — a failure there must still report a
+    // sensible window rather than an undefined endLedger.
+    const all = makeEvents(EVENTS_PAGE_LIMIT + 1, () => 100);
+    let calls = 0;
+    const fetchPage = async (): Promise<EventPage> => {
+      calls++;
+      if (calls === 1) {
+        return { events: all.slice(0, EVENTS_PAGE_LIMIT), cursor: 'evt-199' };
+      }
+      throw new Error('second page failed');
+    };
+
+    try {
+      await drainEvents(fetchPage, { startLedger: 100 });
+      expect.unreachable('drainEvents should have thrown');
+    } catch (error) {
+      expect(error).toBeInstanceOf(LedgerWindowFetchError);
+      expect((error as LedgerWindowFetchError).startLedger).toBe(100);
+      expect((error as LedgerWindowFetchError).endLedger).toBe(100);
+    }
   });
 });
 
@@ -223,5 +273,164 @@ describe('sweepLedgerRange', () => {
 
     expect(result.complete).toBe(false);
     expect(result.sweptThrough).toBe(0);
+  });
+});
+
+describe('parallelSweepLedgerRange', () => {
+  it('fetches multiple windows concurrently within the configured limit', async () => {
+    const { fetchPage: source } = windowedSource([]);
+    let active = 0;
+    let maxActive = 0;
+    const fetchPage = async (params: {
+      startLedger?: number;
+      endLedger?: number;
+      cursor?: string;
+    }): Promise<EventPage> => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        return await source(params);
+      } finally {
+        active--;
+      }
+    };
+
+    const result = await parallelSweepLedgerRange(fetchPage, {
+      startLedger: 1_000,
+      endLedger: 1_000 + LEDGER_WINDOW * 3 - 1,
+      concurrency: 3,
+    });
+
+    expect(result.complete).toBe(true);
+    expect(result.sweptThrough).toBe(1_000 + LEDGER_WINDOW * 3 - 1);
+    expect(result.windows).toBe(3);
+    expect(maxActive).toBe(3);
+    expect(result.events).toHaveLength(0);
+  });
+
+  it('covers the whole range and advances cursor through all windows', async () => {
+    const events = makeEvents(5, (i) => 500 + i);
+    const { fetchPage } = windowedSource(events);
+
+    const result = await parallelSweepLedgerRange(fetchPage, {
+      startLedger: 1,
+      endLedger: LEDGER_WINDOW * 2 + 100,
+      concurrency: 10,
+    });
+
+    expect(result.complete).toBe(true);
+    expect(result.events).toHaveLength(5);
+    expect(result.events.map((e) => e.ledger)).toEqual([500, 501, 502, 503, 504]);
+  });
+
+  it('finds events spread across parallel windows', async () => {
+    // Events at ledger 500 (window 0) and 50_000 (window 5).
+    const events = [...makeEvents(1, () => 500), ...makeEvents(1, () => 50_000)];
+    const { fetchPage } = windowedSource(events);
+
+    const result = await parallelSweepLedgerRange(fetchPage, {
+      startLedger: 1,
+      endLedger: 100_000,
+      concurrency: 10,
+    });
+
+    expect(result.complete).toBe(true);
+    expect(result.events).toHaveLength(2);
+    expect(result.events.map((e) => e.ledger)).toEqual([500, 50_000]);
+  });
+
+  it('respects the budget between parallel batches', async () => {
+    const { fetchPage } = windowedSource([]);
+    let checks = 0;
+
+    // The first batch completes; the next budget check stops before fetching
+    // another batch. Each batch contains two windows.
+    const result = await parallelSweepLedgerRange(fetchPage, {
+      startLedger: 1,
+      endLedger: LEDGER_WINDOW * 4,
+      concurrency: 2,
+      withinBudget: () => ++checks <= 1,
+    });
+
+    expect(result.complete).toBe(false);
+    expect(result.sweptThrough).toBe(LEDGER_WINDOW * 2);
+  });
+
+  it('emits fetched windows in ledger order after concurrent completion', async () => {
+    const events = [...makeEvents(1, () => 50_000), ...makeEvents(1, () => 500)];
+    const { fetchPage: source } = windowedSource(events);
+    const committed: number[] = [];
+    const fetchPage = async (params: {
+      startLedger?: number;
+      endLedger?: number;
+      cursor?: string;
+    }): Promise<EventPage> => {
+      const page = await source(params);
+      if (params.startLedger === 1) await new Promise((resolve) => setTimeout(resolve, 10));
+      return page;
+    };
+
+    const result = await parallelSweepLedgerRange(fetchPage, {
+      startLedger: 1,
+      endLedger: LEDGER_WINDOW * 5,
+      concurrency: 10,
+      onEvents: async (batch) => {
+        committed.push(...batch.map((event) => event.ledger ?? 0));
+      },
+    });
+
+    expect(result.events).toHaveLength(0);
+    expect(result.scanned).toBe(2);
+    expect(committed).toEqual([500, 50_000]);
+  });
+
+  it('advances through a range with no events', async () => {
+    const { fetchPage } = windowedSource([]);
+
+    const result = await parallelSweepLedgerRange(fetchPage, {
+      startLedger: 1,
+      endLedger: LEDGER_WINDOW * 5,
+      concurrency: 10,
+    });
+
+    expect(result.events).toHaveLength(0);
+    expect(result.sweptThrough).toBe(LEDGER_WINDOW * 5);
+    expect(result.complete).toBe(true);
+  });
+
+  it('returns partial progress when budget runs out before first batch', async () => {
+    const { fetchPage } = windowedSource([]);
+
+    const result = await parallelSweepLedgerRange(fetchPage, {
+      startLedger: 5_000,
+      endLedger: 100_000,
+      concurrency: 10,
+      withinBudget: () => false,
+    });
+
+    expect(result.complete).toBe(false);
+    expect(result.sweptThrough).toBe(4_999);
+    expect(result.windows).toBe(0);
+  });
+
+  it('handles a single window gracefully', async () => {
+    const events = makeEvents(3, () => 42);
+    const { fetchPage } = windowedSource(events);
+
+    const result = await parallelSweepLedgerRange(fetchPage, {
+      startLedger: 1,
+      endLedger: 100,
+      concurrency: 10,
+    });
+
+    expect(result.complete).toBe(true);
+    expect(result.events).toHaveLength(3);
+    expect(result.windows).toBe(1);
+  });
+
+  it('default concurrency matches the exported constant', async () => {
+    const { PARALLEL_CONCURRENCY } = await import('./event-pager');
+    expect(PARALLEL_CONCURRENCY).toBe(10);
   });
 });
