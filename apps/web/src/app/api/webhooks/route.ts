@@ -14,7 +14,9 @@ export async function GET() {
       configured: false,
       pending: 0,
       failed: 0,
+      deadLetter: 0,
       delivered: 0,
+      lag: 0,
       recentFailed: [],
     });
   }

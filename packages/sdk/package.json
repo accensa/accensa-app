@@ -21,7 +21,8 @@
     "./types": "./src/types/index.ts",
     "./webhooks": "./webhooks.ts",
     "./retry": "./retry.ts",
-    "./currency": "./currency.ts"
+    "./currency": "./currency.ts",
+    "./zk-proof": "./src/zk-proof.ts"
   },
   "scripts": {
     "test": "vitest run",

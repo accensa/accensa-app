@@ -50,3 +50,24 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## End-to-end tests
+
+The browser-level suite lives in `e2e/` and runs against a local dev server via
+Playwright:
+
+```bash
+pnpm e2e
+```
+
+The config is `playwright.e2e.config.ts`. Backend state is mocked at the
+network layer (no database needed). Debug with:
+
+```bash
+pnpm e2e:headed   # run with a visible browser
+pnpm e2e:trace    # record a trace; open it with: npx playwright show-trace
+```
+
+The suite includes an automated accessibility pass (`e2e/a11y.spec.ts`) using
+`@axe-core/playwright`; pre-existing violations are listed in an allowlist in
+that file, each linked to its tracking issue, so new violations fail the run.

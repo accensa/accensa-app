@@ -27,9 +27,6 @@ import {
 } from '@/lib/insert-payments';
 import { listMerchants, getMerchantFromRequest, type Merchant } from '@/lib/merchants';
 import { cooldownRemaining } from '@/lib/sync-status';
-import { broadcastSyncEvent, hasSubscribers } from '@/lib/sync-events';
-import { isAuthorizedCronRequest } from '@/lib/cron-auth';
-import { logSyncFailure, notifySyncFailure, type SyncFailureContext } from '@/lib/sync-logger';
 import { createHmac } from 'node:crypto';
 
 export const dynamic = 'force-dynamic';
@@ -241,21 +238,42 @@ async function runSync(merchant: string, opts: { cooldownMs?: number } = {}) {
   asset = EXCLUDED.asset,
   ts = EXCLUDED.ts
   WHERE payments.ledger IS NULL RETURNING *`,
-            [
-              transferEvent.txHash,
-              transferEvent.ledger,
-              transferEvent.from,
-              transferEvent.amount, // string - never a float
-              transferEvent.asset,
-              transferEvent.ledgerClosedAt,
-            ],
-          );
-          if (res.rowCount && res.rowCount > 0 && process.env.WEBHOOK_URL) {
-            await enqueueWebhookDelivery(
-              client,
-              payloadFromRow(res.rows[0] as Record<string, unknown>),
-              process.env.WEBHOOK_URL,
-            );
+          [
+            merchant.id,
+            transferEvent.txHash,
+            transferEvent.ledger,
+            transferEvent.from,
+            transferEvent.amount, // string - never a float
+            transferEvent.asset,
+            transferEvent.ledgerClosedAt,
+          ],
+        );
+        if (res.rowCount && res.rowCount > 0 && webhookUrl) {
+          const payment = res.rows[0];
+          const body = JSON.stringify(payment);
+          const webhookSecret = process.env.WEBHOOK_SECRET;
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (webhookSecret) {
+            headers['X-Webhook-Signature'] = createHmac('sha256', webhookSecret)
+              .update(body)
+              .digest('hex');
+          }
+          const timeoutMs = 2000;
+          for (let i = 0; i < 3; i++) {
+            try {
+              const controller = new AbortController();
+              const id = setTimeout(() => controller.abort(), timeoutMs);
+              const webhookRes = await fetch(webhookUrl, {
+                method: 'POST',
+                headers,
+                body,
+                signal: controller.signal,
+              });
+              clearTimeout(id);
+              if (webhookRes.ok || webhookRes.status < 500) break;
+            } catch {
+              // A webhook the merchant cannot receive must not stall indexing.
+            }
           }
           await client.query('COMMIT');
           inserted += res.rowCount ?? 0;

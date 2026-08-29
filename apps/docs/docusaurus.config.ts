@@ -58,18 +58,12 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           editUrl: 'https://github.com/accensa/accensa-app/tree/main/apps/docs/',
         },
-        blog: {
-          showReadingTime: true,
-          feedOptions: {
-            type: ['rss', 'atom'],
-            xslt: true,
-          },
-          editUrl: 'https://github.com/accensa/accensa-app/tree/main/apps/docs/',
-          // Useful options to enforce blogging best practices
-          onInlineTags: 'warn',
-          onInlineAuthors: 'warn',
-          onUntruncatedBlogPosts: 'warn',
-        },
+        // No blog is planned for the documentation site: there is no
+        // `apps/docs/blog/` directory, no navbar/footer link to `/blog`, and
+        // the previously configured preset produced empty, discoverable RSS
+        // and Atom feeds that could never deliver anything. Disabled
+        // deliberately so the build output contains no `/blog` route or feeds.
+        blog: false,
         theme: {
           customCss: './src/css/custom.css',
         },

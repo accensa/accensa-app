@@ -15,7 +15,12 @@ export const DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const ATTEMPT_TIMEOUT_MS = 2_000;
 export const MAX_BACKOFF_MS = 60 * 60 * 1000;
 
-export type DeliveryStatus = 'pending' | 'delivering' | 'delivered' | 'failed';
+export type DeliveryStatus =
+  | 'pending'
+  | 'delivering'
+  | 'delivered'
+  | 'failed'
+  | 'dead_letter';
 
 export interface PaymentPayload {
   tx_hash: string;
@@ -274,7 +279,9 @@ export async function deliverDue(
       transportError,
     });
     if (terminal.status === 'delivered') delivered++;
-    else if (terminal.status === 'failed') failed++;
+    // A dead-lettered row is terminal, not a retry — count it as failed here
+    // so the run's tallies reflect deliveries that gave up (#165).
+    else if (terminal.status === 'failed' || terminal.status === 'dead_letter') failed++;
     else retried++;
   }
 
@@ -308,7 +315,11 @@ async function recordAttempt(
   let status: DeliveryStatus;
   if (ok) status = 'delivered';
   else if (next) status = 'pending';
-  else status = 'failed';
+  // A delivery that exhausts its attempt budget (or its 24h delivery window)
+  // is dead-lettered: it is kept for operator inspection and never retried
+  // again (#165). This is the queue's explicit dead-letter state, distinct
+  // from a transient 'failed' row.
+  else status = 'dead_letter';
 
   await client.query(
     `INSERT INTO webhook_attempts (delivery_id, attempt_number, status_code, error)
@@ -332,10 +343,37 @@ async function recordAttempt(
   return { id: input.id, status, statusCode: input.statusCode, error: input.error };
 }
 
+/**
+ * The queue's lag: deliveries that are due for (re)delivery right now.
+ *
+ * This is the signal a consumer fleet auto-scales on (#165) — when lag stays
+ * high, schedule more frequent or overlapping `/api/webhooks/deliver` runs;
+ * when it is zero, the queue is drained. Rows with a null `next_retry_at`
+ * (never attempted) are always due; the rest are due once their retry time
+ * has passed.
+ */
+export async function pendingDue(
+  client: Client,
+  opts: { now?: Date } = {},
+): Promise<number> {
+  const now = (opts.now ?? new Date()).toISOString();
+  const res = await client.query<{ count: string }>(
+    `SELECT count(*)::text AS count
+     FROM webhook_deliveries
+     WHERE status = 'pending'
+       AND (next_retry_at IS NULL OR next_retry_at <= $1::timestamptz)`,
+    [now],
+  );
+  return Number(res.rows[0]?.count ?? 0);
+}
+
 export async function webhookSummary(client: Client): Promise<{
   pending: number;
   failed: number;
+  deadLetter: number;
   delivered: number;
+  /** Deliveries due right now — the lag a consumer fleet scales on (#165). */
+  lag: number;
   recentFailed: Array<{
     id: number;
     paymentTxHash: string;
@@ -349,7 +387,12 @@ export async function webhookSummary(client: Client): Promise<{
   const counts = await client.query<{ status: string; n: string }>(
     `SELECT status, count(*)::text AS n FROM webhook_deliveries GROUP BY status`,
   );
-  const byStatus: Record<string, number> = { pending: 0, failed: 0, delivered: 0 };
+  const byStatus: Record<string, number> = {
+    pending: 0,
+    failed: 0,
+    delivered: 0,
+    dead_letter: 0,
+  };
   for (const row of counts.rows) byStatus[row.status] = Number(row.n);
 
   const recent = await client.query<{
@@ -363,7 +406,7 @@ export async function webhookSummary(client: Client): Promise<{
   }>(
     `SELECT id, payment_tx_hash, status, attempts, last_status_code, last_error, updated_at
      FROM webhook_deliveries
-     WHERE status = 'failed'
+     WHERE status IN ('failed', 'dead_letter')
      ORDER BY updated_at DESC
      LIMIT 20`,
   );
@@ -371,7 +414,9 @@ export async function webhookSummary(client: Client): Promise<{
   return {
     pending: (byStatus.pending ?? 0) + (byStatus.delivering ?? 0),
     failed: byStatus.failed ?? 0,
+    deadLetter: byStatus.dead_letter ?? 0,
     delivered: byStatus.delivered ?? 0,
+    lag: await pendingDue(client),
     recentFailed: recent.rows.map((row) => ({
       id: Number(row.id),
       paymentTxHash: row.payment_tx_hash,

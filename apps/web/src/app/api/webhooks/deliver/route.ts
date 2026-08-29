@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { withClient, ensureSchema } from '@/lib/db';
-import { deliverDue } from '@/lib/webhooks';
+import { deliverDue, pendingDue } from '@/lib/webhooks';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -23,7 +23,11 @@ export async function GET(request: Request) {
   try {
     const result = await withClient(async (client) => {
       await ensureSchema(client);
-      return deliverDue(client);
+      const outcome = await deliverDue(client);
+      // Remaining lag after this run: the signal a scheduler uses to scale
+      // consumer frequency to backlog (#165).
+      const lag = await pendingDue(client);
+      return { ...outcome, lag };
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error: unknown) {

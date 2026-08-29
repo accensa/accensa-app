@@ -10,6 +10,8 @@ import {
   deliverDue,
   enqueueWebhookDelivery,
   payloadFromRow,
+  pendingDue,
+  webhookSummary,
 } from './webhooks';
 
 describe('shouldRetry', () => {
@@ -174,5 +176,80 @@ describe('deliverDue — a sleeping host cannot stall the caller past the budget
     });
     const elapsed = Date.now() - started;
     expect(elapsed).toBeLessThan(5_000);
+  });
+});
+
+describe('pendingDue — the lag signal a consumer fleet scales on (#165)', () => {
+  it('counts only pending rows whose retry time has passed (or never set)', async () => {
+    const queries: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      queries.push(sql);
+      return { rows: [{ count: '7' }] };
+    });
+
+    const lag = await pendingDue({ query } as never, { now: new Date('2026-08-01T00:00:00Z') });
+
+    expect(lag).toBe(7);
+    const sql = queries[0];
+    expect(sql).toContain("status = 'pending'");
+    // Null next_retry_at (never attempted) is always due.
+    expect(sql).toContain('next_retry_at IS NULL OR next_retry_at <= $1::timestamptz');
+  });
+});
+
+describe('webhookSummary', () => {
+  it('reports lag and the dead-letter count alongside the existing tallies', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/^SELECT status, count/.test(sql)) {
+        return {
+          rows: [
+            { status: 'pending', n: '2' },
+            { status: 'delivered', n: '5' },
+            { status: 'dead_letter', n: '3' },
+          ],
+        };
+      }
+      if (/^SELECT count\(\*\)::text AS count/.test(sql)) {
+        return { rows: [{ count: '2' }] };
+      }
+      return { rows: [] };
+    });
+
+    const summary = await webhookSummary({ query } as never);
+
+    expect(summary.pending).toBe(2);
+    expect(summary.delivered).toBe(5);
+    expect(summary.deadLetter).toBe(3);
+    expect(summary.lag).toBe(2);
+    expect(summary.recentFailed).toEqual([]);
+  });
+
+  it('lists dead-lettered deliveries in recentFailed for operator inspection', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (/^SELECT status, count/.test(sql)) return { rows: [{ status: 'dead_letter', n: '1' }] };
+      if (/^SELECT count\(\*\)::text AS count/.test(sql)) return { rows: [{ count: '0' }] };
+      if (/^SELECT id, payment_tx_hash/.test(sql)) {
+        return {
+          rows: [
+            {
+              id: '9',
+              payment_tx_hash: 'a'.repeat(64),
+              status: 'dead_letter',
+              attempts: 8,
+              last_status_code: 503,
+              last_error: 'HTTP 503',
+              updated_at: new Date('2026-08-01T00:00:00.000Z'),
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const summary = await webhookSummary({ query } as never);
+
+    expect(summary.deadLetter).toBe(1);
+    expect(summary.recentFailed[0].status).toBe('dead_letter');
+    expect(summary.recentFailed[0].attempts).toBe(8);
   });
 });

@@ -4,7 +4,7 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "pnpm --filter web lint && pnpm --filter @accensa/sdk lint",
+    "lint": "pnpm --filter web lint",
     "typecheck": "pnpm --filter web typecheck && pnpm --filter @accensa/sdk typecheck"
   },
   "devDependencies": {

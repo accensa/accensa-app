@@ -36,7 +36,8 @@ jobs:
         run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      # Lints apps/web and packages/sdk from the root.
+      # Lints apps/web from the root.
+      # packages/sdk has no ESLint config; typecheck covers it in the typecheck job.
       # apps/docs (Docusaurus) and apps/demo-merchant (example JS) are excluded.
       - name: Lint workspace packages
         run: pnpm lint
@@ -154,3 +155,25 @@ jobs:
       - name: Build Next.js app
         working-directory: ./apps/web
         run: pnpm build
+
+  e2e:
+    name: e2e (web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright browser
+        working-directory: ./apps/web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run e2e + accessibility suite
+        working-directory: ./apps/web
+        env:
+          JWT_SECRET_KEY: playwright-e2e-secret-key
+        run: pnpm e2e

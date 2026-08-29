@@ -31,6 +31,22 @@ export {
   type TokenMeta,
 } from './src/price-formatter';
 
+/** Zero-knowledge commitments and opening proofs for off-chain privacy (#173). */
+export {
+  ZK_PROOF_SCHEME,
+  canonicalJson,
+  sha256Hex,
+  randomBlinding,
+  commitmentOf,
+  createCommitment,
+  createOpeningProof,
+  verifyOpeningProof,
+  sha256CommitmentVerifier,
+  type CommitmentResult,
+  type OpeningProof,
+  type ZkVerifier,
+} from './src/zk-proof';
+
 /**
  * This package deliberately ships no paywall middleware.
  *
