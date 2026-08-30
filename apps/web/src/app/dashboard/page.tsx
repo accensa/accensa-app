@@ -38,29 +38,6 @@ function truncate(value: string, head = 8, tail = 6) {
   return value.length <= head + tail + 1 ? value : `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
-const REFUNDED_STORAGE_KEY = 'accensa-refunded-txs';
-
-function loadRefundedFromStorage(): ReadonlySet<string> {
-  if (typeof window === 'undefined') return new Set();
-  try {
-    const stored = localStorage.getItem(REFUNDED_STORAGE_KEY);
-    if (!stored) return new Set();
-    const parsed = JSON.parse(stored);
-    return Array.isArray(parsed) ? new Set(parsed) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function saveRefundedToStorage(refunded: ReadonlySet<string>): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(REFUNDED_STORAGE_KEY, JSON.stringify([...refunded]));
-  } catch {
-    // localStorage may be full or unavailable; silently degrade.
-  }
-}
-
 export default function Dashboard() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [selected, setSelected] = useState<Payment | null>(null);
@@ -797,18 +774,5 @@ function ExportCsvButton({ payments }: { payments: Payment[] }) {
     >
       <span aria-live="polite">{error ? 'Export failed' : 'Export CSV'}</span>
     </button>
-  );
-}
-
-function TableSkeleton() {
-  return (
-    <div className="p-8 space-y-4">
-      {[...Array(5)].map((_, i) => (
-        <div
-          key={i}
-          className="h-12 bg-slate-100 dark:bg-white/5 animate-pulse transition-colors duration-300"
-        />
-      ))}
-    </div>
   );
 }

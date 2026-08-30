@@ -10,6 +10,9 @@ interface WidgetSkeletonProps {
   rows?: number;
 }
 
+// Pre-computed bar heights to avoid Math.random() in render
+const BAR_HEIGHTS = [45, 72, 38, 85, 52, 68, 41];
+
 function CardSkeleton({ className = '' }: { className?: string }) {
   return (
     <div
@@ -28,11 +31,11 @@ function ChartSkeleton({ className = '' }: { className?: string }) {
     >
       <div className="h-3 w-24 bg-slate-200 dark:bg-white/10 animate-pulse mb-4" />
       <div className="flex items-end gap-2 h-40">
-        {[...Array(7)].map((_, i) => (
+        {BAR_HEIGHTS.map((height, i) => (
           <div
             key={i}
             className="flex-1 bg-slate-200 dark:bg-white/10 animate-pulse"
-            style={{ height: `${30 + Math.random() * 70}%` }}
+            style={{ height: `${height}%` }}
           />
         ))}
       </div>

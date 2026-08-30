@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { decodeTransferEvent, transferTopicFilter, addressTopicFilter } from '@/lib/stellar-events';
+import { transferTopicFilter, addressTopicFilter } from '@/lib/stellar-events';
 import {
   withClient,
   ensureSchema,
   getLastSyncedLedger,
   getSyncState,
   rollbackSyncToLedger,
-  setLastSyncedLedger,
 } from '@/lib/db';
 import {
   sweepLedgerRange,
@@ -17,7 +16,6 @@ import {
 import {
   eventsToPaymentRows,
   insertPaymentsInTransaction,
-  PAYMENTS_BATCH_SIZE,
 } from '@/lib/insert-payments';
 import { listMerchants, getMerchantFromRequest, type Merchant } from '@/lib/merchants';
 import { cooldownRemaining } from '@/lib/sync-status';
