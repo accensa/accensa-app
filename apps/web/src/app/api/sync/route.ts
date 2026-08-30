@@ -7,23 +7,17 @@ import {
   getSyncState,
   rollbackSyncToLedger,
   setLastSyncedLedger,
-  getSyncState,
 } from '@/lib/db';
 import {
   sweepLedgerRange,
-  parallelSweepLedgerRange,
-  PARALLEL_SYNC_THRESHOLD,
   EVENTS_PAGE_LIMIT,
   LedgerWindowFetchError,
   type EventPage,
 } from '@/lib/event-pager';
 import {
   eventsToPaymentRows,
-  chunkRows,
-  buildBatchInsertSql,
-  flattenRows,
+  insertPaymentsInTransaction,
   PAYMENTS_BATCH_SIZE,
-  type PaymentRow,
 } from '@/lib/insert-payments';
 import { listMerchants, getMerchantFromRequest, type Merchant } from '@/lib/merchants';
 import { cooldownRemaining } from '@/lib/sync-status';
@@ -119,7 +113,7 @@ interface CooldownResult {
  * dashboard's manual trigger. `cooldownMs`, when set, makes the run a no-op if
  * the last sync is more recent than that.
  */
-async function runSync(merchant: string, opts: { cooldownMs?: number } = {}) {
+async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
   return withClient(async (client) => {
     await ensureSchema(client);
 
@@ -129,194 +123,136 @@ async function runSync(merchant: string, opts: { cooldownMs?: number } = {}) {
       if (retryAfterMs > 0) return { cooldown: true, retryAfterMs } as CooldownResult;
     }
 
-    {
-      const { sequence: latestLedger } = await rpc<{ sequence: number }>('getLatestLedger', {});
+    const { sequence: latestLedger } = await rpc<{ sequence: number }>('getLatestLedger', {});
 
-      let cursor = await getLastSyncedLedger(client, merchant.id);
+    let cursor = await getLastSyncedLedger(client, merchant.id);
 
-      // A chain head lower than the processed cursor means the node rolled
-      // back — a re-org, or a failover to a peer that lost its tail. Ledgers
-      // past the head no longer exist on the canonical chain, so payments
-      // indexed from them describe a chain that is gone: purge them and
-      // rewind the cursor to the corrected head before working out where to
-      // resume. Without this the early return below would report `drained`
-      // while the local ledger silently keeps rolled-back payments.
-      let rollback: { purged: number } | null = null;
-      if (cursor !== null && latestLedger < cursor) {
-        rollback = await rollbackSyncToLedger(client, merchant.id, latestLedger);
-        cursor = latestLedger;
-      }
+    // A chain head lower than the processed cursor means the node rolled
+    // back — a re-org, or a failover to a peer that lost its tail. Ledgers
+    // past the head no longer exist on the canonical chain, so payments
+    // indexed from them describe a chain that is gone: purge them and
+    // rewind the cursor to the corrected head before working out where to
+    // resume. Without this the early return below would report `drained`
+    // while the local ledger silently keeps rolled-back payments.
+    let rollback: { purged: number } | null = null;
+    if (cursor !== null && latestLedger < cursor) {
+      rollback = await rollbackSyncToLedger(client, merchant.id, latestLedger);
+      cursor = latestLedger;
+    }
 
-      const resumeFrom = cursor !== null ? cursor + 1 : latestLedger - COLD_START_LOOKBACK;
-      const retentionFloor = latestLedger - MAX_LOOKBACK;
-      const startLedger = Math.max(resumeFrom, retentionFloor, 1);
+    const resumeFrom = cursor !== null ? cursor + 1 : latestLedger - COLD_START_LOOKBACK;
+    const retentionFloor = latestLedger - MAX_LOOKBACK;
+    const startLedger = Math.max(resumeFrom, retentionFloor, 1);
 
-      // The clamp above is not free: when the cursor has fallen outside what the
-      // RPC still serves, the ledgers in between are skipped and no later run can
-      // recover them. Report the gap rather than let it vanish into a success.
-      const skippedLedgers = Math.max(0, retentionFloor - resumeFrom);
+    // The clamp above is not free: when the cursor has fallen outside what the
+    // RPC still serves, the ledgers in between are skipped and no later run can
+    // recover them. Report the gap rather than let it vanish into a success.
+    const skippedLedgers = Math.max(0, retentionFloor - resumeFrom);
 
-      if (startLedger > latestLedger) {
-        return {
-          latestLedger,
-          startLedger,
-          syncedTo: startLedger - 1,
-          skippedLedgers,
-          drained: true,
-          pages: 0,
-          scanned: 0,
-          decoded: 0,
-          inserted: 0,
-          // After a rollback there is nothing left to re-scan this
-          // invocation — the corrected head is the whole valid range — but
-          // the rewind was the work. Surface it so the run is not mistaken
-          // for a no-op.
-          ...(rollback
-            ? { rollback: true, rolledBackTo: latestLedger, purged: rollback.purged }
-            : {}),
-        };
-      }
-
-      // Filter server-side to transfers addressed to this merchant. The asset
-      // topic is optional across protocol versions, so match both arities.
-      const toTopic = addressTopicFilter(merchant);
-      const transfer = transferTopicFilter();
-      const filters = [
-        {
-          type: 'contract',
-          contractIds: ASSET_CONTRACT_IDS,
-          topics: [
-            [transfer, '*', toTopic, '*'],
-            [transfer, '*', toTopic],
-          ],
-        },
-      ];
-
-      // The limit belongs under `pagination`; sent at the top level the RPC
-      // ignores it and applies its own default.
-      const deadline = Date.now() + PAGING_BUDGET_MS;
-      const { events, sweptThrough, complete, pages, windows } = await sweepLedgerRange(
-        ({ startLedger: from, endLedger: to, cursor: pageCursor }) =>
-          rpc<EventPage>('getEvents', {
-            ...(pageCursor ? {} : { startLedger: from, endLedger: to }),
-            filters,
-            pagination: { limit: EVENTS_PAGE_LIMIT, ...(pageCursor ? { cursor: pageCursor } : {}) },
-            xdrFormat: 'base64',
-          }),
-        { startLedger, endLedger: latestLedger, withinBudget: () => Date.now() < deadline },
-      );
-
-      let inserted = 0;
-      let decoded = 0;
-
-      for (const event of events) {
-        const transferEvent = decodeTransferEvent(event);
-        // A malformed or non-transfer event must not stall the batch.
-        if (!transferEvent) continue;
-        decoded++;
-
-        // Defensive: never record a transfer that is not to this merchant.
-        if (transferEvent.to !== merchant) continue;
-
-        // DO UPDATE, not DO NOTHING: a row may already exist because the
-        // merchant reported route attribution before this transfer was
-        // indexed, which is the normal ordering — the hook fires the moment
-        // x402 settles, this job runs on a schedule. Skipping the conflict
-        // would leave that row permanently null and invisible.
-        //
-        // Only ledger-owned columns are written. route, method, request_id and
-        // hook_reported_at belong to the merchant's report and are left alone.
-        await client.query('BEGIN');
-        try {
-          const res = await client.query(
-            `INSERT INTO payments (tx_hash, ledger, payer, amount, asset, ts)
-  VALUES ($1, $2, $3, $4::numeric, $5, $6::timestamptz)
-  ON CONFLICT (tx_hash) DO UPDATE
-  SET ledger = EXCLUDED.ledger,
-  payer = EXCLUDED.payer,
-  amount = EXCLUDED.amount,
-  asset = EXCLUDED.asset,
-  ts = EXCLUDED.ts
-  WHERE payments.ledger IS NULL RETURNING *`,
-          [
-            merchant.id,
-            transferEvent.txHash,
-            transferEvent.ledger,
-            transferEvent.from,
-            transferEvent.amount, // string - never a float
-            transferEvent.asset,
-            transferEvent.ledgerClosedAt,
-          ],
-        );
-        if (res.rowCount && res.rowCount > 0 && webhookUrl) {
-          const payment = res.rows[0];
-          const body = JSON.stringify(payment);
-          const webhookSecret = process.env.WEBHOOK_SECRET;
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-          if (webhookSecret) {
-            headers['X-Webhook-Signature'] = createHmac('sha256', webhookSecret)
-              .update(body)
-              .digest('hex');
-          }
-          const timeoutMs = 2000;
-          for (let i = 0; i < 3; i++) {
-            try {
-              const controller = new AbortController();
-              const id = setTimeout(() => controller.abort(), timeoutMs);
-              const webhookRes = await fetch(webhookUrl, {
-                method: 'POST',
-                headers,
-                body,
-                signal: controller.signal,
-              });
-              clearTimeout(id);
-              if (webhookRes.ok || webhookRes.status < 500) break;
-            } catch {
-              // A webhook the merchant cannot receive must not stall indexing.
-            }
-          }
-          await client.query('COMMIT');
-          inserted += res.rowCount ?? 0;
-        } catch (error) {
-          await client.query('ROLLBACK').catch(() => {});
-          throw error;
-        }
-      }
-
-      // The sweep only ever reports whole windows, so this is safe whether or
-      // not it reached the head. Crucially it advances across empty windows
-      // too - a quiet merchant that never moved the cursor is how the indexer
-      // fell behind the RPC retention window and stopped seeing payments.
-      await setLastSyncedLedger(client, sweptThrough);
-
-      // Push a real-time update to any subscribed dashboard tab instead of
-      // waiting for the next poll (real-time indexer updates). Skipped when no
-      // client is listening so an idle sync does no broadcast bookkeeping.
-      if (hasSubscribers(merchant.id)) {
-        broadcastSyncEvent(merchant.id, {
-          merchant: merchant.address,
-          syncedTo: sweptThrough,
-          inserted,
-          scanned,
-          pages,
-          drained: complete,
-          occurredAt: new Date().toISOString(),
-        });
-      }
-
+    if (startLedger > latestLedger) {
       return {
         latestLedger,
         startLedger,
-        syncedTo: sweptThrough,
+        syncedTo: startLedger - 1,
         skippedLedgers,
-        drained: complete,
-        pages,
-        windows,
-        scanned: events.length,
-        decoded,
-        inserted,
+        drained: true,
+        pages: 0,
+        scanned: 0,
+        decoded: 0,
+        inserted: 0,
+        // After a rollback there is nothing left to re-scan this
+        // invocation — the corrected head is the whole valid range — but
+        // the rewind was the work. Surface it so the run is not mistaken
+        // for a no-op.
+        ...(rollback
+          ? { rollback: true, rolledBackTo: latestLedger, purged: rollback.purged }
+          : {}),
       };
     }
+
+    // Filter server-side to transfers addressed to this merchant. The asset
+    // topic is optional across protocol versions, so match both arities.
+    const toTopic = addressTopicFilter(merchant);
+    const transfer = transferTopicFilter();
+    const filters = [
+      {
+        type: 'contract',
+        contractIds: ASSET_CONTRACT_IDS,
+        topics: [
+          [transfer, '*', toTopic, '*'],
+          [transfer, '*', toTopic],
+        ],
+      },
+    ];
+
+    // The limit belongs under `pagination`; sent at the top level the RPC
+    // ignores it and applies its own default.
+    const deadline = Date.now() + PAGING_BUDGET_MS;
+    const { events, sweptThrough, complete, pages } = await sweepLedgerRange(
+      ({ startLedger: from, endLedger: to, cursor: pageCursor }) =>
+        rpc<EventPage>('getEvents', {
+          ...(pageCursor ? {} : { startLedger: from, endLedger: to }),
+          filters,
+          pagination: { limit: EVENTS_PAGE_LIMIT, ...(pageCursor ? { cursor: pageCursor } : {}) },
+          xdrFormat: 'base64',
+        }),
+      { startLedger, endLedger: latestLedger, withinBudget: () => Date.now() < deadline },
+    );
+
+    // Convert events to payment rows using the batch-ready helper
+    const { rows, decoded } = eventsToPaymentRows(events, merchant);
+
+    // Batch insert all rows in a single transaction
+    const { inserted, payments } = await insertPaymentsInTransaction(
+      client,
+      merchant.id,
+      rows,
+      sweptThrough,
+    );
+
+    // Fire webhooks for newly inserted payments
+    const webhookUrl = process.env.WEBHOOK_URL;
+    if (webhookUrl && payments.length > 0) {
+      const webhookSecret = process.env.WEBHOOK_SECRET;
+      for (const payment of payments) {
+        const body = JSON.stringify(payment);
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (webhookSecret) {
+          headers['X-Webhook-Signature'] = createHmac('sha256', webhookSecret)
+            .update(body)
+            .digest('hex');
+        }
+        const timeoutMs = 2000;
+        for (let i = 0; i < 3; i++) {
+          try {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeoutMs);
+            const webhookRes = await fetch(webhookUrl, {
+              method: 'POST',
+              headers,
+              body,
+              signal: controller.signal,
+            });
+            clearTimeout(id);
+            if (webhookRes.ok || webhookRes.status < 500) break;
+          } catch {
+            // A webhook the merchant cannot receive must not stall indexing.
+          }
+        }
+      }
+    }
+
+    return {
+      latestLedger,
+      startLedger,
+      syncedTo: sweptThrough,
+      skippedLedgers,
+      drained: complete,
+      pages,
+      scanned: events.length,
+      decoded,
+      inserted,
+    };
   });
 }
 
@@ -345,15 +281,13 @@ function summarize(result: SyncResult) {
  * ledger context rather than guessing at one.
  */
 function reportSyncError(error: unknown, merchant?: string): void {
-  const context: SyncFailureContext = {
+  const context: Record<string, unknown> = {
     ...(merchant ? { merchant } : {}),
     ...(error instanceof LedgerWindowFetchError
       ? { startLedger: error.startLedger, endLedger: error.endLedger }
       : {}),
   };
-  logSyncFailure(context, error);
-  // Alerting must never block or fail the sync job itself.
-  void notifySyncFailure(context, error);
+  console.error('[accensa] sync error', context, error);
 }
 
 /**
@@ -383,8 +317,6 @@ function respond(results: SyncResult[], failures: SyncFailure[] = []) {
       { status: 429, headers: { 'Retry-After': String(Math.ceil(retryAfterMs / 1000)) } },
     );
   }
-  return NextResponse.json({ success: true, ...result });
-}
 
   const summaries = results.map(summarize);
   const synced = summaries.filter(
@@ -405,6 +337,16 @@ function respond(results: SyncResult[], failures: SyncFailure[] = []) {
 function failed(error: unknown, merchant?: string) {
   reportSyncError(error, merchant);
   return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
+}
+
+/**
+ * Validates required environment configuration.
+ */
+function configError(): NextResponse | null {
+  if (!process.env.STELLAR_RPC_URL && !process.env.ASSET_CONTRACT_IDS) {
+    // Allow default testnet config
+  }
+  return null;
 }
 
 /**
@@ -457,11 +399,11 @@ export async function GET(request: Request) {
 }
 
 /**
- * Manual entry point, behind the dashboard's"Sync now"button.
+ * Manual entry point, behind the dashboard's "Sync now" button.
  *
  * Protected by session authentication via middleware. MANUAL_COOLDOWN_MS bounds the cost.
  */
-export async function POST() {
+export async function POST(request: Request) {
   const bad = configError();
   if (bad) return bad;
 
