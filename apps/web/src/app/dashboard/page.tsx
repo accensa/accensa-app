@@ -9,6 +9,7 @@ import { ArrowUpRight } from 'lucide-react';
 import { PageContainer } from '@/components/page-container';
 import { RefundPanel } from '@/components/refund-panel';
 import { CopyButton } from '@/components/copy-button';
+import { WidgetSkeleton } from '@/components/widget-skeleton';
 import { useOnline } from '@/components/network-status';
 import { describeFailure, isAbortError } from '@/lib/network-status';
 import { explorerTxUrl } from '@/lib/explorer';
@@ -150,7 +151,7 @@ export default function Dashboard() {
             </span>
             <span className="text-4xl sm:text-5xl font-black tracking-tighter mt-4 flex items-baseline gap-2 text-slate-900 dark:text-white transition-colors duration-300">
               {state.status === 'loading' ? (
-                <span className="block h-12 w-32 bg-slate-100 dark:bg-white/5 animate-pulse" />
+                <WidgetSkeleton variant="stat" className="w-full" />
               ) : (
                 <>
                   {formatAmount(total)}
@@ -179,7 +180,7 @@ export default function Dashboard() {
           </div>
 
           <div className="min-h-[400px]">
-            {state.status === 'loading' && <TableSkeleton />}
+            {state.status === 'loading' && <WidgetSkeleton variant="table" rows={5} />}
 
             {state.status === 'error' && (
               <div className="flex flex-col items-center justify-center h-[400px] text-center space-y-4 px-6">
