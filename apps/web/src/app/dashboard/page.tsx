@@ -776,3 +776,55 @@ function ExportCsvButton({ payments }: { payments: Payment[] }) {
     </button>
   );
 }
+
+/**
+ * Table skeleton used by accessibility tests.
+ * The actual dashboard uses WidgetSkeleton, but this export preserves backward compatibility.
+ */
+export function TableSkeleton() {
+  return (
+    <>
+      {/* Mobile skeleton */}
+      <div className="md:hidden divide-y divide-slate-100 dark:divide-white/5">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="p-6 flex flex-col gap-4">
+            <div className="flex justify-between">
+              <div className="h-7 w-24 bg-slate-100 dark:bg-white/5 animate-pulse" />
+              <div className="h-4 w-20 bg-slate-100 dark:bg-white/5 animate-pulse" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="h-4 w-full bg-slate-100 dark:bg-white/5 animate-pulse" />
+              <div className="h-4 w-full bg-slate-100 dark:bg-white/5 animate-pulse" />
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Desktop skeleton */}
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full text-left border-collapse whitespace-nowrap">
+          <caption className="sr-only">Recent Settlements</caption>
+          <thead>
+            <tr className="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-widest border-b border-slate-100 dark:border-white/5 bg-white dark:bg-[#04090f]/50 transition-colors duration-300">
+              <th scope="col" className="px-8 py-5">Transaction</th>
+              <th scope="col" className="px-8 py-5">Amount</th>
+              <th scope="col" className="px-8 py-5">Payer</th>
+              <th scope="col" className="px-8 py-5">Route</th>
+              <th scope="col" className="px-8 py-5">Time</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+            {[...Array(3)].map((_, i) => (
+              <tr key={i} className="hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors cursor-pointer group" aria-hidden="true">
+                <td className="px-8 py-5"><div className="h-4 w-32 bg-slate-100 dark:bg-white/5 animate-pulse" /></td>
+                <td className="px-8 py-5"><div className="h-4 w-20 bg-slate-100 dark:bg-white/5 animate-pulse" /></td>
+                <td className="px-8 py-5"><div className="h-4 w-16 bg-slate-100 dark:bg-white/5 animate-pulse" /></td>
+                <td className="px-8 py-5"><div className="h-4 w-24 bg-slate-100 dark:bg-white/5 animate-pulse" /></td>
+                <td className="px-8 py-5"><div className="h-4 w-28 bg-slate-100 dark:bg-white/5 animate-pulse" /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
