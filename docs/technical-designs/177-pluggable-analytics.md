@@ -7,6 +7,7 @@ Transform the hardcoded analytics dashboard into a flexible, configuration-drive
 ## Problem
 
 Current state (`apps/web/src/lib/revenue-analytics.ts`):
+
 - Analytics logic hardcoded in TypeScript (`buildRouteBreakdown`, `buildRevenueSeries`)
 - Direct PostgreSQL queries with no abstraction layer
 - Every merchant gets identical dashboard
@@ -18,45 +19,48 @@ Current state (`apps/web/src/lib/revenue-analytics.ts`):
 ### 1. Cube.js Semantic Layer
 
 **Deployment**: Run Cube.js as a separate service (Railway/Fly.io)
+
 - Cannot run in Vercel (requires persistent process for query caching)
 - Connects to PostgreSQL (Supabase) for data access
 - Exposes REST API for dashboard queries
 
 **Data Model** (`cube.js` files):
+
 ```javascript
 // payments.js
 cube(`Payments`, {
   sql: `SELECT * FROM payments WHERE ts IS NOT NULL`,
-  
+
   dimensions: {
     txHash: { sql: `tx_hash`, type: `string`, primaryKey: true },
     route: { sql: `route`, type: `string` },
     method: { sql: `method`, type: `string` },
     payer: { sql: `payer`, type: `string` },
     asset: { sql: `asset`, type: `string` },
-    timestamp: { sql: `ts`, type: `time` }
+    timestamp: { sql: `ts`, type: `time` },
   },
-  
+
   measures: {
     count: { type: `count` },
     totalAmount: { sql: `amount`, type: `sum` },
     avgAmount: { sql: `amount`, type: `avg` },
-    uniquePayers: { sql: `payer`, type: `countDistinct` }
+    uniquePayers: { sql: `payer`, type: `countDistinct` },
   },
-  
+
   preAggregations: {
     dailyRevenue: {
       dimensions: [CUBE.timestamp],
       measures: [CUBE.totalAmount, CUBE.count],
       timeDimension: CUBE.timestamp,
       granularity: `day`,
-      refreshKey: { every: `5 minute` }
-    }
-  }
+      refreshKey: { every: `5 minute` },
+    },
+  },
 });
 ```
 
 **Why Cube.js**:
+
 - Built-in caching and pre-aggregations (10-100x query speedup)
 - Multi-tenant support (filter by merchant ID for SaaS)
 - REST and GraphQL APIs out of the box
@@ -68,6 +72,7 @@ cube(`Payments`, {
 **Location**: `apps/web/src/components/analytics/QueryBuilder.tsx`
 
 **Features**:
+
 - Drag-and-drop interface for dimensions and measures
 - Date range picker
 - Filter builder (route contains "checkout", amount > 100)
@@ -75,24 +80,30 @@ cube(`Payments`, {
 - Save queries as named widgets
 
 **Example Query**:
+
 ```json
 {
   "measures": ["Payments.totalAmount", "Payments.count"],
   "dimensions": ["Payments.route", "Payments.method"],
-  "timeDimensions": [{
-    "dimension": "Payments.timestamp",
-    "dateRange": ["2026-07-01", "2026-08-01"],
-    "granularity": "day"
-  }],
-  "filters": [{
-    "member": "Payments.asset",
-    "operator": "equals",
-    "values": ["native"]
-  }]
+  "timeDimensions": [
+    {
+      "dimension": "Payments.timestamp",
+      "dateRange": ["2026-07-01", "2026-08-01"],
+      "granularity": "day"
+    }
+  ],
+  "filters": [
+    {
+      "member": "Payments.asset",
+      "operator": "equals",
+      "values": ["native"]
+    }
+  ]
 }
 ```
 
 **UI Libraries**:
+
 - `@cubejs-client/react` for Cube.js integration
 - `recharts` for visualizations (already used in dashboard)
 - `react-dnd` for drag-and-drop
@@ -100,6 +111,7 @@ cube(`Payments`, {
 ### 3. Pluggable Widget Architecture
 
 **Configuration Storage**: PostgreSQL table `dashboard_configs`
+
 ```sql
 CREATE TABLE dashboard_configs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -112,6 +124,7 @@ CREATE TABLE dashboard_configs (
 ```
 
 **Widget Config Example**:
+
 ```json
 {
   "id": "revenue-by-route",
@@ -120,10 +133,12 @@ CREATE TABLE dashboard_configs (
   "query": {
     "measures": ["Payments.totalAmount"],
     "dimensions": ["Payments.route"],
-    "timeDimensions": [{
-      "dimension": "Payments.timestamp",
-      "dateRange": "last 30 days"
-    }]
+    "timeDimensions": [
+      {
+        "dimension": "Payments.timestamp",
+        "dateRange": "last 30 days"
+      }
+    ]
   },
   "position": { "x": 0, "y": 0, "w": 6, "h": 4 }
 }
@@ -134,6 +149,7 @@ CREATE TABLE dashboard_configs (
 ### 4. Backward Compatibility
 
 Preserve existing analytics views:
+
 - `/dashboard/analytics` continues working with default widgets
 - `revenue-analytics.ts` functions remain for any direct consumers
 - Migrate existing hardcoded views to Cube.js queries progressively
@@ -142,12 +158,14 @@ Preserve existing analytics views:
 ## Implementation Plan
 
 ### Phase 1: Infrastructure (Week 1)
+
 - [ ] Deploy Cube.js to Railway
 - [ ] Define `Payments` cube data model
 - [ ] Add `dashboard_configs` table to PostgreSQL
 - [ ] Test Cube.js REST API from Vercel
 
 ### Phase 2: Query Builder UI (Week 2)
+
 - [ ] Create `QueryBuilder` component
 - [ ] Integrate `@cubejs-client/react`
 - [ ] Build dimension/measure selector
@@ -155,6 +173,7 @@ Preserve existing analytics views:
 - [ ] Add visualization renderer
 
 ### Phase 3: Widget System (Week 3)
+
 - [ ] Create widget container component
 - [ ] Integrate `react-grid-layout`
 - [ ] Build widget editor modal
@@ -162,6 +181,7 @@ Preserve existing analytics views:
 - [ ] Add default dashboard templates
 
 ### Phase 4: Migration (Week 4)
+
 - [ ] Rewrite `buildRouteBreakdown` as Cube.js query
 - [ ] Rewrite `buildRevenueSeries` as Cube.js query
 - [ ] Add feature flag toggle in settings

@@ -197,7 +197,8 @@ export async function verifyOpeningProof(
     // Constant-time comparison so a failing check does not leak how far the
     // two digests agree.
     let diff = 0;
-    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ commitment.charCodeAt(i);
+    for (let i = 0; i < expected.length; i++)
+      diff |= expected.charCodeAt(i) ^ commitment.charCodeAt(i);
     return diff === 0;
   } catch {
     return false;

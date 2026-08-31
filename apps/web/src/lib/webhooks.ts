@@ -15,12 +15,7 @@ export const DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const ATTEMPT_TIMEOUT_MS = 2_000;
 export const MAX_BACKOFF_MS = 60 * 60 * 1000;
 
-export type DeliveryStatus =
-  | 'pending'
-  | 'delivering'
-  | 'delivered'
-  | 'failed'
-  | 'dead_letter';
+export type DeliveryStatus = 'pending' | 'delivering' | 'delivered' | 'failed' | 'dead_letter';
 
 export interface PaymentPayload {
   tx_hash: string;
@@ -352,10 +347,7 @@ async function recordAttempt(
  * (never attempted) are always due; the rest are due once their retry time
  * has passed.
  */
-export async function pendingDue(
-  client: Client,
-  opts: { now?: Date } = {},
-): Promise<number> {
+export async function pendingDue(client: Client, opts: { now?: Date } = {}): Promise<number> {
   const now = (opts.now ?? new Date()).toISOString();
   const res = await client.query<{ count: string }>(
     `SELECT count(*)::text AS count

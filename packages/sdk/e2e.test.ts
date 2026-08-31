@@ -20,6 +20,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import request from 'supertest';
 import { SETTLEMENT_HEADER, SETTLE_ENDPOINT, attachAccensaHook } from './index';
+import type { RetryOptions } from './retry';
 
 /** A real Ed25519 seed — `reportSettlement` signs with `node:crypto`. */
 function privateKeyHex(): string {
@@ -83,7 +84,7 @@ function captureReport() {
   return { fetchImpl, captured };
 }
 
-function buildApp(fetchImpl: typeof fetch, onError = vi.fn()): Express {
+function buildApp(fetchImpl: typeof fetch, onError = vi.fn(), retry?: RetryOptions): Express {
   const app = express();
   app.use(x402Mock);
   app.use(
@@ -92,6 +93,7 @@ function buildApp(fetchImpl: typeof fetch, onError = vi.fn()): Express {
       privateKeyHex: PRIVATE_KEY_HEX,
       fetchImpl,
       onError,
+      ...(retry ? { retry } : {}),
     }),
   );
   app.get('/api/quote', (_req, res) => {
@@ -180,7 +182,7 @@ describe('x402 middleware e2e', () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => {
       throw new TypeError('network down');
     });
-    const app = buildApp(fetchImpl, onError);
+    const app = buildApp(fetchImpl, onError, { maxRetries: 0 });
 
     const res = await request(app).get('/api/quote').set('X-PAYMENT', 'proof');
     expect(res.status).toBe(200); // the paid request still succeeds

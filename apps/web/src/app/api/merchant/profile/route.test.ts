@@ -3,6 +3,7 @@ import { GET, PATCH } from './route';
 
 const {
   MERCHANT,
+  clientStub,
   mockWithClient,
   mockWithMerchantClient,
   mockGetMerchantFromRequest,
@@ -11,11 +12,15 @@ const {
   mockRevalidateTag,
 } = vi.hoisted(() => {
   const merchant = { id: 1, address: 'GABC' };
+  // A minimal postgres client: PATCH also records the config change, whose
+  // INSERT and CREATE TABLE run through client.query.
+  const clientStub = { query: vi.fn().mockResolvedValue({ rows: [] }) };
   return {
     MERCHANT: merchant,
-    mockWithClient: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => fn({})),
+    clientStub,
+    mockWithClient: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => fn(clientStub)),
     mockWithMerchantClient: vi.fn(
-      async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) => fn({}),
+      async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) => fn(clientStub),
     ),
     mockGetMerchantFromRequest: vi.fn().mockResolvedValue(merchant),
     mockUpdateMerchantProfile: vi.fn(),
@@ -115,7 +120,7 @@ describe('/api/merchant/profile PATCH', () => {
     expect(data.profile).toEqual(updated);
 
     expect(mockWithMerchantClient).toHaveBeenCalledWith(MERCHANT.id, expect.any(Function));
-    expect(mockUpdateMerchantProfile).toHaveBeenCalledWith({}, MERCHANT.id, {
+    expect(mockUpdateMerchantProfile).toHaveBeenCalledWith(clientStub, MERCHANT.id, {
       webhookUrl: 'https://merchant.example/hook',
     });
 

@@ -13,6 +13,7 @@
  */
 
 import type { Client } from 'pg';
+import { fromStroops, toStroops } from '@/lib/money';
 
 export type AnalyticsPeriod = '24h' | '7d' | '30d' | '90d' | 'all';
 
@@ -140,7 +141,10 @@ export async function getDashboardAnalytics(
   return {
     totalRevenue,
     totalPayments,
-    averagePayment: totalPayments > 0 ? (parseFloat(totalRevenue) / totalPayments).toFixed(7) : '0',
+    averagePayment:
+      totalPayments > 0
+        ? fromStroops((toStroops(totalRevenue) ?? 0n) / BigInt(totalPayments))
+        : '0',
     revenueChange: Math.round(revenueChange * 10) / 10,
     paymentsChange: Math.round(paymentsChange * 10) / 10,
     topProducts: topProductsResult.rows.map(

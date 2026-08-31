@@ -67,8 +67,11 @@ test('dashboard empty state', async ({ page, context }) => {
     });
   });
   await page.goto('/dashboard');
-  await expect(page.getByTestId('dashboard-empty')).toBeVisible();
-  await expect(page.getByTestId('dashboard-empty')).toHaveScreenshot('dashboard-empty.png');
+  await expect(page.getByText('Awaiting Data')).toBeVisible();
+  // Screenshot the whole dashboard region, not the bare text element: a
+  // single text node's width is font-metric dependent and varies across OSes
+  // (a box dimension mismatch can't be absorbed by pixel-ratio tolerance).
+  await expect(page.locator('main')).toHaveScreenshot('dashboard-empty.png');
 });
 
 test('dashboard payments table', async ({ page, context }) => {
@@ -81,6 +84,8 @@ test('dashboard payments table', async ({ page, context }) => {
     });
   });
   await page.goto('/dashboard');
-  await expect(page.getByTestId('payments-table')).toBeVisible();
-  await expect(page.getByTestId('payments-table')).toHaveScreenshot('payments-table.png');
+  await expect(page.getByRole('table', { name: 'Recent Settlements' })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Recent Settlements' })).toHaveScreenshot(
+    'payments-table.png',
+  );
 });

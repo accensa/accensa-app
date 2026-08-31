@@ -92,7 +92,9 @@ describe('assetSymbol', () => {
   });
 
   it('extracts the code from a SEP-11 identifier', () => {
-    expect(assetSymbol('USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN')).toBe('USDC');
+    expect(assetSymbol('USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN')).toBe(
+      'USDC',
+    );
   });
 });
 

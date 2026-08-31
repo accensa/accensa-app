@@ -154,12 +154,12 @@ the window the row is `failed` and is listed on the dashboard.
 **Signature.** Ed25519 over the exact UTF-8 body bytes, the same scheme as
 settlement reporting.
 
-| Header | Value |
-| --- | --- |
-| `Content-Type` | `application/json` |
-| `X-Signature` | hex-encoded Ed25519 signature of the raw body |
-| `X-Accensa-Timestamp` | Unix seconds at sign time |
-| `X-Accensa-Delivery-Id` | `webhook_deliveries.id` |
+| Header                  | Value                                         |
+| ----------------------- | --------------------------------------------- |
+| `Content-Type`          | `application/json`                            |
+| `X-Signature`           | hex-encoded Ed25519 signature of the raw body |
+| `X-Accensa-Timestamp`   | Unix seconds at sign time                     |
+| `X-Accensa-Delivery-Id` | `webhook_deliveries.id`                       |
 
 `WEBHOOK_SIGNING_KEY` is a 32-byte Ed25519 private key as hex. Without it,
 queued deliveries fail closed rather than going out unsigned. Verify with the

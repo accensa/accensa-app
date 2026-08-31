@@ -120,11 +120,7 @@ export class OfflineSyncEngine {
   /**
    * Queue a local update (works offline).
    */
-  queueUpdate(
-    collection: string,
-    documentId: string,
-    data: Record<string, unknown>,
-  ): void {
+  queueUpdate(collection: string, documentId: string, data: Record<string, unknown>): void {
     // Increment vector clock
     this.vectorClock[this.nodeId] = (this.vectorClock[this.nodeId] || 0) + 1;
 

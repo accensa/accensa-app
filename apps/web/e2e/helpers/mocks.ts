@@ -51,9 +51,7 @@ export function paymentsResponse(payments: MockPayment[] = MOCK_PAYMENTS) {
   return {
     payments,
     total_count: payments.length,
-    total_amount: payments
-      .reduce((sum, p) => sum + Number.parseFloat(p.amount), 0)
-      .toFixed(2),
+    total_amount: payments.reduce((sum, p) => sum + Number.parseFloat(p.amount), 0).toFixed(2),
     sync: {
       level: 'live',
       age: 0,
