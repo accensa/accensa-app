@@ -83,6 +83,14 @@ export function Nav() {
                 Dashboard
               </Link>
             )}
+            {pathname !== '/support' && (
+              <Link
+                href="/support"
+                className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+              >
+                Support
+              </Link>
+            )}
             <a
               href="https://accensa.github.io/accensa-app"
               className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
@@ -195,6 +203,19 @@ export function Nav() {
           >
             Dashboard
             {pathname === '/dashboard' && <span className="w-2.5 h-2.5 bg-emerald-500" />}
+          </Link>
+
+          <Link
+            href="/support"
+            onClick={() => setIsOpen(false)}
+            className={`text-4xl font-bold tracking-tight transition-colors flex items-center gap-3.5 ${
+              pathname === '/support'
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-slate-900 dark:text-white hover:text-emerald-500 dark:hover:text-emerald-400'
+            }`}
+          >
+            Support
+            {pathname === '/support' && <span className="w-2.5 h-2.5 bg-emerald-500" />}
           </Link>
 
           <div className="h-px w-12 bg-slate-200 dark:bg-white/10 my-1" />
