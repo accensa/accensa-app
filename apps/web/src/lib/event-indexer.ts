@@ -154,6 +154,7 @@ export async function getIndexedEvents(
     contractId: row.contract_id,
     topic: row.topic,
     data: row.data,
-    indexedAt: row.indexed_at instanceof Date ? row.indexed_at.toISOString() : String(row.indexed_at),
+    indexedAt:
+      row.indexed_at instanceof Date ? row.indexed_at.toISOString() : String(row.indexed_at),
   }));
 }

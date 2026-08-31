@@ -125,6 +125,13 @@ async function waitForConfirmation(server: rpc.Server, hash: string): Promise<An
     const result = await server.getTransaction(hash);
 
     if (result.status === 'SUCCESS') {
+      if (result.returnValue === undefined) {
+        return {
+          status: 'failed',
+          message: 'The transaction succeeded but did not return a batch id.',
+          hash,
+        };
+      }
       const batchId = Number(scValToNative(result.returnValue));
       if (!Number.isSafeInteger(batchId) || batchId < 1) {
         return {

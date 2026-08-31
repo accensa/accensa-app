@@ -53,17 +53,31 @@ export function fromStroops(stroops: bigint): string {
 }
 
 /**
+ * Parses a raw integer stroops count, e.g. `'12500000'`.
+ *
+ * Distinct from {@link toStroops}, which parses a decimal *amount* string.
+ * Returns null when the input is not an integer stroops count.
+ */
+function parseStroops(input: string): bigint | null {
+  const match = /^(-?)\d+$/.exec(input.trim());
+  return match ? BigInt(match[0]) : null;
+}
+
+/**
  * Formats a stroop amount as a human-readable price with the token symbol.
+ *
+ * The input is a raw integer stroops count, as it appears on-chain and in the
+ * indexer's rows.
  *
  * ```ts
  * formatPrice('12500000', 'native')       // "1.25 XLM"
  * formatPrice('10000000', 'USDC')         // "1.00 USDC"
- * formatPrice('0.0000001', 'native')      // "0.0000001 XLM"
+ * formatPrice('1', 'native')              // "0.0000001 XLM"
  * ```
  */
 export function formatPrice(stroopsOrDecimal: string, asset: string = 'native'): string {
   const meta = resolveToken(asset);
-  const stroops = toStroops(stroopsOrDecimal);
+  const stroops = parseStroops(stroopsOrDecimal);
   if (stroops === null) return stroopsOrDecimal;
 
   const fixed = fromStroops(stroops);
@@ -85,14 +99,15 @@ export function formatPrice(stroopsOrDecimal: string, asset: string = 'native'):
 /**
  * Formats a stroop amount as a compact price without the token symbol.
  *
- * Useful in tight UI spaces where the symbol is shown separately.
+ * Useful in tight UI spaces where the symbol is shown separately. The input is
+ * a raw integer stroops count.
  *
  * ```ts
  * formatPriceCompact('12500000')  // "1.25"
  * ```
  */
 export function formatPriceCompact(stroopsOrDecimal: string): string {
-  const stroops = toStroops(stroopsOrDecimal);
+  const stroops = parseStroops(stroopsOrDecimal);
   if (stroops === null) return stroopsOrDecimal;
 
   const fixed = fromStroops(stroops);

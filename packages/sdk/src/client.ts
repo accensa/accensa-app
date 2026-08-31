@@ -239,15 +239,19 @@ export class AccensaClient {
 
     let response: Response;
     try {
-      response = await fetchWithRetry(`${this.indexerUrl}${path}`, {
-        method: 'GET',
-        headers: this.headers,
-        signal,
-      }, {
-        fetchImpl: doFetch,
-        retryOn429: true,
-        maxRetries: RATE_LIMIT_MAX_RETRIES,
-      });
+      response = await fetchWithRetry(
+        `${this.indexerUrl}${path}`,
+        {
+          method: 'GET',
+          headers: this.headers,
+          signal,
+        },
+        {
+          fetchImpl: doFetch,
+          retryOn429: true,
+          maxRetries: RATE_LIMIT_MAX_RETRIES,
+        },
+      );
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'TimeoutError') {
         throw new AccensaTimeoutError(`Request to ${path} timed out after ${this.timeoutMs}ms`);

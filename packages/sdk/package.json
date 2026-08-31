@@ -2,8 +2,9 @@
   "name": "@accensa/sdk",
   "version": "0.1.0",
   "description": "Middleware hook and receipt verification for Accensa, the merchant back-office for x402 sellers on Stellar",
-  "main": "index.ts",
-  "types": "index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
   "license": "MIT",
   "homepage": "https://accensa.github.io/accensa-app/",
   "repository": {
@@ -15,21 +16,39 @@
     "url": "https://github.com/accensa/accensa-app/issues"
   },
   "exports": {
-    ".": "./index.ts",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./merkle": {
+      "types": "./dist/merkle.d.ts",
+      "import": "./dist/merkle.mjs",
+      "require": "./dist/merkle.js"
+    },
+    "./receipt-anchor": "./receipt-anchor.ts",
     "./receipt-anchor-client": "./receipt-anchor-client.ts",
-    "./merkle": "./merkle.ts",
     "./types": "./src/types/index.ts",
     "./webhooks": "./webhooks.ts",
     "./retry": "./retry.ts",
     "./currency": "./currency.ts",
     "./zk-proof": "./src/zk-proof.ts"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
   "scripts": {
+    "build": "tsup",
+    "prepack": "pnpm build",
+    "lint": "echo 'No lint configured for @accensa/sdk'",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "gen:vectors": "node scripts/generate-vectors.mjs"
+    "gen:vectors": "node scripts/generate-vectors.mjs",
+    "gen:api": "openapi-typescript ../../apps/web/openapi.yaml -o ./generated/api-types.ts && prettier --write ./generated/api-types.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^16.0.1"
@@ -45,7 +64,9 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/supertest": "^7.2.1",
+    "openapi-typescript": "^7.13.0",
     "supertest": "^7.2.2",
+    "tsup": "^8.0.0",
     "typescript": "~5.9.3",
     "vitest": "^2.1.9"
   }

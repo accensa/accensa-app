@@ -4,10 +4,13 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "pnpm --filter web lint",
-    "typecheck": "pnpm --filter web typecheck && pnpm --filter @accensa/sdk typecheck"
+    "lint": "pnpm --filter web lint && pnpm --filter @accensa/sdk lint",
+    "typecheck": "pnpm --filter web typecheck && pnpm --filter @accensa/sdk typecheck",
+    "changeset": "changeset"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^1.0.0",
+    "@changesets/cli": "^3.0.1",
     "prettier": "^3.5.3"
   }
 }

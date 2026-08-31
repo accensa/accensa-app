@@ -71,9 +71,7 @@ async function runAxe(page: Page, label: string) {
 
   for (const v of allowed) {
     const entry = ALLOWLIST[v.id];
-    console.log(
-      `[allowlist] ${label}: ${v.id} on "${entry.element}" (tracked: ${entry.issue})`,
-    );
+    console.log(`[allowlist] ${label}: ${v.id} on "${entry.element}" (tracked: ${entry.issue})`);
   }
 
   const failures = violations.map((v) => ({
@@ -87,10 +85,7 @@ async function runAxe(page: Page, label: string) {
     failures,
     `Accessibility violations on ${label}:\n` +
       failures
-        .map(
-          (f) =>
-            `- ${f.rule} (${f.impact}): ${f.help} on ${f.elements.join(', ')}`,
-        )
+        .map((f) => `- ${f.rule} (${f.impact}): ${f.help} on ${f.elements.join(', ')}`)
         .join('\n'),
   ).toEqual([]);
 }
@@ -110,8 +105,8 @@ test.describe('accessibility', () => {
     await page.goto('/dashboard');
     await expect(page.getByRole('heading', { name: 'Settled Volume' })).toBeVisible();
 
-    // Open the first payment row to expose the modal.
-    const row = page.getByText(new RegExp(MOCK_PAYMENTS[0].tx_hash.slice(0, 16))).first();
+    // Open the first payment row (desktop table row) to expose the modal.
+    const row = page.locator('tr', { hasText: MOCK_PAYMENTS[0].amount }).first();
     await row.click();
     await expect(page.getByText('Payment Details')).toBeVisible();
 
@@ -122,19 +117,19 @@ test.describe('accessibility', () => {
     await mockDashboardApi(page);
     await mintSession(page);
     await page.goto('/dashboard/routes');
-    await expect(page.getByText('Revenue by Route', { exact: false })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Revenue by Route' })).toBeVisible();
     await runAxe(page, '/dashboard/routes');
   });
 
   test('/verify', async ({ page }) => {
     await page.goto('/verify');
-    await expect(page.getByText('Verify Receipt', { exact: false })).toBeVisible();
+    await expect(page.getByText('Verify a Receipt', { exact: false })).toBeVisible();
     await runAxe(page, '/verify');
   });
 
   test('/login', async ({ page }) => {
     await page.goto('/login');
-    await expect(page.getByText(/Freighter/)).toBeVisible();
+    await expect(page.getByText('Merchant Login')).toBeVisible();
     await runAxe(page, '/login');
   });
 });
