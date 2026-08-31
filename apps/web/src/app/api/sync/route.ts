@@ -7,7 +7,6 @@ import {
   getSyncState,
   rollbackSyncToLedger,
   setLastSyncedLedger,
-  getSyncState,
 } from '@/lib/db';
 import {
   sweepLedgerRange,
@@ -124,7 +123,7 @@ async function runSync(merchant: string, opts: { cooldownMs?: number } = {}) {
     await ensureSchema(client);
 
     if (opts.cooldownMs) {
-      const state = await getSyncState(client);
+      const state = await getSyncState(client, merchant.id);
       const retryAfterMs = cooldownRemaining(state?.updatedAt, opts.cooldownMs);
       if (retryAfterMs > 0) return { cooldown: true, retryAfterMs } as CooldownResult;
     }
@@ -287,7 +286,7 @@ async function runSync(merchant: string, opts: { cooldownMs?: number } = {}) {
       // not it reached the head. Crucially it advances across empty windows
       // too - a quiet merchant that never moved the cursor is how the indexer
       // fell behind the RPC retention window and stopped seeing payments.
-      await setLastSyncedLedger(client, sweptThrough);
+      await setLastSyncedLedger(client, merchant.id, sweptThrough);
 
       // Push a real-time update to any subscribed dashboard tab instead of
       // waiting for the next poll (real-time indexer updates). Skipped when no
