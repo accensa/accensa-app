@@ -52,9 +52,9 @@ describe('parseRetryAfter', () => {
 describe('backoffMs', () => {
   it('is exponential with jitter in [base, 1.25*base]', () => {
     const random = () => 0.5;
-    expect(backoffMs(1, random)).toBe(Math.floor(1000 + 500));
-    expect(backoffMs(2, random)).toBe(Math.floor(2000 + 1000));
-    expect(backoffMs(3, random)).toBe(Math.floor(4000 + 2000));
+    expect(backoffMs(1, random)).toBe(Math.floor(1000 + 125));
+    expect(backoffMs(2, random)).toBe(Math.floor(2000 + 250));
+    expect(backoffMs(3, random)).toBe(Math.floor(4000 + 500));
   });
 });
 

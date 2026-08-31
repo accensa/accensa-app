@@ -1,5 +1,8 @@
 import { Client } from 'pg';
 
+/** Alias used by the indexer and sync trigger code that reaches into the DB. */
+export type PostgresClient = Client;
+
 /**
  * Opens a database connection.
  *
@@ -25,15 +28,14 @@ export async function withClient<T>(fn: (client: Client) => Promise<T>): Promise
 }
 
 /**
- * Runs `fn` on a connection scoped to a single merchant.
+ * Opens a connection scoped to one merchant for the lifetime of the request.
  *
- * Row-level security is FORCEd on `payments` and `sync_state` (migrations/
- * 003_multi_merchant.sql), so every query on this connection must carry the
- * calling merchant's id or it returns nothing. We set the `accensa.merchant_id`
- * session GUC here — exactly what the RLS policies read — so any statement
- * that forgets its own `WHERE merchant_id = $1` still cannot leak another
- * tenant's rows. This is the second line of defence behind the application's
- * own WHERE clauses.
+ * `accensa.merchant_id` backs the row-level security policies on `payments`
+ * and `sync_state` (see migrations/003_multi_merchant.sql) — it is the second
+ * line of defence behind the application's own `WHERE merchant_id = $1`
+ * clauses, so a query that forgets that clause returns nothing instead of
+ * every merchant's data. Set once per connection, not per statement, since
+ * `withClient` already opens and tears down a fresh `Client` per request.
  */
 export async function withMerchantClient<T>(
   merchantId: number,
@@ -117,141 +119,34 @@ export async function ensureSchema(client: Client): Promise<void> {
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_route ON payments(route);`);
   await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_payer ON payments(payer);`);
 
-  // Multi-merchant support (migrations/003_multi_merchant.sql). A deployment
-  // can host many sellers, each identified by a Stellar address; `merchant_id`
-  // scopes payments and the sync cursor per tenant, and row-level security
-  // enforces that scope even if an application query ever forgets its WHERE
-  // clause.
+  // Auth challenge nonces — issued by /api/auth/challenge, consumed by
+  // /api/auth/verify. Prevents replay of unrelated signed transactions.
   await client.query(`
-  CREATE TABLE IF NOT EXISTS merchants (
-  id SERIAL PRIMARY KEY,
-  address VARCHAR(56) UNIQUE NOT NULL,
-  public_key_hex VARCHAR(64),
-  asset_contract_ids TEXT,
-  refund_vault_id VARCHAR(56),
-  webhook_url TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+ CREATE TABLE IF NOT EXISTS challenge_nonces (
+   nonce VARCHAR(64) PRIMARY KEY,
+   issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+   consumed BOOLEAN NOT NULL DEFAULT false
+ );
+ `);
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_challenge_nonces_issued ON challenge_nonces(issued_at DESC);`,
   );
-  `);
 
-  await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES merchants(id);`);
-  await client.query(`ALTER TABLE sync_state ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES merchants(id);`);
+  await ensureMultiMerchantSchema(client);
+  await ensureAnchorAndWebhookSchema(client);
+}
 
-  // Backfill the single merchant a pre-multi-tenant deployment already has.
-  await client.query(`
-  DO $$
-  DECLARE
-  v_merchant_id int;
-  BEGIN
-  SELECT id INTO v_merchant_id FROM merchants ORDER BY id ASC LIMIT 1;
-  IF v_merchant_id IS NOT NULL THEN
-  UPDATE payments SET merchant_id = v_merchant_id WHERE merchant_id IS NULL;
-  UPDATE sync_state SET merchant_id = v_merchant_id WHERE merchant_id IS NULL;
-  END IF;
-  END $$;
-  `);
-
-  // Re-key payments from (tx_hash) to (merchant_id, tx_hash) once every row
-  // has a tenant, mirroring migrations/003_multi_merchant.sql. A tx_hash is
-  // unique per Stellar transaction but two merchants can legitimately see the
-  // same hash (e.g. one batch payment splitting to two recipients), so the
-  // identity becomes the pair, and the batched indexer's
-  // ON CONFLICT (merchant_id, tx_hash) needs this unique constraint.
-  await client.query(`
-  DO $$
-  BEGIN
-  IF EXISTS (
-  SELECT 1 FROM information_schema.table_constraints
-  WHERE table_name = 'payments' AND constraint_type = 'PRIMARY KEY' AND constraint_name = 'payments_pkey'
-  ) THEN
-  ALTER TABLE payments DROP CONSTRAINT payments_pkey;
-  END IF;
-  IF NOT EXISTS (
-  SELECT 1 FROM information_schema.table_constraints
-  WHERE table_name = 'payments' AND constraint_type = 'PRIMARY KEY'
-  ) AND NOT EXISTS (SELECT 1 FROM payments WHERE merchant_id IS NULL) THEN
-  ALTER TABLE payments ADD CONSTRAINT payments_pkey PRIMARY KEY (merchant_id, tx_hash);
-  END IF;
-  END $$;
-  `);
-
-  // The keyset index that /api/payments actually sorts by (migrations/
-  // 004_schema_parity_and_keyset_index.sql): (merchant_id, ts DESC, tx_hash
-  // DESC). The older indexes cover individual filters but not the tie-break
-  // on tx_hash, so deep keyset pages would otherwise sort in memory.
-  await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_merchant_ts_txhash
-   ON payments(merchant_id, ts DESC, tx_hash DESC);`);
-
-  // /api/payments filter indexes (#167). Queries are always tenant-scoped
-  // (merchant_id, ...) and filtered on one of these columns, so the lead
-  // column is merchant_id to keep an unfiltered columns-to-be-scanned small
-  // and to bear RLS's implied equality predicate. A date range filters on ts,
-  // which the keyset index already leads with; the other filterable columns
-  // each get a composite so a filtered page does not fall back to a seq scan
-  // of an append-only table.
-  await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_merchant_route
-   ON payments(merchant_id, route) WHERE route IS NOT NULL;`);
-  await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_merchant_payer
-   ON payments(merchant_id, payer) WHERE payer IS NOT NULL;`);
-  await client.query(`CREATE INDEX IF NOT EXISTS idx_payments_merchant_asset
-   ON payments(merchant_id, asset) WHERE asset IS NOT NULL;`);
-
-  // RLS as the second line of defence behind the application's own
-  // WHERE merchant_id = $1 scoping.
-  await client.query(`ALTER TABLE payments ENABLE ROW LEVEL SECURITY;`);
-  await client.query(`ALTER TABLE payments FORCE ROW LEVEL SECURITY;`);
-  await client.query(`DROP POLICY IF EXISTS payments_merchant_isolation ON payments;`);
-  await client.query(`CREATE POLICY payments_merchant_isolation ON payments
-   USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
-   WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);`);
-
-  await client.query(`ALTER TABLE sync_state ENABLE ROW LEVEL SECURITY;`);
-  await client.query(`ALTER TABLE sync_state FORCE ROW LEVEL SECURITY;`);
-  await client.query(`DROP POLICY IF EXISTS sync_state_merchant_isolation ON sync_state;`);
-  await client.query(`CREATE POLICY sync_state_merchant_isolation ON sync_state
-   USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
-   WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);`);
-
-  // Reconcile the historical singleton sync_state (keyed on id = 1) onto the
-  // merchant-scoped form, mirroring migrations/003_multi_merchant.sql so a
-  // code-provisioned database matches one built from SQL.
-  await client.query(`
-  DO $$
-  BEGIN
-  IF EXISTS (
-  SELECT 1 FROM information_schema.table_constraints
-  WHERE table_name = 'sync_state' AND constraint_type = 'CHECK' AND constraint_name = 'sync_state_singleton'
-  ) THEN
-  ALTER TABLE sync_state DROP CONSTRAINT sync_state_singleton;
-  END IF;
-  IF EXISTS (
-  SELECT 1 FROM information_schema.table_constraints
-  WHERE table_name = 'sync_state' AND constraint_type = 'PRIMARY KEY' AND constraint_name = 'sync_state_pkey'
-  ) THEN
-  ALTER TABLE sync_state DROP CONSTRAINT sync_state_pkey;
-  END IF;
-  ALTER TABLE sync_state ALTER COLUMN id DROP DEFAULT;
-  ALTER TABLE sync_state DROP COLUMN IF EXISTS id;
-  IF NOT EXISTS (SELECT 1 FROM sync_state WHERE merchant_id IS NULL) THEN
-  ALTER TABLE sync_state ALTER COLUMN merchant_id SET NOT NULL;
-  IF NOT EXISTS (
-  SELECT 1 FROM information_schema.table_constraints
-  WHERE table_name = 'sync_state' AND constraint_type = 'PRIMARY KEY'
-  ) THEN
-  ALTER TABLE sync_state ADD CONSTRAINT sync_state_pkey PRIMARY KEY (merchant_id);
-  END IF;
-  END IF;
-  END $$;
-  `);
-
-  // Mapping from an on-chain ReceiptAnchor batch to the payments that formed
-  // it. `selection_hash` is sha256 of the selected tx_hashes in ledger order,
-  // so submitting the same set twice hits this unique key instead of anchoring
-  // a second batch. `status` is what makes the gap between "the contract
-  // accepted the transaction" and "we wrote the proofs" recoverable:
-  //   previewed  — tree built, nothing submitted
-  //   submitted  — on-chain succeeded, proofs not yet persisted (retry this)
-  //   recorded   — payments carry batch_id + proof; serveable
+/**
+ * Creates the on-chain anchoring and webhook-delivery tables.
+ *
+ * `receipt_batches` maps a ReceiptAnchor batch to the payments that formed it
+ * (`selection_hash` is sha256 of the selected tx_hashes in ledger order, so
+ * submitting the same set twice hits this unique key instead of anchoring a
+ * second batch). `webhook_deliveries`/`webhook_attempts` persist delivery
+ * attempts for the merchant webhook, with a `next_retry_at` index so the
+ * retry sweeper can find due deliveries cheaply.
+ */
+async function ensureAnchorAndWebhookSchema(client: Client): Promise<void> {
   await client.query(`
     CREATE TABLE IF NOT EXISTS receipt_batches (
       selection_hash VARCHAR(64) PRIMARY KEY,
@@ -309,29 +204,173 @@ export async function ensureSchema(client: Client): Promise<void> {
   await client.query(
     `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries (status);`,
   );
+}
 
-  // Zanzibar role tuples (#180). Persisted relationship tuples for the
-  // authorization model in lib/zanzibar — the merchant-scoped role grants the
-  // dashboard's membership UI and the SpiceDB seed. RLS is FORCEd on it just
-  // like payments, so a merchant can never read or write another's roles.
+/**
+ * Migrates the schema from single-merchant-by-env-var to multi-merchant-by-row.
+ *
+ * See migrations/003_multi_merchant.sql for the same steps as a standalone
+ * SQL file, and DESIGN.md for the reasoning. This is the copy that actually
+ * runs — `ensureSchema` is invoked defensively at the top of nearly every
+ * DB-touching handler, the same pattern 001 and 002 already used.
+ *
+ * A fresh, unmigrated deployment with `MERCHANT_ADDRESS` set backfills its one
+ * merchant automatically, so upgrading requires no manual SQL and no new
+ * environment variables.
+ */
+async function ensureMultiMerchantSchema(client: Client): Promise<void> {
   await client.query(`
-  CREATE TABLE IF NOT EXISTS role_tuples (
-  object TEXT NOT NULL,
-  relation TEXT NOT NULL,
-  "user" TEXT NOT NULL,
-  merchant_id INT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  PRIMARY KEY (object, relation, "user")
-  );
+    CREATE TABLE IF NOT EXISTS merchants (
+      id                 SERIAL PRIMARY KEY,
+      address            VARCHAR(56) UNIQUE NOT NULL,
+      public_key_hex     TEXT,
+      asset_contract_ids TEXT,
+      refund_vault_id    VARCHAR(56),
+      webhook_url        TEXT,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
-  await client.query(`CREATE INDEX IF NOT EXISTS idx_role_tuples_merchant
-   ON role_tuples (merchant_id);`);
-  await client.query(`ALTER TABLE role_tuples ENABLE ROW LEVEL SECURITY;`);
-  await client.query(`ALTER TABLE role_tuples FORCE ROW LEVEL SECURITY;`);
-  await client.query(`DROP POLICY IF EXISTS role_tuples_merchant_isolation ON role_tuples;`);
-  await client.query(`CREATE POLICY role_tuples_merchant_isolation ON role_tuples
-   USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
-   WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);`);
+
+  await client.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='merchants' AND column_name='public_key_hex' AND data_type='character varying'
+      ) THEN
+        ALTER TABLE merchants ALTER COLUMN public_key_hex TYPE TEXT;
+      END IF;
+    END $$;
+  `);
+
+  if (process.env.MERCHANT_ADDRESS) {
+    await client.query(
+      `INSERT INTO merchants (address, public_key_hex)
+       VALUES ($1, $2)
+       ON CONFLICT (address) DO NOTHING`,
+      [process.env.MERCHANT_ADDRESS, process.env.MERCHANT_PUBLIC_KEY ?? null],
+    );
+  }
+
+  await client.query(
+    `ALTER TABLE payments ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES merchants(id);`,
+  );
+  await client.query(`
+    DO $$
+    DECLARE v_merchant_id int;
+    BEGIN
+      SELECT id INTO v_merchant_id FROM merchants ORDER BY id ASC LIMIT 1;
+      IF v_merchant_id IS NOT NULL THEN
+        UPDATE payments SET merchant_id = v_merchant_id WHERE merchant_id IS NULL;
+      END IF;
+    END $$;
+  `);
+  await client.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM payments WHERE merchant_id IS NULL) THEN
+        ALTER TABLE payments ALTER COLUMN merchant_id SET NOT NULL;
+      END IF;
+    END $$;
+  `);
+  await client.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'payments' AND constraint_type = 'PRIMARY KEY' AND constraint_name = 'payments_pkey'
+      ) THEN
+        ALTER TABLE payments DROP CONSTRAINT payments_pkey;
+      END IF;
+    END $$;
+  `);
+  await client.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'payments' AND constraint_type = 'PRIMARY KEY'
+      ) AND NOT EXISTS (SELECT 1 FROM payments WHERE merchant_id IS NULL) THEN
+        ALTER TABLE payments ADD CONSTRAINT payments_pkey PRIMARY KEY (merchant_id, tx_hash);
+      END IF;
+    END $$;
+  `);
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_payments_merchant_ts ON payments(merchant_id, ts DESC);`,
+  );
+
+  await client.query(
+    `ALTER TABLE sync_state ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES merchants(id);`,
+  );
+  await client.query(`
+    DO $$
+    DECLARE v_merchant_id int;
+    BEGIN
+      SELECT id INTO v_merchant_id FROM merchants ORDER BY id ASC LIMIT 1;
+      IF v_merchant_id IS NOT NULL THEN
+        UPDATE sync_state SET merchant_id = v_merchant_id WHERE merchant_id IS NULL;
+      END IF;
+    END $$;
+  `);
+  await client.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'sync_state' AND constraint_type = 'CHECK' AND constraint_name = 'sync_state_singleton'
+      ) THEN
+        ALTER TABLE sync_state DROP CONSTRAINT sync_state_singleton;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'sync_state' AND constraint_type = 'PRIMARY KEY' AND constraint_name = 'sync_state_pkey'
+      ) THEN
+        ALTER TABLE sync_state DROP CONSTRAINT sync_state_pkey;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'sync_state' AND column_name = 'id'
+      ) THEN
+        ALTER TABLE sync_state ALTER COLUMN id DROP DEFAULT;
+        ALTER TABLE sync_state DROP COLUMN id;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM sync_state WHERE merchant_id IS NULL) THEN
+        ALTER TABLE sync_state ALTER COLUMN merchant_id SET NOT NULL;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.table_constraints
+          WHERE table_name = 'sync_state' AND constraint_type = 'PRIMARY KEY'
+        ) THEN
+          ALTER TABLE sync_state ADD CONSTRAINT sync_state_pkey PRIMARY KEY (merchant_id);
+        END IF;
+      END IF;
+    END $$;
+  `);
+
+  await client.query(
+    `ALTER TABLE challenge_nonces ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES merchants(id);`,
+  );
+
+  // Defence in depth: even the role this app connects as (the table owner,
+  // which Postgres RLS normally exempts) is bound by these policies because
+  // they are FORCEd, not merely ENABLEd. A query that omits its own
+  // merchant_id filter gets zero rows back instead of every tenant's data.
+  await client.query(`ALTER TABLE payments ENABLE ROW LEVEL SECURITY;`);
+  await client.query(`ALTER TABLE payments FORCE ROW LEVEL SECURITY;`);
+  await client.query(`DROP POLICY IF EXISTS payments_merchant_isolation ON payments;`);
+  await client.query(`
+    CREATE POLICY payments_merchant_isolation ON payments
+      USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
+      WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);
+  `);
+
+  await client.query(`ALTER TABLE sync_state ENABLE ROW LEVEL SECURITY;`);
+  await client.query(`ALTER TABLE sync_state FORCE ROW LEVEL SECURITY;`);
+  await client.query(`DROP POLICY IF EXISTS sync_state_merchant_isolation ON sync_state;`);
+  await client.query(`
+    CREATE POLICY sync_state_merchant_isolation ON sync_state
+      USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
+      WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);
+  `);
 }
 
 /**
@@ -354,6 +393,7 @@ export async function ensureSchema(client: Client): Promise<void> {
  */
 export async function recordSettlement(
   client: Client,
+  merchantId: number,
   s: {
     txHash: string;
     route: string;
@@ -366,23 +406,23 @@ export async function recordSettlement(
   const reportedAt = s.reportedAt ?? new Date().toISOString();
   const updated = await client.query(
     `UPDATE payments
- SET route = $2, method = $3, request_id = $4, hook_reported_at = $5
- WHERE tx_hash = $1 AND (hook_reported_at IS NULL OR hook_reported_at < $5)`,
-    [s.txHash, s.route, s.method, s.requestId ?? null, reportedAt],
+ SET route = $3, method = $4, request_id = $5, hook_reported_at = $6
+ WHERE merchant_id = $1 AND tx_hash = $2 AND (hook_reported_at IS NULL OR hook_reported_at < $6)`,
+    [merchantId, s.txHash, s.route, s.method, s.requestId ?? null, reportedAt],
   );
 
   if ((updated.rowCount ?? 0) > 0) return { matchedExistingPayment: true };
 
   await client.query(
-    `INSERT INTO payments (tx_hash, payer, route, method, request_id, ts, hook_reported_at)
- VALUES ($1, $2, $3, $4, $5, NULL, $6)
- ON CONFLICT (tx_hash) DO UPDATE
+    `INSERT INTO payments (merchant_id, tx_hash, payer, route, method, request_id, ts, hook_reported_at)
+ VALUES ($1, $2, $3, $4, $5, $6, NULL, $7)
+ ON CONFLICT (merchant_id, tx_hash) DO UPDATE
  SET route = EXCLUDED.route,
  method = EXCLUDED.method,
  request_id = EXCLUDED.request_id,
  hook_reported_at = EXCLUDED.hook_reported_at
  WHERE payments.hook_reported_at IS NULL OR payments.hook_reported_at < EXCLUDED.hook_reported_at`,
-    [s.txHash, s.payer ?? null, s.route, s.method, s.requestId ?? null, reportedAt],
+    [merchantId, s.txHash, s.payer ?? null, s.route, s.method, s.requestId ?? null, reportedAt],
   );
 
   return { matchedExistingPayment: false };
@@ -400,7 +440,7 @@ export async function getLastSyncedLedger(
 }
 
 /**
- * The indexer's own record of when it last committed progress.
+ * The indexer's own record of when it last committed progress for a merchant.
  *
  * Read by /api/payments so the dashboard can say how current its data is,
  * rather than implying the freshness of its own poll.
@@ -409,10 +449,10 @@ export async function getSyncState(
   client: Client,
   merchantId: number,
 ): Promise<{ lastLedger: number; updatedAt: string } | null> {
-  const res = await client.query<{ last_ledger: string; updated_at: Date | string }>(
-    `SELECT last_ledger, updated_at FROM sync_state WHERE merchant_id = $1`,
-    [merchantId],
-  );
+  const res = await client.query<{
+    last_ledger: string;
+    updated_at: Date | string;
+  }>(`SELECT last_ledger, updated_at FROM sync_state WHERE merchant_id = $1`, [merchantId]);
   if (!res.rows.length) return null;
   const { last_ledger, updated_at } = res.rows[0];
   return {
@@ -426,8 +466,9 @@ export async function setLastSyncedLedger(
   merchantId: number,
   ledger: number,
 ): Promise<void> {
-  // Use advisory lock to prevent concurrent double-processing of ranges
-  await client.query('SELECT pg_advisory_xact_lock(1)');
+  // Advisory lock keyed by merchant so concurrent syncs for different
+  // merchants never block each other, only concurrent runs for the same one.
+  await client.query('SELECT pg_advisory_xact_lock($1)', [merchantId]);
   await client.query(
     `INSERT INTO sync_state (merchant_id, last_ledger, updated_at) VALUES ($1, $2, now())
      ON CONFLICT (merchant_id) DO UPDATE SET last_ledger = EXCLUDED.last_ledger, updated_at = now()

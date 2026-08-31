@@ -130,9 +130,10 @@ export async function fetchWithRetry(
 
     // A rate limit should be waited out as long as the server asked; any other
     // retryable failure backs off exponentially from the base delay.
-    const delayMs = response && response.status === 429
-      ? (retryAfterMs(response) ?? baseDelayMs * 2 ** attempt)
-      : baseDelayMs * 2 ** attempt;
+    const delayMs =
+      response && response.status === 429
+        ? (retryAfterMs(response) ?? baseDelayMs * 2 ** attempt)
+        : baseDelayMs * 2 ** attempt;
     onRetry?.(attempt + 1, error, delayMs);
     await delay(delayMs);
   }

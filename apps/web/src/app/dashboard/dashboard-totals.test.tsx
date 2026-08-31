@@ -17,8 +17,8 @@ describe('Dashboard totals, pagination honesty, and contrast', () => {
   it('renders loading skeleton matching total scale and table layout', () => {
     const html = renderToString(<Dashboard />);
 
-    // Total loading placeholder matches h-10 sm:h-12 w-44 sm:w-56
-    expect(html).toContain('h-10 sm:h-12 w-44 sm:w-56');
+    // Total loading placeholder uses WidgetSkeleton stat variant
+    expect(html).toContain('bg-slate-200 dark:bg-white/10 animate-pulse');
     // Renders responsive skeletons for mobile and desktop
     expect(html).toContain('class="md:hidden divide-y');
     expect(html).toContain('class="hidden md:block');

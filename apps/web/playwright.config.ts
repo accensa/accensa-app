@@ -13,6 +13,11 @@ const baseURL = `http://127.0.0.1:${PORT}`;
  */
 export default defineConfig({
   testDir: './e2e',
+  // This config drives the visual-regression suite only. The flow and
+  // accessibility specs are exercised by playwright.e2e.config.ts (they run
+  // against port 3000 with their own session/network mocking); running them
+  // here would hit the wrong port and fail.
+  testMatch: '**/visual.spec.ts',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -21,6 +26,18 @@ export default defineConfig({
     baseURL,
     trace: 'on-first-retry',
     colorScheme: 'light',
+  },
+  // Platform-independent snapshot paths (no {platform}/{projectName}) so the
+  // same committed PNGs are compared on every OS CI runs on. A pixel ratio
+  // tolerance absorbs cross-OS font rasterization differences while the
+  // screenshots still catch layout regressions. 0.04 comfortably covers the
+  // Windows-vs-Linux rendering delta (~2% observed for the navbar) with ~2x
+  // headroom, whereas a real layout regression produces a much larger diff.
+  snapshotPathTemplate: '{testDir}/__screenshots__/{arg}{ext}',
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.04,
+    },
   },
   projects: [
     {

@@ -95,14 +95,22 @@ export async function GET() {
         status = 'critical';
         reasons.push(`cursor lag ${lagLedgers} >= ${LAG_CRITICAL} ledgers`);
       } else if (lagLedgers !== null && lagLedgers >= LAG_WARN) {
-        if (status !== 'critical') status = 'warn';
+        status = 'warn';
         reasons.push(`cursor lag ${lagLedgers} >= ${LAG_WARN} ledgers`);
       }
       if (ageMs !== null && ageMs >= NO_SYNC_CRITICAL_MS) {
         status = 'critical';
         reasons.push(`no successful sync in ${Math.round(ageMs / 60000)} min`);
       }
-      return { merchantId: r.merchant_id, lastLedger, lastSyncedAt, lagLedgers, ageMs, status, reasons };
+      return {
+        merchantId: r.merchant_id,
+        lastLedger,
+        lastSyncedAt,
+        lagLedgers,
+        ageMs,
+        status,
+        reasons,
+      };
     });
   });
 

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
+import { rateLimit } from '@/lib/rate-limit';
+import { parseRole, type Role } from '@/lib/rbac';
 
 /**
  * No fallback secret, deliberately.
@@ -51,18 +53,30 @@ export async function middleware(request: NextRequest) {
 
     try {
       const { payload } = await jwtVerify(sessionCookie, key, { algorithms: ['HS256'] });
-      // Forward the signed-in identity into request headers so routes do not
-      // re-verify the cookie. `x-accensa-sub` is the raw subject (Stellar
-      // public key from the session), and `x-accensa-merchant` is the address
-      // scoping the request — the Zanzibar authorization checks in
-      // /api/roles read both.
-      const address = typeof payload.publicKey === 'string' ? payload.publicKey : '';
-      const response = NextResponse.next();
-      if (address) {
-        response.headers.set('x-accensa-merchant', address);
-        response.headers.set('x-accensa-sub', address);
+      const merchantAddress = typeof payload.publicKey === 'string' ? payload.publicKey : null;
+      if (isPrivateApi && !merchantAddress) {
+        // A session with no identifiable merchant cannot be scoped to any
+        // tenant's data — treat it the same as no session at all.
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-      return response;
+
+      // RBAC (#156): the role rides in the signed session. Legacy sessions
+      // without a role claim default to admin, so an existing cookie is never
+      // locked out of the dashboard mid-deployment.
+      const role: Role = parseRole(payload.role) ?? 'admin';
+
+      // Route handlers trust this header for merchant scoping instead of each
+      // re-verifying and re-decoding the session cookie themselves. It is only
+      // ever set here, after jwtVerify has succeeded, so a request cannot
+      // forge it — Next.js middleware runs before the request reaches a route
+      // handler and this header is set on the *outgoing* request, overwriting
+      // any value a caller tried to smuggle in.
+      const headers = new Headers(request.headers);
+      headers.set('x-accensa-merchant', merchantAddress ?? '');
+      headers.set('x-accensa-role', role);
+      return NextResponse.next({ request: { headers } });
+      await jwtVerify(sessionCookie, key, { algorithms: ['HS256'] });
+      return NextResponse.next();
     } catch {
       if (isPrivateApi) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       return NextResponse.redirect(new URL('/login', request.url));

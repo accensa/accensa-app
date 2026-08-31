@@ -1,10 +1,13 @@
 import { SignJWT } from 'jose';
 
 /**
- * The JWT_SECRET_KEY the web server signs sessions with. Must match the env
- * passed to the Playwright webServer (see playwright.e2e.config.ts).
+ * The JWT_SECRET_KEY the web server signs sessions with. Playwright injects
+ * this per config: playwright.e2e.config.ts and its workflow pass
+ * `playwright-e2e-secret-key`, while playwright.config.ts (visual regression)
+ * passes `visual-regression-test-secret`. Preferring the env var keeps the
+ * helper consistent with whichever config launched the run.
  */
-const E2E_JWT_SECRET = 'playwright-e2e-secret-key';
+const E2E_JWT_SECRET = process.env.JWT_SECRET_KEY ?? 'playwright-e2e-secret-key';
 
 const signingKey = new TextEncoder().encode(E2E_JWT_SECRET);
 
@@ -14,7 +17,9 @@ const signingKey = new TextEncoder().encode(E2E_JWT_SECRET);
  * The dashboard middleware verifies this cookie, so specs can visit
  * authenticated routes without driving the Freighter sign-in flow.
  */
-export async function mintSessionCookie(publicKey = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF'): Promise<string> {
+export async function mintSessionCookie(
+  publicKey = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+): Promise<string> {
   const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const token = await new SignJWT({ publicKey, expires: expires.toISOString() })
     .setProtectedHeader({ alg: 'HS256' })

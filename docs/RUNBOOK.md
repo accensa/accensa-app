@@ -18,6 +18,7 @@ seen and **no later run can reach them**.
 current lag; which merchant(s).
 
 **Do:**
+
 1. Declare an incident. Payment records are the product; a gap is missing revenue rows.
 2. Stop the bleeding — get the cursor advancing again (see "excessive lag").
 3. Recovery of the lost ledgers: **there is none from Soroban RPC.** Options,

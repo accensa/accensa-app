@@ -60,99 +60,101 @@ export function AnchorPanel() {
     }
   }, []);
 
-  const confirm = useCallback(async (preview: Exclude<PreviewResponse, { count: 0 }>) => {
-    setError(null);
+  const record = useCallback(
+    async (preview: Exclude<PreviewResponse, { count: 0 }>, batchId: number, hash: string) => {
+      try {
+        const res = await fetch('/api/anchor/record', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            selectionHash: preview.selectionHash,
+            root: preview.root,
+            batchId,
+            anchorTx: hash,
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error ?? `Recording failed (${res.status})`);
+        setPhase({ kind: 'done', batchId, hash });
+      } catch (e) {
+        setError(
+          `${e instanceof Error ? e.message : 'Recording failed'}. The batch is on-chain as #${batchId}; retry recording without submitting again.`,
+        );
+        setPhase({ kind: 'preview', preview });
+      }
+    },
+    [],
+  );
 
-    if (
-      preview.existing &&
-      preview.existing.status === 'recorded' &&
-      preview.existing.batchId > 0
-    ) {
-      setPhase({
-        kind: 'done',
-        batchId: preview.existing.batchId,
-        hash: preview.existing.anchorTx ?? '',
-      });
-      return;
-    }
+  const confirm = useCallback(
+    async (preview: Exclude<PreviewResponse, { count: 0 }>) => {
+      setError(null);
 
-    if (
-      preview.existing &&
-      preview.existing.status === 'submitted' &&
-      preview.existing.batchId > 0
-    ) {
-      setPhase({
-        kind: 'recording',
-        preview,
-        batchId: preview.existing.batchId,
-        hash: preview.existing.anchorTx ?? '',
-      });
-      await record(preview, preview.existing.batchId, preview.existing.anchorTx ?? '');
-      return;
-    }
-
-    const wallet = await readStatus();
-    if (wallet.kind === 'unavailable') {
-      setError('Freighter is not installed. Install it, then come back to sign.');
-      return;
-    }
-    if (wallet.kind !== 'connected') {
-      const connected = await connect();
-      if (connected.kind !== 'connected') {
-        setError('Freighter did not approve this site. Nothing was submitted.');
+      if (
+        preview.existing &&
+        preview.existing.status === 'recorded' &&
+        preview.existing.batchId > 0
+      ) {
+        setPhase({
+          kind: 'done',
+          batchId: preview.existing.batchId,
+          hash: preview.existing.anchorTx ?? '',
+        });
         return;
       }
-    }
 
-    setPhase({ kind: 'signing', preview });
-    const outcome: AnchorOutcome = await submitAnchor({
-      root: preview.root,
-      count: preview.count,
-      periodStart: preview.periodStart,
-      periodEnd: preview.periodEnd,
-      merchant: preview.merchant,
-    });
+      if (
+        preview.existing &&
+        preview.existing.status === 'submitted' &&
+        preview.existing.batchId > 0
+      ) {
+        setPhase({
+          kind: 'recording',
+          preview,
+          batchId: preview.existing.batchId,
+          hash: preview.existing.anchorTx ?? '',
+        });
+        await record(preview, preview.existing.batchId, preview.existing.anchorTx ?? '');
+        return;
+      }
 
-    if (outcome.status === 'failed') {
-      setPhase({ kind: 'preview', preview });
-      setError(outcome.message);
-      return;
-    }
-    if (outcome.status === 'pending') {
-      setPhase({ kind: 'pending', hash: outcome.hash });
-      return;
-    }
+      const wallet = await readStatus();
+      if (wallet.kind === 'unavailable') {
+        setError('Freighter is not installed. Install it, then come back to sign.');
+        return;
+      }
+      if (wallet.kind !== 'connected') {
+        const connected = await connect();
+        if (connected.kind !== 'connected') {
+          setError('Freighter did not approve this site. Nothing was submitted.');
+          return;
+        }
+      }
 
-    setPhase({ kind: 'recording', preview, batchId: outcome.batchId, hash: outcome.hash });
-    await record(preview, outcome.batchId, outcome.hash);
-  }, []);
-
-  const record = async (
-    preview: Exclude<PreviewResponse, { count: 0 }>,
-    batchId: number,
-    hash: string,
-  ) => {
-    try {
-      const res = await fetch('/api/anchor/record', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          selectionHash: preview.selectionHash,
-          root: preview.root,
-          batchId,
-          anchorTx: hash,
-        }),
+      setPhase({ kind: 'signing', preview });
+      const outcome: AnchorOutcome = await submitAnchor({
+        root: preview.root,
+        count: preview.count,
+        periodStart: preview.periodStart,
+        periodEnd: preview.periodEnd,
+        merchant: preview.merchant,
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `Recording failed (${res.status})`);
-      setPhase({ kind: 'done', batchId, hash });
-    } catch (e) {
-      setError(
-        `${e instanceof Error ? e.message : 'Recording failed'}. The batch is on-chain as #${batchId}; retry recording without submitting again.`,
-      );
-      setPhase({ kind: 'preview', preview });
-    }
-  };
+
+      if (outcome.status === 'failed') {
+        setPhase({ kind: 'preview', preview });
+        setError(outcome.message);
+        return;
+      }
+      if (outcome.status === 'pending') {
+        setPhase({ kind: 'pending', hash: outcome.hash });
+        return;
+      }
+
+      setPhase({ kind: 'recording', preview, batchId: outcome.batchId, hash: outcome.hash });
+      await record(preview, outcome.batchId, outcome.hash);
+    },
+    [record],
+  );
 
   return (
     <section className="bg-white/50 dark:bg-white/5 backdrop-blur-2xl p-6 md:p-8 shadow-[0_8px_30px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] transition-colors duration-300 space-y-4">

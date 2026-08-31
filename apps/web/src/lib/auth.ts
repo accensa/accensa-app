@@ -30,9 +30,9 @@ export async function decrypt(input: string): Promise<Record<string, unknown> | 
   return payload;
 }
 
-export async function createSession(publicKey: string) {
+export async function createSession(publicKey: string, role: 'admin' | 'viewer' = 'admin') {
   const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const session = await encrypt({ publicKey, expires: expires.toISOString() });
+  const session = await encrypt({ publicKey, role, expires: expires.toISOString() });
   const cookieStore = await cookies();
   cookieStore.set('accensa_session', session, {
     httpOnly: true,

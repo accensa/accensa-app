@@ -7,12 +7,14 @@ Implement off-chain state channels in `@accensa/sdk` to enable sub-cent micro-tr
 ## Problem
 
 On-chain transaction model:
+
 - **Latency**: 5-6 seconds per Soroban transaction (ledger close time)
 - **Fees**: 0.00001 XLM base fee + contract execution costs
 - **Throughput**: Limited by network TPS (~1000/sec globally)
 - **UX**: Waiting 5s per $0.01 article purchase is unacceptable
 
 State channels solve this:
+
 - **Latency**: <50ms for off-chain signature exchange
 - **Fees**: Zero until channel closes (one on-chain settlement)
 - **Throughput**: Unlimited off-chain (CPU-bound only)
@@ -52,18 +54,18 @@ State channels solve this:
 
 ```typescript
 interface ChannelState {
-  channelId: string;        // Contract address
-  nonce: number;            // Monotonically increasing
+  channelId: string; // Contract address
+  nonce: number; // Monotonically increasing
   balances: {
-    buyer: string;          // Decimal XLM amount
+    buyer: string; // Decimal XLM amount
     merchant: string;
   };
-  timeout: number;          // Unix timestamp for disputes
+  timeout: number; // Unix timestamp for disputes
 }
 
 interface SignedState {
   state: ChannelState;
-  buyerSignature: string;   // Ed25519 signature
+  buyerSignature: string; // Ed25519 signature
   merchantSignature: string;
 }
 ```
@@ -78,7 +80,7 @@ export class StateChannel {
   private currentState: SignedState;
   private buyerKeypair: Keypair;
   private merchantPublicKey: string;
-  
+
   // Open a new channel (on-chain)
   static async open(params: {
     buyer: Keypair;
@@ -87,25 +89,22 @@ export class StateChannel {
     merchantDeposit: string;
     timeout: number;
   }): Promise<StateChannel>;
-  
+
   // Create and sign new state (off-chain)
-  async proposeUpdate(delta: {
-    buyer: string;
-    merchant: string;
-  }): Promise<SignedState>;
-  
+  async proposeUpdate(delta: { buyer: string; merchant: string }): Promise<SignedState>;
+
   // Verify counterparty signature
   verifyCounterpartySignature(state: SignedState): boolean;
-  
+
   // Accept counterparty's proposed state
   async acceptUpdate(state: SignedState): Promise<SignedState>;
-  
+
   // Close channel cooperatively (on-chain)
   async close(): Promise<string>; // Returns txHash
-  
+
   // Submit dispute (on-chain)
   async dispute(): Promise<string>;
-  
+
   // Challenge a dispute with newer state (on-chain)
   async challenge(newerState: SignedState): Promise<string>;
 }
@@ -122,13 +121,13 @@ const channel = await StateChannel.open({
   merchant: merchantAddress,
   buyerDeposit: '10.0',
   merchantDeposit: '0',
-  timeout: 604800 // 7 days
+  timeout: 604800, // 7 days
 });
 
 // Buyer purchases article (off-chain, instant)
 const newState = await channel.proposeUpdate({
   buyer: '9.9',
-  merchant: '0.1'
+  merchant: '0.1',
 });
 
 // Merchant verifies and signs
@@ -162,16 +161,16 @@ pub enum ChannelStatus {
 pub trait StateChannelTrait {
     // Open channel with initial deposits
     fn open(env: Env, parties: Vec<Address>, deposits: Vec<i128>) -> BytesN<32>;
-    
+
     // Cooperative close with dual signatures
     fn close(env: Env, channel_id: BytesN<32>, state: ChannelState, sigs: Vec<BytesN<64>>);
-    
+
     // Initiate dispute with latest state
     fn dispute(env: Env, channel_id: BytesN<32>, state: ChannelState, sigs: Vec<BytesN<64>>);
-    
+
     // Challenge dispute with newer state
     fn challenge(env: Env, channel_id: BytesN<32>, newer_state: ChannelState, sigs: Vec<BytesN<64>>);
-    
+
     // Finalize after timeout
     fn finalize(env: Env, channel_id: BytesN<32>);
 }
@@ -182,6 +181,7 @@ pub trait StateChannelTrait {
 ## Implementation Plan
 
 ### Phase 1: Contract Development (Weeks 1-2)
+
 - [ ] Write Soroban state channel contract
 - [ ] Implement signature verification (Ed25519)
 - [ ] Add dispute resolution logic
@@ -189,6 +189,7 @@ pub trait StateChannelTrait {
 - [ ] Deploy to testnet
 
 ### Phase 2: SDK Core (Weeks 3-4)
+
 - [ ] Implement `StateChannel` class
 - [ ] Add signature generation/verification
 - [ ] Add state serialization (deterministic)
@@ -196,12 +197,14 @@ pub trait StateChannelTrait {
 - [ ] Unit tests for SDK
 
 ### Phase 3: Integration (Week 5)
+
 - [ ] Add channel opening to merchant dashboard
 - [ ] Add payment flow to demo-merchant
 - [ ] Build buyer SDK example
 - [ ] E2E test: open → 1000 updates → close
 
 ### Phase 4: Production Hardening (Week 6)
+
 - [ ] Add error handling (network failures, timeout)
 - [ ] Add state persistence (IndexedDB for buyer)
 - [ ] Add reconnection logic
@@ -211,20 +214,24 @@ pub trait StateChannelTrait {
 ## Security Considerations
 
 ### Signature Verification
+
 - Use `stellar-sdk` for Ed25519 signature generation
 - Verify both signatures before accepting state
 - Prevent signature replay attacks (nonce must increase)
 
 ### Nonce Management
+
 - Client MUST reject state with non-increasing nonce
 - Nonce gaps are acceptable (e.g., 1 → 5) but not reversals
 
 ### Dispute Window
+
 - 7 days default (configurable per channel)
 - Balance: Long enough for merchant to respond, short enough for UX
 - Alert mechanisms: Email/webhook when dispute initiated
 
 ### Griefing Attacks
+
 - Buyer can spam dispute with old state (gas cost attack)
 - Mitigation: Require dispute bond (e.g., 0.1 XLM) returned only if dispute is valid
 
@@ -238,10 +245,12 @@ pub trait StateChannelTrait {
 ## Cost Analysis
 
 ### Without State Channels
+
 - 1000 micro-transactions × 0.00001 XLM = 0.01 XLM (~$0.002)
 - 1000 transactions × 5s latency = 5000s wait time
 
 ### With State Channels
+
 - Channel open: 0.00001 XLM
 - 1000 off-chain updates: 0 XLM
 - Channel close: 0.00001 XLM

@@ -108,9 +108,6 @@ export async function POST(request: Request) {
       { status: result.recorded ? 201 : 200 },
     );
   } catch {
-    return NextResponse.json(
-      { success: false, error: 'Internal Server Error' },
-      { status: 500 },
-    );
+    return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 });
   }
 }
