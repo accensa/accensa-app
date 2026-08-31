@@ -1,0 +1,28 @@
+// SpiceDB schema for Accensa (#180).
+//
+// Provision a deployed SpiceDB cluster with this file:
+//
+//   spicedb schema write --file apps/web/src/lib/zanzibar/schema.zed \
+//     --endpoint <SPICEDB_ENDPOINT> --token <SPICEDB_TOKEN>
+//
+// The dashboard's role grants (POST /api/roles) write tuples against this
+// model; lib/zanzibar/schema.ts embeds the same definitions so local tests
+// and the Postgres fallback stay in lockstep.
+
+definition group {
+    relation member: user
+}
+
+definition merchant {
+    relation owner: user | group#member
+    relation editor: user | group#member
+    relation viewer: user | group#member
+
+    permission manage_merchant = owner
+    permission edit_merchant = owner + editor
+    permission view_payments = owner + editor + viewer
+    permission view_dashboard = owner + editor + viewer
+    permission manage_team = owner
+    permission manage_billing = owner
+    permission delete_merchant = owner
+}

@@ -240,6 +240,54 @@ Region-conditional rules are the cheapest geography pricing that still works
 globally; anything finer resolves the country code first, then the engine's
 `match` predicates.
 
+## Role-based access control (#180)
+
+Authorization is a Zanzibar relationship model. The canonical schema lives in
+`apps/web/src/lib/zanzibar/schema.ts` (embedded) and
+`apps/web/src/lib/zanzibar/schema.zed` (the SpiceDB file). A merchant owns
+relations (`owner`, `editor`, `viewer`) that map to permissions
+(`view_payments`, `edit_merchant`, `manage_team`, …) and, via `group#member`,
+can aggregate many users per role.
+
+**Data model.** Tuples persist in Postgres table `role_tuples`
+(`migrations/007_role_tuples.sql`, also created by `ensureSchema`). It is
+FORCE-RLS-scoped to `accensa.merchant_id` like every other tenant table, so a
+merchant can only ever read or write its own role grants — the tuples cannot
+leak across tenants even via a broken query.
+
+**Client.** `lib/zanzibar/store.ts` exposes `zanzibarClient(client)`, a
+delegating client: when `SPICEDB_API_URL` is set it checks against the SpiceDB
+cluster over HTTP (edge-safe, `fetch`-based, with `SPICEDB_API_TOKEN` as the
+auth token); otherwise it answers from the Postgres table with the same
+semantics. A cluster outage degrades the remote checks to the local store, so
+authorization failures never hard-lock merchants out.
+
+**Wiring.** `lib/zanzibar/permissions.ts` provides `authorize(permission,
+{ merchant, request })` — call it at the top of any App Router route for
+fine-grained checks. Middleware now forwards the signed-in Stellar address as
+`x-accensa-merchant` (already consumed by `getMerchantFromRequest`) and
+`x-accensa-sub` for the subject. `GET/POST /api/roles` list and grant/revoke a
+merchant's role tuples (`view_dashboard` to read, `manage_team` to write).
+
+**Cut-over.** Enforcement on the data routes is feature-flagged behind
+`ACCENSA_ENFORCE_RBAC=1`. Backfill tuples (or seed the SpiceDB cluster from
+`role_tuples`), then set the flag to require `view_payments` on payment reads.
+
+### Env vars
+
+| Variable | Purpose |
+| --- | --- |
+| `SPICEDB_API_URL` | (optional) SpiceDB REST base URL; unset = local store |
+| `SPICEDB_API_TOKEN` | (optional) SpiceDB API token / preshared key |
+| `ACCENSA_ENFORCE_RBAC` | `1` to enforce `view_payments` on payment reads |
+
+### Provisioning the cluster
+
+```bash
+spicedb schema write --file apps/web/src/lib/zanzibar/schema.zed \
+  --endpoint "$SPICEDB_API_URL" --token "$SPICEDB_API_TOKEN"
+```
+
 ## Deploying
 
 Two steps, not one:

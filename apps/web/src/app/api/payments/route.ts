@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { withClient, withMerchantClient, ensureSchema, getSyncState } from '@/lib/db';
 import { getMerchantFromRequest } from '@/lib/merchants';
 import { getMaxBatchSize, isHash32 } from '@/lib/receipt-anchor';
+import { authorize } from '@/lib/zanzibar/permissions';
 import type { SyncState } from '@/lib/sync-status';
 
 export const dynamic = 'force-dynamic';
@@ -184,6 +185,18 @@ export async function GET(request: Request) {
     const merchant = await withClient((client) => getMerchantFromRequest(client, request));
     if (!merchant) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Fine-grained authorization (#180). Enforcement is feature-flagged so a
+    // deployment can backfill role tuples before it cuts over; when
+    // ACCENSA_ENFORCE_RBAC is set, every read of payment history requires the
+    // view_payments relation granted through /api/roles.
+    if (process.env.ACCENSA_ENFORCE_RBAC === '1') {
+      const denied = await authorize('view_payments', {
+        merchant,
+        request: request as unknown as import('next/server').NextRequest,
+      });
+      if (denied) return denied;
     }
 
     const result = await withMerchantClient(merchant.id, async (client) => {

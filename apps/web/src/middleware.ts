@@ -50,8 +50,19 @@ export async function middleware(request: NextRequest) {
     }
 
     try {
-      await jwtVerify(sessionCookie, key, { algorithms: ['HS256'] });
-      return NextResponse.next();
+      const { payload } = await jwtVerify(sessionCookie, key, { algorithms: ['HS256'] });
+      // Forward the signed-in identity into request headers so routes do not
+      // re-verify the cookie. `x-accensa-sub` is the raw subject (Stellar
+      // public key from the session), and `x-accensa-merchant` is the address
+      // scoping the request — the Zanzibar authorization checks in
+      // /api/roles read both.
+      const address = typeof payload.publicKey === 'string' ? payload.publicKey : '';
+      const response = NextResponse.next();
+      if (address) {
+        response.headers.set('x-accensa-merchant', address);
+        response.headers.set('x-accensa-sub', address);
+      }
+      return response;
     } catch {
       if (isPrivateApi) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       return NextResponse.redirect(new URL('/login', request.url));

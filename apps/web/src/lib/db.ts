@@ -309,6 +309,29 @@ export async function ensureSchema(client: Client): Promise<void> {
   await client.query(
     `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries (status);`,
   );
+
+  // Zanzibar role tuples (#180). Persisted relationship tuples for the
+  // authorization model in lib/zanzibar — the merchant-scoped role grants the
+  // dashboard's membership UI and the SpiceDB seed. RLS is FORCEd on it just
+  // like payments, so a merchant can never read or write another's roles.
+  await client.query(`
+  CREATE TABLE IF NOT EXISTS role_tuples (
+  object TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  "user" TEXT NOT NULL,
+  merchant_id INT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (object, relation, "user")
+  );
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS idx_role_tuples_merchant
+   ON role_tuples (merchant_id);`);
+  await client.query(`ALTER TABLE role_tuples ENABLE ROW LEVEL SECURITY;`);
+  await client.query(`ALTER TABLE role_tuples FORCE ROW LEVEL SECURITY;`);
+  await client.query(`DROP POLICY IF EXISTS role_tuples_merchant_isolation ON role_tuples;`);
+  await client.query(`CREATE POLICY role_tuples_merchant_isolation ON role_tuples
+   USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
+   WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);`);
 }
 
 /**
