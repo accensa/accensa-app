@@ -34,16 +34,6 @@ export interface PaymentsResponse {
   total_pages: number;
   /** Total count of all settled payments for this merchant. */
   total_count?: number;
-  /** Sum of all settled payment amounts for this merchant. */
-  total_amount?: string;
-  /** Filter metadata returned when filters are applied. */
-  filter_info?: {
-    route?: string;
-    payer?: string;
-    asset?: string;
-    date_from?: string;
-    date_to?: string;
-  };
 }
 
 export async function GET(request: Request) {
@@ -66,9 +56,6 @@ export async function GET(request: Request) {
     limit = parsed;
   }
 
-  // Page-based (offset) pagination, e.g. ?page=2&limit=50. Absent means page 1,
-  // which keeps every existing no-parameter caller (the routes page, the SDK's
-  // first page) on exactly the behaviour they had.
   const pageParam = searchParams.get('page');
   let page = 1;
   if (pageParam !== null) {
@@ -79,8 +66,6 @@ export async function GET(request: Request) {
     page = parsed;
   }
 
-  // Cursor-based (keyset) pagination, used by @accensa/sdk. The two schemes are
-  // mutually exclusive: a request cannot offset and keyset at the same time.
   const cursor = searchParams.get('cursor');
   let parsedCursor: { ts: string; txHash: string } | null = null;
   if (cursor) {
@@ -103,6 +88,25 @@ export async function GET(request: Request) {
     }
   }
 
+  // Date range filter (#142): ?from=ISO-8601&to=ISO-8601
+  const fromParam = searchParams.get('from');
+  const toParam = searchParams.get('to');
+  let fromDate: Date | null = null;
+  let toDate: Date | null = null;
+
+  if (fromParam) {
+    fromDate = new Date(fromParam);
+    if (Number.isNaN(fromDate.getTime())) {
+      return NextResponse.json({ error: 'from must be a valid ISO-8601 date' }, { status: 400 });
+    }
+  }
+  if (toParam) {
+    toDate = new Date(toParam);
+    if (Number.isNaN(toDate.getTime())) {
+      return NextResponse.json({ error: 'to must be a valid ISO-8601 date' }, { status: 400 });
+    }
+  }
+
   const offset = (page - 1) * limit;
 
   try {
@@ -116,22 +120,43 @@ export async function GET(request: Request) {
       async (client) => {
         await ensureSchema(client);
 
-      // Window functions evaluate over the full filtered row set before LIMIT
-      // and OFFSET are applied, so one query returns both the page and the
-      // aggregates the dashboard header needs (total count, sum, single-asset
-      // detection via min = max).
-      let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method,
-                         COUNT(*) OVER() AS total,
-                         COALESCE(SUM(amount) OVER(), 0) AS total_amount,
-                         CASE WHEN MIN(COALESCE(asset, 'native')) OVER() =
-                                   MAX(COALESCE(asset, 'native')) OVER()
-                              THEN MIN(COALESCE(asset, 'native')) OVER() END AS total_asset
-                  FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
-      const params: (string | number)[] = [merchant.id];
-      if (parsedCursor) {
-        query += ` AND (ts < $${params.length + 1} OR (ts = $${params.length + 1} AND tx_hash < $${params.length + 2}))`;
-        params.push(parsedCursor.ts, parsedCursor.txHash);
-      }
+        // Window functions evaluate over the full filtered row set before LIMIT
+        // and OFFSET are applied, so one query returns both the page and the
+        // aggregates the dashboard header needs (total count, sum, single-asset
+        // detection via min = max).
+        let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method,
+                           COUNT(*) OVER() AS total,
+                           COALESCE(SUM(amount) OVER(), 0) AS total_amount,
+                           CASE WHEN MIN(COALESCE(asset, 'native')) OVER() =
+                                     MAX(COALESCE(asset, 'native')) OVER()
+                                THEN MIN(COALESCE(asset, 'native')) OVER() END AS total_asset
+                    FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
+        const params: (string | number)[] = [merchant.id];
+
+        // Apply date range filter (#142)
+        if (fromDate) {
+          query += ` AND ts >= $${params.length + 1}`;
+          params.push(fromDate.toISOString());
+        }
+        if (toDate) {
+          query += ` AND ts <= $${params.length + 1}`;
+          params.push(toDate.toISOString());
+        }
+
+        if (parsedCursor) {
+          query += ` AND (ts < $${params.length + 1} OR (ts = $${params.length + 1} AND tx_hash < $${params.length + 2}))`;
+          params.push(parsedCursor.ts, parsedCursor.txHash);
+        }
+        query += ` ORDER BY ts DESC, tx_hash DESC LIMIT $${params.length + 1}`;
+        params.push(limit);
+
+        if (!parsedCursor) {
+          query += ` OFFSET $${params.length + 1}`;
+          params.push(offset);
+        }
+
+        const result = await client.query(query, params);
+
         const countRes = await client.query<{ total_count: string; total_amount: string | null }>(
           `SELECT count(*)::text AS total_count, coalesce(sum(amount), 0)::text AS total_amount FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`,
           [merchant!.id],
@@ -146,25 +171,6 @@ export async function GET(request: Request) {
             ? String(countRes.rows[0].total_amount)
             : '0';
 
-        let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
-        const params: (string | number)[] = [merchant.id];
-        if (parsedCursor) {
-          query += ` AND (ts < $${params.length + 1} OR (ts = $${params.length + 1} AND tx_hash < $${params.length + 2}))`;
-          params.push(parsedCursor.ts, parsedCursor.txHash);
-        }
-
-      if (!parsedCursor) {
-        query += ` OFFSET $${params.length + 1}`;
-        params.push(offset);
-      }
-
-      const result = await client.query(query, params);
-      return { rows: result.rows, sync: await getSyncState(client, merchant.id) };
-    });
-        query += ` ORDER BY ts DESC, tx_hash DESC LIMIT $${params.length + 1}`;
-        params.push(limit);
-
-        const result = await client.query(query, params);
         return {
           rows: result.rows,
           sync: await getSyncState(client, merchant!.id),
@@ -174,10 +180,7 @@ export async function GET(request: Request) {
       },
     );
 
-    // The fake databases in tests do not return the window columns; tolerate
-    // their absence so aggregate handling is uniform.
     const total = rows.length > 0 ? Number(rows[0].total ?? 0) : 0;
-    const totalAmount = rows.length > 0 ? String(rows[0].total_amount ?? 0) : '0';
     const totalAsset = rows.length > 0 ? (rows[0].total_asset ?? null) : null;
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
 
@@ -206,18 +209,6 @@ export async function GET(request: Request) {
       total_asset: totalAsset,
       total_pages: totalPages,
       total_count: totalCount,
-      total_amount: totalAmount,
-      ...(filterRoute || filterPayer || filterAsset || filterDateFrom || filterDateTo
-        ? {
-            filter_info: {
-              route: filterRoute ?? undefined,
-              payer: filterPayer ?? undefined,
-              asset: filterAsset ?? undefined,
-              date_from: filterDateFrom ?? undefined,
-              date_to: filterDateTo ?? undefined,
-            },
-          }
-        : {}),
     };
     return NextResponse.json(body, {
       headers: {

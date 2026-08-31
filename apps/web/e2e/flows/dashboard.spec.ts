@@ -1,6 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mintSessionCookie } from '../helpers/auth';
-import { MOCK_PAYMENTS, mockDashboardApi, mockDashboardApiEmpty, mockDashboardApiError } from '../helpers/mocks';
+import {
+  MOCK_PAYMENTS,
+  mockDashboardApi,
+  mockDashboardApiEmpty,
+  mockDashboardApiError,
+} from '../helpers/mocks';
 
 async function openDashboard(page: Page) {
   await page.context().addCookies([
@@ -20,10 +25,12 @@ test.describe('dashboard', () => {
 
     await expect(page.getByRole('heading', { name: 'Settled Volume' })).toBeVisible();
     // Total settled reflects the mocked fixtures (10.00 + 5.50).
-    await expect(page.getByText("15.50")).toBeVisible();
-    // Both payment assets render.
-    await expect(page.getByText('USDC').first()).toBeVisible();
-    await expect(page.getByText('XLM').first()).toBeVisible();
+    await expect(page.getByText('15.50')).toBeVisible();
+    // Both payment assets render in the desktop table. Scoped to the table so
+    // we don't match the hidden mobile card-list span.
+    const table = page.locator('table');
+    await expect(table.getByText('USDC')).toBeVisible();
+    await expect(table.getByText('XLM')).toBeVisible();
     // The table caption / heading is present.
     await expect(page.getByRole('heading', { name: 'Recent Settlements' })).toBeVisible();
   });
@@ -42,7 +49,7 @@ test.describe('dashboard', () => {
     await expect(page.getByText('Transaction Hash')).toBeVisible();
 
     // Close via the close button.
-    await page.getByRole('button', { name: 'Close details' }).click();
+    await page.getByRole('button', { name: 'Close payment details' }).click();
     await expect(modal).not.toBeVisible();
   });
 
@@ -74,7 +81,7 @@ test.describe('dashboard', () => {
     const downloadPromise = page.waitForEvent('download');
     await page.getByRole('button', { name: 'Export CSV' }).click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/^accensa-payments-.*\.csv$/);
+    expect(download.suggestedFilename()).toMatch(/^accensa_payments_.*\.csv$/);
   });
 
   test('sync button enters cooldown after a sync attempt', async ({ page }) => {
@@ -87,8 +94,9 @@ test.describe('dashboard', () => {
 
     // The mocked /api/sync POST returns 429 with a 60s cooldown.
     await syncButton.click();
-    await expect(page.getByRole('button', { name: /Wait \d+s/ })).toBeVisible();
-    await expect(syncButton).toBeDisabled();
+    const waitButton = page.getByRole('button', { name: /Wait \d+s/ });
+    await expect(waitButton).toBeVisible();
+    await expect(waitButton).toBeDisabled();
   });
 });
 
@@ -98,7 +106,7 @@ test.describe('dashboard routes', () => {
     await openDashboard(page);
     await page.goto('/dashboard/routes');
 
-    await expect(page.getByText('Revenue by Route', { exact: false })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Revenue by Route' })).toBeVisible();
   });
 });
 
@@ -106,9 +114,9 @@ test.describe('auth', () => {
   test('login page renders and requires a wallet', async ({ page }) => {
     await page.goto('/login');
     await expect(page.getByRole('heading', { name: 'Merchant Login' })).toBeVisible();
-    // No wallet in the test browser; the sign-in button leads to an error state.
-    const signIn = page.getByRole('button', { name: /Sign in/i });
-    await signIn.click();
+    // No wallet in the test browser; connecting leads to an error state.
+    const connect = page.getByRole('button', { name: 'Connect Wallet' });
+    await connect.click();
     await expect(page.getByRole('alert')).toBeVisible();
   });
 });

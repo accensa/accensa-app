@@ -6,7 +6,7 @@ We welcome contributions from the community! Whether it's a bug fix, new feature
 
 1. **Fork the repository** on GitHub.
 2. **Clone your fork** locally.
-3. **Find an issue**: Look for issues labeled with `good first issue` if you are a new contributor. If you have an idea for a feature or found a bug, please create a new issue first to discuss it with the maintainers before starting work.
+3. **Find an issue**: Look for issues labeled with `good first issue` if you are a new contributor. If you have an idea for a feature or found a bug, please create an issue first to discuss it with the maintainers before starting work.
 4. **Wait for assignment**: To avoid duplicate work, please express your interest on the issue and wait for a maintainer to assign it to you before starting work.
 5. **Create a new branch** for your feature or bug fix (`git checkout -b feature/my-new-feature` or `bugfix/issue-123`).
 6. **Make your changes** and test them thoroughly.
@@ -46,4 +46,81 @@ CI will reject unformatted code via `pnpm format:check`.
 If you find a bug or have a feature idea, please open an issue on GitHub using our issue templates.
 Include as much detail as possible to help us understand and resolve the issue quickly.
 
-Thank you for helping make Accensa better!
+---
+
+## `@accensa/sdk` Release Process
+
+### Semver Policy
+
+The SDK follows [Semantic Versioning](https://semver.org/). The following are
+considered **breaking changes** (major bumps):
+
+- Changes to `SettleHookPayload` fields (the JSON body POSTed to
+  `/api/hook/settle`).
+- Changes to the Ed25519 signing mechanism or signature encoding.
+- Removal or renaming of any exported symbol.
+- Changes to the `X-Signature` header contract.
+
+The report payload and signature scheme are a **wire contract** between the SDK
+and the Accensa indexer. A change that the indexer does not also accept is a
+breaking change even if the TypeScript types are compatible.
+
+Non-breaking additions (new optional fields, new exports, bug fixes) are minor
+or patch bumps as usual.
+
+### Changesets
+
+This monorepo uses [Changesets](https://github.com/changesets/changesets) to
+manage versioning and changelogs.
+
+When you land a change that affects `@accensa/sdk`:
+
+```bash
+pnpm changeset
+```
+
+Follow the prompts to select the package and bump type, then write a summary
+that will appear in the changelog. Commit the generated
+`.changeset/*.md` file with your PR.
+
+### Cutting a Release
+
+1. **Merge the release PR.** Changesets opens a "Version Packages" PR
+   automatically when changesets accumulate on `main`. Merge it to bump
+   `package.json` versions and update `CHANGELOG.md`.
+
+2. **Tag the release.** After the version PR merges, tag the commit:
+
+   ```bash
+   git tag @accensa/sdk@<version>
+   git push origin @accensa/sdk@<version>
+   ```
+
+3. **CI publishes on tag.** The `publish` workflow in
+   `.github/workflows/publish.yml` detects the tag, builds the package, runs
+   the tarball verification job, and publishes to npm with provenance.
+
+### Manual Release (if needed)
+
+If you need to publish manually outside the automated flow:
+
+```bash
+cd packages/sdk
+pnpm build
+pnpm pack          # inspect the tarball
+npm publish --provenance --access public
+```
+
+### Verifying the Package
+
+Before publishing, verify the packed tarball works in an isolated project:
+
+```bash
+cd packages/sdk
+pnpm build
+pnpm pack
+```
+
+Then create a scratch directory outside the workspace, install the tarball, and
+confirm both entry points resolve in ESM and CJS. This is also run
+automatically in CI (see `.github/workflows/ci.yml`, the `verify-pack` job).

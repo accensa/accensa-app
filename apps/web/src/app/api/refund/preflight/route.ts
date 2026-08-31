@@ -8,6 +8,7 @@ import {
 } from '@/lib/refund-vault';
 import { withClient } from '@/lib/db';
 import { getMerchantFromRequest } from '@/lib/merchants';
+import { isAdmin } from '@/lib/rbac';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +69,12 @@ export async function POST(request: Request) {
   const caller = await withClient((client) => getMerchantFromRequest(client, request));
   if (!caller) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // RBAC (#156): refunds move a merchant's float. A viewer may inspect
+  // payments but must never initiate (or even preflight) a refund.
+  if (!isAdmin(request)) {
+    return NextResponse.json({ error: 'Forbidden: viewer sessions cannot refund' }, { status: 403 });
   }
   const vaultId = caller.refundVaultId ?? REFUND_VAULT_ID;
 

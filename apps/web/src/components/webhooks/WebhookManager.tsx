@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect } from 'react';
 
 /**
  * Webhook Management UI (#147).
@@ -22,8 +22,8 @@ export default function WebhookManager() {
   const [webhooks, setWebhooks] = useState<WebhookEndpoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [newUrl, setNewUrl] = useState("");
-  const [newEvents, setNewEvents] = useState("payment.completed,payment.failed");
+  const [newUrl, setNewUrl] = useState('');
+  const [newEvents, setNewEvents] = useState('payment.completed,payment.failed');
 
   useEffect(() => {
     fetchWebhooks();
@@ -31,7 +31,7 @@ export default function WebhookManager() {
 
   async function fetchWebhooks() {
     try {
-      const res = await fetch("/api/webhooks");
+      const res = await fetch('/api/webhooks');
       if (res.ok) {
         const data = await res.json();
         setWebhooks(data.webhooks ?? []);
@@ -46,16 +46,16 @@ export default function WebhookManager() {
   async function createWebhook() {
     if (!newUrl) return;
     try {
-      const res = await fetch("/api/webhooks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: newUrl,
-          events: newEvents.split(",").map((e) => e.trim()),
+          events: newEvents.split(',').map((e) => e.trim()),
         }),
       });
       if (res.ok) {
-        setNewUrl("");
+        setNewUrl('');
         setShowCreate(false);
         fetchWebhooks();
       }
@@ -66,7 +66,7 @@ export default function WebhookManager() {
 
   async function deleteWebhook(id: string) {
     try {
-      await fetch(`/api/webhooks/${id}`, { method: "DELETE" });
+      await fetch(`/api/webhooks/${id}`, { method: 'DELETE' });
       fetchWebhooks();
     } catch {
       // Silent fail
@@ -76,8 +76,8 @@ export default function WebhookManager() {
   async function toggleWebhook(id: string, active: boolean) {
     try {
       await fetch(`/api/webhooks/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ active: !active }),
       });
       fetchWebhooks();
@@ -88,10 +88,10 @@ export default function WebhookManager() {
 
   async function testWebhook(id: string) {
     try {
-      await fetch(`/api/webhooks/${id}/test`, { method: "POST" });
-      alert("Test webhook sent!");
+      await fetch(`/api/webhooks/${id}/test`, { method: 'POST' });
+      alert('Test webhook sent!');
     } catch {
-      alert("Failed to send test webhook");
+      alert('Failed to send test webhook');
     }
   }
 
@@ -107,7 +107,7 @@ export default function WebhookManager() {
           onClick={() => setShowCreate(!showCreate)}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm"
         >
-          {showCreate ? "Cancel" : "Add Webhook"}
+          {showCreate ? 'Cancel' : 'Add Webhook'}
         </button>
       </div>
 
@@ -151,9 +151,7 @@ export default function WebhookManager() {
             <div key={wh.id} className="border rounded-lg p-4 flex items-center justify-between">
               <div>
                 <p className="font-mono text-sm">{wh.url}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Events: {wh.events.join(", ")}
-                </p>
+                <p className="text-xs text-gray-500 mt-1">Events: {wh.events.join(', ')}</p>
                 {wh.lastTriggeredAt && (
                   <p className="text-xs text-gray-400">
                     Last triggered: {new Date(wh.lastTriggeredAt).toLocaleString()}
@@ -169,9 +167,9 @@ export default function WebhookManager() {
                 </button>
                 <button
                   onClick={() => toggleWebhook(wh.id, wh.active)}
-                  className={`text-sm ${wh.active ? "text-yellow-600" : "text-green-600"} hover:underline`}
+                  className={`text-sm ${wh.active ? 'text-yellow-600' : 'text-green-600'} hover:underline`}
                 >
-                  {wh.active ? "Disable" : "Enable"}
+                  {wh.active ? 'Disable' : 'Enable'}
                 </button>
                 <button
                   onClick={() => deleteWebhook(wh.id)}

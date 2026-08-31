@@ -22,6 +22,9 @@ export function createEvent<T>(type: string, payload: T, source: string): FedEve
 export function formatAmount(amount: string | number, asset?: string | null): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
   if (Number.isNaN(num)) return '0';
-  const formatted = num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 7 });
+  const formatted = num.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 7,
+  });
   return asset ? `${formatted} ${asset}` : formatted;
 }

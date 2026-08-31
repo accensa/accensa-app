@@ -94,7 +94,11 @@ describe('sha256Hex', () => {
   it('round-trips through the canonical payload hash the indexer stores', async () => {
     const hash = await sha256Hex(canonicalJson(PAYLOAD));
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(hash).toBe(await sha256Hex(canonicalJson({ meta: { tier: 3, region: 'eu' }, route: '/api/data', amount: '1000' })));
+    expect(hash).toBe(
+      await sha256Hex(
+        canonicalJson({ meta: { tier: 3, region: 'eu' }, route: '/api/data', amount: '1000' }),
+      ),
+    );
   });
 });
 

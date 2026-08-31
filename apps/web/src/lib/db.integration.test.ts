@@ -31,7 +31,15 @@ async function setupTestDatabase(): Promise<void> {
       END $$;
     `);
     await client.query('GRANT USAGE, CREATE ON SCHEMA public TO test_app_user');
-    for (const table of ['payments', 'sync_state', 'challenge_nonces', 'merchants']) {
+    for (const table of [
+      'payments',
+      'sync_state',
+      'challenge_nonces',
+      'merchants',
+      'receipt_batches',
+      'webhook_deliveries',
+      'webhook_attempts',
+    ]) {
       await client.query(`ALTER TABLE IF EXISTS ${table} OWNER TO test_app_user`).catch(() => {});
     }
     await client.query('GRANT ALL ON ALL TABLES IN SCHEMA public TO test_app_user');

@@ -112,9 +112,8 @@ export async function getSyncHistory(
     durationMs: row.duration_ms,
   }));
 
-  const nextCursor = hasMore && entries.length > 0
-    ? createCursor(entries[entries.length - 1].ledger)
-    : null;
+  const nextCursor =
+    hasMore && entries.length > 0 ? createCursor(entries[entries.length - 1].ledger) : null;
 
   return { entries, nextCursor, totalCount };
 }
