@@ -34,8 +34,6 @@ export interface PaymentsResponse {
   total_pages: number;
   /** Total count of all settled payments for this merchant. */
   total_count?: number;
-  /** Sum of all settled payment amounts for this merchant. */
-  total_amount?: string;
   /** Filter metadata returned when filters are applied. */
   filter_info?: {
     route?: string;
@@ -46,12 +44,88 @@ export interface PaymentsResponse {
   };
 }
 
+/**
+ * The query parameters /api/payments understands. Anything else is rejected
+ * loudly rather than ignored, so a typo in a filter name fails the request
+ * instead of silently returning every payment.
+ */
+const KNOWN_PARAMS = new Set([
+  'limit',
+  'page',
+  'cursor',
+  'route',
+  'payer',
+  'asset',
+  'date_from',
+  'date_to',
+]);
+
+interface Filters {
+  route?: string;
+  payer?: string;
+  asset?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+/**
+ * Validates the date-range params against what Postgres will accept as a
+ * timestamptz, matching the `limit` style of a specific rejection message
+ * rather than silently clamping.
+ */
+function parseDateRange(searchParams: URLSearchParams): { filters: Filters } | { error: string } {
+  const dateFrom = searchParams.get('date_from');
+  const dateTo = searchParams.get('date_to');
+
+  if (dateFrom !== null && Number.isNaN(new Date(dateFrom).getTime())) {
+    return { error: 'date_from must be a valid date' };
+  }
+  if (dateTo !== null && Number.isNaN(new Date(dateTo).getTime())) {
+    return { error: 'date_to must be a valid date' };
+  }
+  if (dateFrom !== null && dateTo !== null && new Date(dateFrom).getTime() > new Date(dateTo).getTime()) {
+    return { error: 'date_from must be on or before date_to' };
+  }
+
+  return {
+    filters: {
+      route: searchParams.get('route') ?? undefined,
+      payer: searchParams.get('payer') ?? undefined,
+      asset: searchParams.get('asset') ?? undefined,
+      dateFrom: dateFrom ?? undefined,
+      dateTo: dateTo ?? undefined,
+    },
+  };
+}
+
+/**
+ * GET /api/payments — cursor- or page-paginated, filterable payment history.
+ *
+ * Accepts `limit`, `page` | `cursor`, and the `route` / `payer` / `asset` /
+ * `date_from` / `date_to` filters. Any parameter outside that set is rejected
+ * with a 400 rather than ignored.
+ */
 export async function GET(request: Request) {
   if (!process.env.DATABASE_URL) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 
   const { searchParams } = new URL(request.url);
+
+  // Reject unknown parameters so a typo fails loudly instead of quietly
+  // returning everything.
+  for (const key of searchParams.keys()) {
+    if (!KNOWN_PARAMS.has(key)) {
+      return NextResponse.json({ error: `unknown parameter: ${key}` }, { status: 400 });
+    }
+  }
+
+  const filtersResult = parseDateRange(searchParams);
+  if ('error' in filtersResult) {
+    return NextResponse.json({ error: filtersResult.error }, { status: 400 });
+  }
+  const filters = filtersResult.filters;
+
   const limitParam = searchParams.get('limit');
   let limit = 100;
   if (limitParam !== null) {
@@ -104,6 +178,7 @@ export async function GET(request: Request) {
   }
 
   const offset = (page - 1) * limit;
+  const useOffsetPagination = pageParam !== null;
 
   try {
     const merchant = await withClient((client) => getMerchantFromRequest(client, request));
@@ -111,78 +186,121 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { rows, sync, totalCount, totalAmount } = await withMerchantClient(
-      merchant.id,
-      async (client) => {
-        await ensureSchema(client);
+    const result = await withMerchantClient(merchant.id, async (client) => {
+      await ensureSchema(client);
 
-      // Window functions evaluate over the full filtered row set before LIMIT
-      // and OFFSET are applied, so one query returns both the page and the
-      // aggregates the dashboard header needs (total count, sum, single-asset
-      // detection via min = max).
-      let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method,
-                         COUNT(*) OVER() AS total,
-                         COALESCE(SUM(amount) OVER(), 0) AS total_amount,
-                         CASE WHEN MIN(COALESCE(asset, 'native')) OVER() =
-                                   MAX(COALESCE(asset, 'native')) OVER()
-                              THEN MIN(COALESCE(asset, 'native')) OVER() END AS total_asset
-                  FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
-      const params: (string | number)[] = [merchant.id];
-      if (parsedCursor) {
-        query += ` AND (ts < $${params.length + 1} OR (ts = $${params.length + 1} AND tx_hash < $${params.length + 2}))`;
-        params.push(parsedCursor.ts, parsedCursor.txHash);
+      // Shared WHERE prefix: tenant scoping + the dashboard's "indexed only"
+      // rule (a staged, merchant-reported row has no on-chain timestamp yet).
+      const whereParts = ['merchant_id = $1', 'ts IS NOT NULL'];
+      const params: unknown[] = [merchant.id];
+
+      if (filters.route) {
+        params.push(filters.route);
+        whereParts.push(`route = $${params.length}`);
       }
-        const countRes = await client.query<{ total_count: string; total_amount: string | null }>(
-          `SELECT count(*)::text AS total_count, coalesce(sum(amount), 0)::text AS total_amount FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`,
-          [merchant!.id],
-        );
-        const totalCount = countRes.rows.length
-          ? Number(countRes.rows[0].total_count ?? countRes.rows.length)
-          : 0;
+      if (filters.payer) {
+        params.push(filters.payer);
+        whereParts.push(`payer = $${params.length}`);
+      }
+      if (filters.asset) {
+        params.push(filters.asset);
+        whereParts.push(`asset = $${params.length}`);
+      }
+      if (filters.dateFrom) {
+        params.push(filters.dateFrom);
+        whereParts.push(`ts >= $${params.length}`);
+      }
+      if (filters.dateTo) {
+        params.push(filters.dateTo);
+        whereParts.push(`ts <= $${params.length}`);
+      }
+
+      const where = whereParts.join(' AND ');
+
+      // Offset pagination: one query returns the page and the dashboard's
+      // aggregates (total count, sum, single-asset detection) from window
+      // functions that evaluate over the full filtered row set before LIMIT
+      // and OFFSET cut in.
+      if (useOffsetPagination) {
+        const sql = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method,
+                             COUNT(*) OVER() AS total,
+                             COALESCE(SUM(amount) OVER(), 0) AS total_amount,
+                             CASE WHEN MIN(COALESCE(asset, 'native')) OVER() =
+                                       MAX(COALESCE(asset, 'native')) OVER()
+                                  THEN MIN(COALESCE(asset, 'native')) OVER() END AS total_asset
+                      FROM payments
+                      WHERE ${where}
+                      ORDER BY ts DESC, tx_hash DESC
+                      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        const res = await client.query(sql, [...params, limit, offset]);
+
+        const total = res.rows.length > 0 ? Number(res.rows[0].total ?? 0) : 0;
         const totalAmount =
-          countRes.rows.length &&
-          countRes.rows[0].total_amount !== undefined &&
-          countRes.rows[0].total_amount !== null
-            ? String(countRes.rows[0].total_amount)
-            : '0';
+          res.rows.length > 0 ? String(res.rows[0].total_amount ?? 0) : '0';
+        const totalAsset = res.rows.length > 0 ? (res.rows[0].total_asset ?? null) : null;
 
-        let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL`;
-        const params: (string | number)[] = [merchant.id];
-        if (parsedCursor) {
-          query += ` AND (ts < $${params.length + 1} OR (ts = $${params.length + 1} AND tx_hash < $${params.length + 2}))`;
-          params.push(parsedCursor.ts, parsedCursor.txHash);
-        }
-
-      if (!parsedCursor) {
-        query += ` OFFSET $${params.length + 1}`;
-        params.push(offset);
+        return {
+          rows: res.rows,
+          sync: await getSyncState(client, merchant.id),
+          total,
+          totalAmount,
+          totalAsset,
+          totalCount: total,
+        };
       }
 
-      const result = await client.query(query, params);
-      return { rows: result.rows, sync: await getSyncState(client, merchant.id) };
+      // Keyset (cursor) or default path: a lightweight aggregate over the full
+      // filtered set so the header stays right across deep pages, plus the page
+      // itself ordered by (ts, tx_hash) with a keyset predicate.
+      const countRes = await client.query<{
+        total_count: string;
+        total_amount: string | null;
+      }>(
+        `SELECT count(*)::text AS total_count, coalesce(sum(amount), 0)::text AS total_amount
+         FROM payments WHERE ${where}`,
+        params,
+      );
+      const totalCount = countRes.rows.length
+        ? Number(countRes.rows[0].total_count ?? 0)
+        : 0;
+      const totalAmount =
+        countRes.rows.length && countRes.rows[0].total_amount !== null
+          ? String(countRes.rows[0].total_amount)
+          : '0';
+
+      let sql = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method
+                 FROM payments WHERE ${where}`;
+      const selectParams = [...params];
+      if (parsedCursor) {
+        // Keyset predicate over the same ordering (ts DESC, tx_hash DESC): a
+        // page can be formed entirely by scanning forward from the previous
+        // page's last row, so filters never cause rows to be skipped or
+        // repeated.
+        sql += ` AND (ts < $${selectParams.length + 1} OR (ts = $${selectParams.length + 1} AND tx_hash < $${selectParams.length + 2}))`;
+        selectParams.push(parsedCursor.ts, parsedCursor.txHash);
+      }
+      sql += ` ORDER BY ts DESC, tx_hash DESC LIMIT $${selectParams.length + 1}`;
+      selectParams.push(limit);
+
+      const res = await client.query(sql, selectParams);
+
+      return {
+        rows: res.rows,
+        sync: await getSyncState(client, merchant.id),
+        total: totalCount,
+        totalAmount,
+        totalAsset: null,
+        totalCount,
+      };
     });
-        query += ` ORDER BY ts DESC, tx_hash DESC LIMIT $${params.length + 1}`;
-        params.push(limit);
 
-        const result = await client.query(query, params);
-        return {
-          rows: result.rows,
-          sync: await getSyncState(client, merchant!.id),
-          totalCount,
-          totalAmount,
-        };
-      },
-    );
-
-    // The fake databases in tests do not return the window columns; tolerate
-    // their absence so aggregate handling is uniform.
-    const total = rows.length > 0 ? Number(rows[0].total ?? 0) : 0;
-    const totalAmount = rows.length > 0 ? String(rows[0].total_amount ?? 0) : '0';
-    const totalAsset = rows.length > 0 ? (rows[0].total_asset ?? null) : null;
+    const { rows, sync, total, totalAmount, totalAsset, totalCount } = result;
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
 
+    // Offset pages carry no next_cursor: page-based callers advance with
+    // `page`, and mixing them with `cursor` is rejected above.
     const next_cursor =
-      rows.length === limit
+      !useOffsetPagination && rows.length === limit
         ? Buffer.from(
             `${rows[rows.length - 1].ts instanceof Date ? rows[rows.length - 1].ts.toISOString() : rows[rows.length - 1].ts}|${rows[rows.length - 1].tx_hash}`,
           ).toString('base64')
@@ -206,15 +324,14 @@ export async function GET(request: Request) {
       total_asset: totalAsset,
       total_pages: totalPages,
       total_count: totalCount,
-      total_amount: totalAmount,
-      ...(filterRoute || filterPayer || filterAsset || filterDateFrom || filterDateTo
+      ...(filters.route || filters.payer || filters.asset || filters.dateFrom || filters.dateTo
         ? {
             filter_info: {
-              route: filterRoute ?? undefined,
-              payer: filterPayer ?? undefined,
-              asset: filterAsset ?? undefined,
-              date_from: filterDateFrom ?? undefined,
-              date_to: filterDateTo ?? undefined,
+              route: filters.route,
+              payer: filters.payer,
+              asset: filters.asset,
+              date_from: filters.dateFrom,
+              date_to: filters.dateTo,
             },
           }
         : {}),
