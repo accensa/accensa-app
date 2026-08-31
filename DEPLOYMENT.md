@@ -213,6 +213,33 @@ returns sensitive values blank _by design_ — a blank in your local pull is not
 evidence the remote value is blank. Use `--no-sensitive` for non-secrets if you
 want to read them back.
 
+## Edge pricing (#168)
+
+`POST /api/pricing` runs the dynamic pricing engine at the CDN edge, so a
+checkout price round-trips to a POP near the buyer. `apps/web` is on Vercel;
+the route opts into the edge runtime with `export const runtime = 'edge'`
+and ships `Cache-Control: public, s-maxage=30`, so identical rule sets replay
+from the edge cache.
+
+Three properties keep the runtime latency inside the <50ms budget:
+
+- **Pure engine.** `apps/web/src/lib/pricing/engine.ts` is a deterministic,
+  dependency-free module — no Node-only imports, no `process`, no clocks, no
+  `eval`. Rules are declarative JSON and amounts are decimal strings, so
+  there is nothing at runtime to sandbox; the "sandbox" is the module shape
+  itself and it runs identically on the origin (tests) and the edge (route).
+- **Geo at the edge.** The route classifies the buyer from
+  `cf-ipcountry` (Cloudflare) / `x-vercel-ip-country` without any extra I/O,
+  then picks the matching geo-tier rules.
+- **No origin round-trip for the hot path.** Rules are passed in the request
+  or served from edge KV (`VERCEL_KV` / Workers KV) keyed by merchant; the
+  engine never touches Postgres. Database-backed merchant state stays on the
+  origin for writes only.
+
+Region-conditional rules are the cheapest geography pricing that still works
+globally; anything finer resolves the country code first, then the engine's
+`match` predicates.
+
 ## Deploying
 
 Two steps, not one:
