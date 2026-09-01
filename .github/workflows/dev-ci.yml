@@ -1,0 +1,42 @@
+# Integration CI for the `dev` branch.
+#
+# `dev` is where contributors land work, so it deliberately runs exactly one
+# check: do the locked dependencies install, do the workspace packages build,
+# and does the monorepo typecheck? The full suite (format, lint, tests against
+# Postgres, visual regression, publish) stays scoped to `main` and runs on the
+# `dev` -> `main` pull request, which is what keeps `main` green.
+name: Dev CI
+
+on:
+  push:
+    branches: ['dev']
+  pull_request:
+    branches: ['dev']
+
+concurrency:
+  group: dev-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pnpm
+        run: npm install -g pnpm@11
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # `web` resolves @accensa/sdk from its dist, so the SDK has to build
+      # before anything typechecks against it.
+      - name: Build workspace packages
+        run: pnpm -r --if-present build
+      - name: Typecheck
+        run: pnpm typecheck
