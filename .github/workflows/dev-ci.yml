@@ -32,8 +32,12 @@ jobs:
           node-version: '22'
       - name: Install pnpm
         run: npm install -g pnpm@11
+      # Not --frozen-lockfile: the dev check exists to answer 'does this
+      # still build'. Lockfile drift is a real problem but it is main's to
+      # enforce -- the full suite on the dev -> main PR still uses
+      # --frozen-lockfile, so drift cannot reach main unnoticed.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
       # `web` resolves @accensa/sdk from its dist, so the SDK has to build
       # before anything typechecks against it.
       - name: Build workspace packages
