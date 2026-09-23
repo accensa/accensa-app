@@ -1,3 +1,15 @@
+/**
+ * Accensa webhook signing and verification.
+ *
+ * The Accensa indexer signs every outbound webhook callback with HMAC-SHA256
+ * under {@link WEBHOOK_SIGNATURE_HEADER}. Merchants use
+ * {@link verifyWebhookSignature} to reject requests that did not come from an
+ * Accensa deployment sharing the same secret, and {@link signWebhookSignature}
+ * to build the value a handler expects (or to sign requests of their own).
+ *
+ * Both functions operate on the exact body bytes that were sent — see
+ * {@link signWebhookSignature} for why re-serialising a payload is a footgun.
+ */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /**
