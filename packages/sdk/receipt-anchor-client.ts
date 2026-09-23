@@ -37,14 +37,19 @@ export const DEFAULT_NETWORK_PASSPHRASE = Networks.TESTNET;
 export const DEFAULT_SIMULATION_SOURCE = 'GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6';
 
 export interface BatchRecord {
+  /** Hex-encoded Merkle root of the anchored receipt batch. */
   root: string;
+  /** Number of receipts (leaves) anchored in the batch. */
   count: number;
+  /** Unix timestamp (seconds) of the batch's first receipt in the period. */
   periodStart: number;
+  /** Unix timestamp (seconds) of the batch's last receipt in the period. */
   periodEnd: number;
 }
 
 /** The subset of `rpc.Server` the client calls. Lets tests inject a fake server. */
 export interface RpcServerLike {
+  /** Read-only simulate call; never signs or submits. Same shape as `rpc.Server`. */
   simulateTransaction: InstanceType<typeof rpc.Server>['simulateTransaction'];
 }
 

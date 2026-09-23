@@ -11,10 +11,16 @@
 //      ../accensa-contracts/contracts/receipt-anchor/src/vectors.rs
 
 pub struct Vector {
+    /// Short, human-readable description of the case this vector exercises.
     pub name: &'static str,
+    /// The 32-byte leaf (receipt digest) being verified against the root.
     pub leaf: [u8; 32],
+    /// Sibling digests from the leaf up to the root, bottom-up. Empty for a
+    /// single-leaf batch.
     pub proof: &'static [[u8; 32]],
+    /// The 32-byte Merkle root the proof is verified against.
     pub root: [u8; 32],
+    /// Whether the leaf and proof must verify against the root.
     pub expected: bool,
 }
 
