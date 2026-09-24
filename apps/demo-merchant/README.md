@@ -28,6 +28,9 @@ payment handshake.
 
 - `server.js` — the seller. x402 middleware in front of three priced routes,
   an SSE stream, and a webhook listener for the Accensa indexer.
+- `lib/env.js` — the `.env.example` contract as code: loads `.env` (which the
+  seller previously ignored entirely), validates it in one pass, logs every
+  fallback, and fails fast with every problem listed.
 - `lib/x402-payer.js` — the stock x402 client wired up (official
   `x402Client`/`x402HTTPClient` + the Stellar `ExactStellarScheme`); shared by
   the agent and driver scripts.
@@ -43,8 +46,8 @@ payment handshake.
 - A **funded testnet payer**: a Stellar testnet account with XLM. Its secret
   key goes in `STELLAR_PRIVATE_KEY` (see below).
 - The demo merchant needs `MERCHANT_ADDRESS` set to the address that should
-  receive the paid XLM — otherwise it falls back to a placeholder address that
-  cannot be paid.
+  receive the paid XLM — the seller refuses to boot without it, rather than
+  paying into a placeholder address that cannot receive payments.
 
 ## Funding a testnet payer, start to finish
 
@@ -77,6 +80,7 @@ paid in native XLM.
 ## Running the seller
 
 ```bash
+cp .env.example .env        # fill it in; variables set inline still win
 MERCHANT_ADDRESS=G... node server.js
 ```
 
@@ -84,6 +88,10 @@ The server listens on port 3001 (override with `PORT`). Point `ACCENSA_URL` at
 your Accensa deployment if you want the merchant to report route attribution;
 `HOOK_API_KEY` and `WEBHOOK_SECRET` are required for the dashboard to accept
 reports and for the merchant to accept indexer webhooks (see the root README).
+The seller loads `.env` through `lib/env.js`, which validates the whole
+template at boot: missing required variables stop the server with one message
+listing all of them, and optional values fall back to documented defaults
+with a log line.
 
 ## Paying as the agent (buyer side)
 
@@ -144,8 +152,8 @@ A reviewer evaluating the SCF RFP §5 adoption-strategy criterion should see:
 ## Local-only requirements
 
 - The `MERCHANT_ADDRESS` must be set to a real Stellar address before starting
-  the server. Without it, the routes use a placeholder address that cannot
-  receive payments.
+  the server. Without it, the seller exits at boot naming the missing variable
+  instead of paying to a placeholder address.
 - Webhook signature verification (`WEBHOOK_SECRET`) is optional for local
   development. When unset, all signatures are accepted. In production, set
   this to match the Accensa deployment's `WEBHOOK_SECRET`.

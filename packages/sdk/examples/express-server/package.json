@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Runnable x402 seller reporting route attribution to Accensa",
   "scripts": {
-    "dev": "tsx --env-file=.env index.ts"
+    "dev": "tsx index.ts"
   },
   "dependencies": {
     "@accensa/sdk": "workspace:^",

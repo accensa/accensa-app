@@ -113,18 +113,36 @@ function fakeRes(header?: string) {
 const fakeReq = (over: Partial<Request> = {}) =>
   ({ method: 'GET', path: '/api/hello', headers: {}, ...over }) as Request;
 
-/** Runs the middleware over one request/response pair and flushes the report. */
+/**
+ * Runs the middleware over one request/response pair and flushes the report.
+ *
+ * The middleware deliberately does not await `reportSettlement`, so the test
+ * has to wait for the fire-and-forget report to land (#338). When the caller
+ * passes `settled` — the event that test actually asserts — the wait resolves
+ * the moment it happens instead of sleeping a fixed 10ms first: the same
+ * assertions, none of the idle time, and no race against a slow sign-and-
+ * fetch on a loaded machine. With nothing observable to wait for (the
+ * negative cases, where no report should start at all), one event-loop turn
+ * covers the decision, which the 'finish' handler makes synchronously.
+ *
+ * Metric per run of this file (counted from the call sites below): the old
+ * unconditional sleep cost 10 × 10ms = 100ms of floor time; now the five
+ * observable waits land on their event and the five negative cases pay a
+ * single ~1ms timer turn.
+ */
 async function runHook(
   middleware: (req: Request, res: Response, next: NextFunction) => void,
   req: Request,
   res: EventEmitter & Response,
+  settled?: () => void,
 ) {
   const next = vi.fn();
   middleware(req, res, next);
   res.emit('finish');
   // reportSettlement is deliberately not awaited by the middleware.
   await vi.waitFor(() => expect(next).toHaveBeenCalledOnce());
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  if (settled) await vi.waitFor(settled, { interval: 1 });
+  else await new Promise((resolve) => setTimeout(resolve, 0));
   return next;
 }
 
@@ -451,6 +469,7 @@ describe('attachAccensaHook', () => {
       attachAccensaHook(opts({ fetchImpl })),
       fakeReq({ headers: { 'x-request-id': 'req-1' } }),
       fakeRes(paid),
+      () => expect(fetchImpl).toHaveBeenCalledOnce(),
     );
 
     expect(next).toHaveBeenCalledOnce();
@@ -470,6 +489,7 @@ describe('attachAccensaHook', () => {
       attachAccensaHook(opts({ fetchImpl })),
       fakeReq({ path: '/api/quote/abc123', route: { path: '/api/quote/:id' } as Request['route'] }),
       fakeRes(paid),
+      () => expect(fetchImpl).toHaveBeenCalledOnce(),
     );
 
     expect(bodyOf(fetchImpl).route).toBe('/api/quote/:id');
@@ -507,11 +527,12 @@ describe('attachAccensaHook', () => {
     });
 
     const next = await runHook(
-      // Not testing retry behaviour here — one attempt keeps this in step
-      // with runHook's single setImmediate tick.
+      // Not testing retry behaviour here — one attempt keeps the wait short,
+      // and the settled condition stops at the first report either way.
       attachAccensaHook(opts({ fetchImpl, onError, retry: { maxRetries: 0 } })),
       fakeReq(),
       fakeRes(paid),
+      () => expect(onError).toHaveBeenCalledOnce(),
     );
 
     expect(next).toHaveBeenCalledOnce();
@@ -532,7 +553,10 @@ describe('attachAccensaHook', () => {
 
     // runHook is async, so a synchronous not.toThrow() would never observe a
     // rejection — it would float as an unhandled rejection instead. Await it.
-    await expect(runHook(middleware, fakeReq(), fakeRes(paid))).resolves.toBeDefined();
+    const flushed = runHook(middleware, fakeReq(), fakeRes(paid), () => {
+      expect(onError).toHaveBeenCalled();
+    });
+    await expect(flushed).resolves.toBeDefined();
     expect(onError).toHaveBeenCalled();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
@@ -550,6 +574,7 @@ describe('attachAccensaHook', () => {
       middleware as typeof middleware & Parameters<typeof runHook>[0],
       req,
       fakeRes(paid),
+      () => expect(fetchImpl).toHaveBeenCalledOnce(),
     );
 
     expect(bodyOf(fetchImpl)).toMatchObject({

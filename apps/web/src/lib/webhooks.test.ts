@@ -11,6 +11,7 @@ import {
   enqueueWebhookDelivery,
   payloadFromRow,
   pendingDue,
+  sendWebhook,
   webhookSummary,
 } from './webhooks';
 
@@ -133,6 +134,71 @@ describe('enqueueWebhookDelivery', () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+});
+
+describe('sendWebhook — the network edge of one attempt (#350)', () => {
+  it('captures status, error and Retry-After without touching the database', async () => {
+    const responseInit = { status: 429, headers: { 'retry-after': '30' } };
+    const response = new globalThis.Response(null, responseInit);
+    const fetchImpl = vi.fn<typeof fetch>(async () => response);
+
+    const outcome = await sendWebhook({
+      deliveryId: 7,
+      url: 'https://merchant.example/hook',
+      body: '{}',
+      signingKey: '11'.repeat(32),
+      timeoutMs: 1_000,
+      fetchImpl,
+    });
+
+    expect(outcome).toEqual({
+      statusCode: 429,
+      error: 'HTTP 429',
+      retryAfter: '30',
+      transportError: false,
+    });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe('https://merchant.example/hook');
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    expect(headers['X-Accensa-Delivery-Id']).toBe('7');
+  });
+
+  it('reports a host that never answers as a transport error, never a throw', async () => {
+    const outcome = await sendWebhook({
+      deliveryId: 1,
+      url: 'https://blackhole.test/hook',
+      body: '{}',
+      signingKey: '11'.repeat(32),
+      timeoutMs: 50,
+      fetchImpl: (() => new Promise<Response>(() => {})) as unknown as typeof fetch,
+    });
+
+    expect(outcome).toEqual({
+      statusCode: null,
+      error: 'webhook timeout',
+      retryAfter: null,
+      transportError: true,
+    });
+  }, 5_000);
+
+  it('treats an unusable signing key as an outcome, with no request sent', async () => {
+    const fetchImpl = vi.fn(() => {
+      throw new Error('must not be called');
+    });
+
+    const outcome = await sendWebhook({
+      deliveryId: 1,
+      url: 'https://merchant.example/hook',
+      body: '{}',
+      signingKey: 'not-a-hex-key',
+      timeoutMs: 50,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(outcome.transportError).toBe(true);
+    expect(outcome.statusCode).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 

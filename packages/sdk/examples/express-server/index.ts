@@ -17,28 +17,27 @@ import {
 import { HTTPFacilitatorClient } from '@x402/core/server';
 import { ExactStellarScheme } from '@x402/stellar/exact/server';
 import { createSettleHook, attachAccensaHook } from '@accensa/sdk';
+import { EnvError, loadEnv, type ExampleEnv } from './env';
 
 const app = express();
-const PORT = Number(process.env.PORT ?? 3001);
+
+// Everything below reads validated configuration: a missing `.env`, missing
+// required variables, or a bad PORT all resolve through `env.ts` — reported as
+// one readable block with a clean exit code, never an unhandled stack trace.
+const env = loadEnvOrExit();
+const PORT = env.port;
 
 const NETWORK = 'stellar:testnet';
 
-/**
- * Native XLM's Stellar Asset Contract on testnet.
- *
- * Priced as an explicit asset + amount rather than a bare number: the default
- * money parser assumes USDC, and the asset must match what the Accensa indexer
- * watches or the settled transfer is never picked up.
- */
-const XLM_SAC =
-  process.env.TOKEN_ADDRESS ?? 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
+/** Asset to price in — defaulted, documented, and validated in env.ts. */
+const XLM_SAC = env.tokenAddress;
 
 const accensa = {
-  indexerUrl: process.env.ACCENSA_URL ?? 'http://localhost:3000',
+  indexerUrl: env.indexerUrl,
   // Reports are authenticated by an Ed25519 signature over the exact body
   // bytes, not a shared bearer token. The Accensa deployment holds the matching
   // public key and rejects anything it cannot verify with 401.
-  privateKeyHex: required('ACCENSA_PRIVATE_KEY_HEX'),
+  privateKeyHex: env.privateKeyHex,
 };
 
 // ---------------------------------------------------------------------------
@@ -56,7 +55,7 @@ const accensa = {
  */
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const token = req.headers.authorization?.replace(/^Bearer /, '');
-  if (!token || token !== process.env.ADMIN_TOKEN) {
+  if (!token || token !== env.adminToken) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
@@ -106,7 +105,7 @@ const routesConfig = {
       scheme: 'exact',
       price: { asset: XLM_SAC, amount: '1000' }, // 1000 stroops = 0.0001 XLM
       network: NETWORK,
-      payTo: required('MERCHANT_ADDRESS'),
+      payTo: env.merchantAddress,
     },
   },
 };
@@ -153,14 +152,19 @@ app.listen(PORT, () => {
 });
 
 /**
- * Fails at boot rather than at settlement time.
+ * Boots the example, or explains exactly why it cannot, then exits non-zero.
  *
- * Without this, a missing signing key produces a server that takes payments
- * happily and silently drops every attribution — the failure would only show
- * up as an empty routes column in the dashboard days later.
+ * The failure modes live in `env.ts`: a missing `.env` (judged on contents),
+ * missing required variables reported together, and a bad PORT falling back
+ * with a log line. They surface as one readable block instead of an unhandled
+ * `Error` thrown from module scope — the previous behaviour, and exactly what
+ * made a half-filled `.env` hard to diagnose.
  */
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is required. Copy .env.example to .env and fill it in.`);
-  return value;
+function loadEnvOrExit(): ExampleEnv {
+  try {
+    return loadEnv();
+  } catch (error) {
+    console.error(error instanceof EnvError ? `❌ ${error.message}` : error);
+    process.exit(1);
+  }
 }
