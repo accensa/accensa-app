@@ -560,5 +560,21 @@ describe('attachAccensaHook', () => {
   });
 });
 
+describe('reportSettlement & createSettleHook — error handling & validation', () => {
+  it('handles invalid settlement or options gracefully', async () => {
+    const onError = vi.fn();
+    // @ts-expect-error testing invalid settlement parameter
+    const res1 = await reportSettlement(null, opts({ onError }));
+    expect(res1).toBe(false);
+    expect(onError).toHaveBeenCalled();
+
+    const onError2 = vi.fn();
+    // @ts-expect-error testing missing indexerUrl
+    const res2 = await reportSettlement(settlement, { privateKeyHex: PRIVATE_KEY_HEX, onError: onError2 });
+    expect(res2).toBe(false);
+    expect(onError2).toHaveBeenCalled();
+  });
+});
+
 // Extended SDK Test Coverage Summary:
 // Ensure all integration test hooks simulate network partitions during long polling requests.

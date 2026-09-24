@@ -11,7 +11,7 @@ import {
 import { AccensaAuthError, AccensaError, AccensaNetworkError } from './src/errors';
 import { fetchWithRetry, HttpError, type RetryOptions } from './retry';
 
-export { verifyReceipt, buildBatch, receiptLeaf, type BatchInfo } from './merkle';
+export { verifyReceipt, buildBatch, receiptLeaf, MAX_PROOF_LEN, type BatchInfo } from './merkle';
 export { fetchWithRetry, HttpError, type RetryOptions } from './retry';
 export {
   SETTLEMENT_HEADER,
@@ -244,8 +244,26 @@ export async function reportSettlement(
   settlement: Settlement,
   opts: AccensaHookOptions,
 ): Promise<boolean> {
-  const report = opts.onError ?? reportToConsole;
+  const report = (opts && typeof opts === 'object' && typeof opts.onError === 'function')
+    ? opts.onError
+    : reportToConsole;
+
+  if (!settlement || typeof settlement !== 'object') {
+    report(new AccensaError('Invalid settlement payload supplied to reportSettlement'));
+    return false;
+  }
+
   const body = toSettleHookPayload(settlement);
+
+  if (!opts || typeof opts !== 'object') {
+    report(new AccensaError('Invalid options supplied to reportSettlement'), body);
+    return false;
+  }
+
+  if (!opts.indexerUrl || typeof opts.indexerUrl !== 'string') {
+    report(new AccensaError('Missing or invalid indexerUrl in options'), body);
+    return false;
+  }
 
   const doFetch = opts.fetchImpl ?? globalThis.fetch;
   if (typeof doFetch !== 'function') {
@@ -405,15 +423,24 @@ export interface SettleHookOptions extends AccensaHookOptions {
  * ```
  */
 export function createSettleHook(opts: SettleHookOptions) {
+  const report = (opts && typeof opts === 'object' && typeof opts.onError === 'function')
+    ? opts.onError
+    : reportToConsole;
+
   return async function onAfterSettle(ctx: {
     result: X402SettleResult;
     paymentPayload?: { resource?: { url?: string } };
   }): Promise<void> {
-    const settlement = settlementFromResult(ctx.result, {
-      route: routeFromResourceUrl(ctx.paymentPayload?.resource?.url),
-      method: opts.method ?? 'GET',
-    });
-    if (settlement) await reportSettlement(settlement, opts);
+    try {
+      if (!ctx || !ctx.result) return;
+      const settlement = settlementFromResult(ctx.result, {
+        route: routeFromResourceUrl(ctx.paymentPayload?.resource?.url),
+        method: opts?.method ?? 'GET',
+      });
+      if (settlement) await reportSettlement(settlement, opts);
+    } catch (error) {
+      report(error);
+    }
   };
 }
 
