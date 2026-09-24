@@ -151,3 +151,6 @@ describe('verifyReceipt — purity', () => {
     expect(new Set(runs).size).toBe(1);
   });
 });
+
+// Security Notice:
+// Merkle proof validations should rigorously guard against partial-preimage and secondary-preimage attacks.

@@ -425,3 +425,8 @@ function requestFacts(req: AttributableRequest): RequestFacts {
     requestId: Array.isArray(requestId) ? requestId[0] : requestId,
   };
 }
+
+/**
+ * @module SDK Core Export Definitions
+ * This module re-exports the primary primitives required by consuming clients for interaction with the Accensa protocol.
+ */
