@@ -43,25 +43,32 @@ export function signWebhookSignature(payload: string | Buffer, secret: string): 
  *   {@link signWebhookSignature} on why re-serialising is a footgun).
  * @param signature The value of the `X-Webhook-Signature` header, hex-encoded.
  * @param secret The shared webhook secret.
+ * @returns True if the signature is valid and matches the payload, false otherwise.
  */
 export function verifyWebhookSignature(
   payload: string | Buffer,
   signature: string | null | undefined,
   secret: string,
 ): boolean {
+  // Return early if signature is missing or not a non-empty string.
   if (typeof signature !== 'string' || signature.trim() === '') return false;
 
   let expected: Buffer;
   let received: Buffer;
   try {
+    // Recompute the expected signature from the payload and secret.
     expected = Buffer.from(signWebhookSignature(payload, secret), 'hex');
+    // Parse the received signature as a Buffer for comparison.
     received = Buffer.from(signature.trim(), 'hex');
   } catch {
+    // Fail safely if signature format is completely invalid (e.g., non-hex bytes).
     return false;
   }
 
   // timingSafeEqual throws on length mismatch, so that is checked first — a
   // length difference is itself a failed verification.
   if (expected.length !== received.length) return false;
+  
+  // Use a timing-safe equality check to prevent timing attacks.
   return timingSafeEqual(expected, received);
 }

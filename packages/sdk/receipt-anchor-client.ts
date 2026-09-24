@@ -25,8 +25,10 @@ import {
 /** The Accensa-operated `ReceiptAnchor` deployment on Stellar testnet. */
 export const DEFAULT_CONTRACT_ID = 'CBHRJU7CF4XIFRNDITFHNQHABKBMFM2FYFHLGWN3JGSFYYCDSMDAWPRV';
 
+/** The default Soroban RPC endpoint for the Stellar testnet. */
 export const DEFAULT_RPC_URL = 'https://soroban-testnet.stellar.org';
 
+/** The default Stellar network passphrase, which targets the testnet. */
 export const DEFAULT_NETWORK_PASSPHRASE = Networks.TESTNET;
 
 /**
@@ -36,10 +38,15 @@ export const DEFAULT_NETWORK_PASSPHRASE = Networks.TESTNET;
  */
 export const DEFAULT_SIMULATION_SOURCE = 'GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6';
 
+/** Represents an anchored batch of receipts retrieved from the blockchain. */
 export interface BatchRecord {
+  /** The Merkle root hash of the receipts in this batch, as a hex string. */
   root: string;
+  /** The total number of receipts included in this batch. */
   count: number;
+  /** The start timestamp of the period this batch covers (Unix seconds). */
   periodStart: number;
+  /** The end timestamp of the period this batch covers (Unix seconds). */
   periodEnd: number;
 }
 
@@ -106,6 +113,10 @@ export class ReceiptAnchorClient {
    */
   private contract: Contract | null = null;
 
+  /**
+   * Initializes a new ReceiptAnchorClient with the provided options.
+   * @param opts Configuration options for the client. If omitted, connects to the default testnet contract.
+   */
   constructor(opts: ReceiptAnchorClientOptions = {}) {
     this.contractId = opts.contractId ?? DEFAULT_CONTRACT_ID;
     this.rpcUrl = opts.rpcUrl ?? DEFAULT_RPC_URL;
@@ -122,7 +133,13 @@ export class ReceiptAnchorClient {
     return this.contract;
   }
 
-  /** Runs one read-only contract method call and returns the decoded result. */
+  /**
+   * Runs one read-only contract method call and returns the decoded result.
+   *
+   * @param method The name of the contract method to simulate.
+   * @param args The arguments to pass to the contract method.
+   * @returns The decoded result of the simulation.
+   */
   private async simulate(method: string, args: xdr.ScVal[]): Promise<unknown> {
     const tx = buildSimulationTransaction({
       contract: this.contractInstance,
@@ -141,6 +158,11 @@ export class ReceiptAnchorClient {
    * Returns the contract's own answer - the point of verifying on-chain
    * rather than with {@link verifyReceipt} is that this number comes from the
    * ledger, not from Accensa.
+   *
+   * @param batchId The ID of the batch to verify against.
+   * @param leaf The leaf hash of the receipt to verify.
+   * @param proof The Merkle proof for the leaf in the batch's Merkle tree.
+   * @returns True if the receipt is successfully verified, false otherwise.
    */
   async verifyReceiptOnChain(batchId: number, leaf: string, proof: string[]): Promise<boolean> {
     const result = await this.simulate('verify_receipt', [
@@ -151,7 +173,12 @@ export class ReceiptAnchorClient {
     return result === true;
   }
 
-  /** Reads an anchored batch from {@link contractId}. Throws if the batch does not exist. */
+  /**
+   * Reads an anchored batch from {@link contractId}. Throws if the batch does not exist.
+   *
+   * @param batchId The unique numeric ID of the batch to retrieve.
+   * @returns The parsed BatchRecord details.
+   */
   async getBatch(batchId: number): Promise<BatchRecord> {
     const raw = (await this.simulate('get_batch', [
       nativeToScVal(batchId, { type: 'u64' }),

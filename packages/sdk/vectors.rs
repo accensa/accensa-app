@@ -10,11 +10,19 @@
 //   cp packages/sdk/vectors.rs \
 //      ../accensa-contracts/contracts/receipt-anchor/src/vectors.rs
 
+/// Represents a single test vector for verifying Merkle tree proofs.
+/// These vectors are used across different languages (TypeScript/Rust)
+/// to ensure cross-platform compatibility of the Merkle verification logic.
 pub struct Vector {
+    /// A human-readable description of what this specific test vector validates.
     pub name: &'static str,
+    /// The 32-byte hash of the leaf node being proven.
     pub leaf: [u8; 32],
+    /// The Merkle proof: a sequence of 32-byte hashes used to compute the root.
     pub proof: &'static [[u8; 32]],
+    /// The expected 32-byte Merkle root hash.
     pub root: [u8; 32],
+    /// Whether this combination of leaf, proof, and root is expected to be valid.
     pub expected: bool,
 }
 
