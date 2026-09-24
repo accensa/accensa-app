@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@accensa/sdk": "workspace:^",
+    "@accensa/shared": "workspace:^",
     "@albedo-link/intent": "^0.13.0",
     "@react-pdf/renderer": "^4.9.0",
     "@sentry/nextjs": "^8.20.0",
