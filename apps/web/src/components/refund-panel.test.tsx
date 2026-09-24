@@ -55,6 +55,23 @@ describe('RefundPanelView', () => {
     expect(html).toContain('Refund confirmed on-chain');
     expect(html).toContain('/tx/DEADBEEF');
   });
+
+  it('renders a connect wallet button when no merchant wallet is connected', () => {
+    const html = renderToString(
+      <RefundPanelView
+        phase={{ kind: 'idle' }}
+        merchant={null}
+        payment={payment}
+        error={null}
+        onCheck={noop}
+        onConfirm={noop}
+        onReset={noop}
+        onConnect={noop}
+      />,
+    );
+    expect(html).toContain('Connect wallet');
+    expect(html).toContain('Connect a Stellar wallet to issue refunds.');
+  });
 });
 
 // Compile-time contract: `RefundPanelView` handles every `Phase` in an

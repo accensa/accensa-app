@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 
+/** Maximum allowed length for a Merkle proof, matching the contract ProofTooLong constraint. */
+export const MAX_PROOF_LEN = 32;
+
 /**
  * Verifies a payment receipt against an anchored batch root, off-chain.
  *
@@ -11,9 +14,13 @@ import { createHash } from 'node:crypto';
  * @param leaf  hex-encoded 32-byte hash of the receipt (payment hash + metadata)
  * @param proof hex-encoded 32-byte sibling hashes, leaf-to-root order
  * @param root  hex-encoded 32-byte Merkle root anchored on-chain
- * @throws if any input is not a hex-encoded 32-byte value
+ * @throws if any input is not a hex-encoded 32-byte value or if proof length exceeds MAX_PROOF_LEN
  */
 export function verifyReceipt(leaf: string, proof: string[], root: string): boolean {
+  if (proof.length > MAX_PROOF_LEN) {
+    throw new Error(`proof length exceeds MAX_PROOF_LEN (${MAX_PROOF_LEN})`);
+  }
+
   let computed = decodeHash(leaf, 'leaf');
 
   for (const siblingHex of proof) {
