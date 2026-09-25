@@ -21,6 +21,7 @@
     "@accensa/sdk": "workspace:^",
     "@accensa/shared": "workspace:^",
     "@albedo-link/intent": "^0.13.0",
+    "@qrcode/react": "1.0.0-beta.3",
     "@react-pdf/renderer": "^4.9.0",
     "@sentry/nextjs": "^8.20.0",
     "@stellar/freighter-api": "^6.0.1",
@@ -35,7 +36,9 @@
     "pg": "^8.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "swr": "^2.5.1"
+    "recharts": "^3.10.1",
+    "swr": "^2.5.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -44,6 +47,8 @@
     "@storybook/nextjs": "^8.6.14",
     "@storybook/react": "^8.6.14",
     "@tailwindcss/postcss": "^4.3.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^20.19.43",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.17",

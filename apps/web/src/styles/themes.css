@@ -1,0 +1,67 @@
+:root {
+  /* Light Theme */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #64748b;
+  --border-primary: #e2e8f0;
+  --border-secondary: #cbd5e1;
+  --accent-primary: #10b981;
+  --accent-secondary: #059669;
+  --accent-tertiary: #047857;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --glass-bg: rgba(255, 255, 255, 0.5);
+  --glass-border: rgba(226, 232, 240, 0.6);
+  --glass-shadow: rgba(0, 0, 0, 0.12);
+  --glass-inset: rgba(255, 255, 255, 0.8);
+}
+
+[data-theme='dark'] {
+  /* Dark Theme */
+  --bg-primary: #04090f;
+  --bg-secondary: #0c131d;
+  --bg-tertiary: #0a111a;
+  --text-primary: #ffffff;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --border-primary: rgba(255, 255, 255, 0.1);
+  --border-secondary: rgba(255, 255, 255, 0.2);
+  --accent-primary: #10b981;
+  --accent-secondary: #34d399;
+  --accent-tertiary: #6ee7b7;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --glass-bg: rgba(255, 255, 255, 0.05);
+  --glass-border: rgba(255, 255, 255, 0.2);
+  --glass-shadow: rgba(0, 0, 0, 0.5);
+  --glass-inset: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme='oled'] {
+  /* OLED High-Contrast Theme */
+  --bg-primary: #000000;
+  --bg-secondary: #0a0a0a;
+  --bg-tertiary: #111111;
+  --text-primary: #ffffff;
+  --text-secondary: #e5e5e5;
+  --text-tertiary: #a3a3a3;
+  --border-primary: #333333;
+  --border-secondary: #404040;
+  --accent-primary: #00ff88;
+  --accent-secondary: #00cc6a;
+  --accent-tertiary: #009950;
+  --success: #00ff88;
+  --warning: #ffaa00;
+  --error: #ff4444;
+  --glass-bg: rgba(0, 0, 0, 0.8);
+  --glass-border: #333333;
+  --glass-shadow: rgba(0, 0, 0, 0.8);
+  --glass-inset: rgba(255, 255, 255, 0.1);
+}
+
+/* Note: CSS variables are defined above. Tailwind classes will use these variables via data-theme attribute */

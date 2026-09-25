@@ -16,5 +16,6 @@ export default defineConfig({
       // invalid cases pass the value explicitly.
       NEXT_PUBLIC_STELLAR_NETWORK: 'testnet',
     },
+    setupFiles: ['./vitest.setup.ts'],
   },
 });

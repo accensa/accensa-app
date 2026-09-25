@@ -79,6 +79,37 @@ export {
   type OpeningProof,
   type ZkVerifier,
 } from './src/zk-proof';
+/** Escrow dispute and refund request functionality (#387). */
+export {
+  DisputeReason,
+  submitDispute,
+  validateDisputeRequest,
+  estimateDisputeFee,
+  mapDisputeReason,
+  type DisputeRequest,
+  type DisputeOptions,
+  type DisputeResult,
+} from './src/dispute';
+
+// Widget exports are browser-only (Web Components require DOM)
+// Import conditionally to avoid Node.js test failures
+if (typeof window !== 'undefined') {
+  /** Embeddable checkout widget for third-party integration (#390). */
+  export {
+    AccensaCheckoutWidget,
+    type CheckoutConfig,
+    type WidgetMessage,
+    type ParentMessage,
+  } from './src/widget/checkout-widget';
+  export {
+    initWidgetHost,
+    sendToWidget,
+    embedWidget,
+    createWidget,
+    type WidgetHostOptions,
+    type PaymentRequest,
+  } from './src/widget';
+}
 
 /**
  * This package deliberately ships no paywall middleware.

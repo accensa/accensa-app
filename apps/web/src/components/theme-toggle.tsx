@@ -4,9 +4,9 @@ import * as React from 'react';
 import { Moon, Sun, Monitor } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
-type Theme = 'light' | 'dark' | 'system';
+type Theme = 'light' | 'dark' | 'oled' | 'system';
 
-const THEME_ORDER: Theme[] = ['light', 'dark', 'system'];
+const THEME_ORDER: Theme[] = ['light', 'dark', 'oled', 'system'];
 
 function getThemeLabel(theme: Theme) {
   switch (theme) {
@@ -14,6 +14,8 @@ function getThemeLabel(theme: Theme) {
       return 'Light mode';
     case 'dark':
       return 'Dark mode';
+    case 'oled':
+      return 'OLED mode';
     case 'system':
       return 'System theme';
   }
@@ -25,6 +27,13 @@ function ThemeIcon({ theme }: { theme: Theme }) {
       return <Sun className="h-4 w-4 pointer-events-none" />;
     case 'dark':
       return <Moon className="h-4 w-4 pointer-events-none" />;
+    case 'oled':
+      return <div className="h-4 w-4 pointer-events-none relative">
+        <div className="absolute inset-0 bg-black rounded-sm" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-2 h-2 bg-emerald-400 rounded-full" />
+        </div>
+      </div>;
     case 'system':
       return <Monitor className="h-4 w-4 pointer-events-none" />;
   }
