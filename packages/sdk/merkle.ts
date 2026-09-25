@@ -1,5 +1,26 @@
 import { createHash } from 'node:crypto';
 
+export class MerkleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MerkleError';
+  }
+}
+
+export class HashDecodeError extends MerkleError {
+  constructor(public readonly label: string) {
+    super(`${label} must be a hex-encoded 32-byte hash`);
+    this.name = 'HashDecodeError';
+  }
+}
+
+export class EmptyBatchError extends MerkleError {
+  constructor() {
+    super('buildBatch requires at least one leaf');
+    this.name = 'EmptyBatchError';
+  }
+}
+
 /**
  * Verifies a payment receipt against an anchored batch root, off-chain.
  *
@@ -36,8 +57,11 @@ export function verifyReceipt(leaf: string, proof: string[], root: string): bool
  * compared as a shorter buffer.
  */
 function decodeHash(value: string, label: string): Buffer {
+  if (typeof value !== 'string') {
+    throw new MerkleError(`${label} must be a string`);
+  }
   if (!/^[0-9a-fA-F]{64}$/.test(value)) {
-    throw new Error(`${label} must be a hex-encoded 32-byte hash`);
+    throw new HashDecodeError(label);
   }
   return Buffer.from(value, 'hex');
 }
@@ -101,8 +125,8 @@ function proofFor(levels: Buffer[][], index: number): Buffer[] {
  * @throws if `leaves` is empty, or if any value is not a hex-encoded 32-byte hash
  */
 export function buildBatch(leaves: string[]): BatchInfo {
-  if (leaves.length === 0) {
-    throw new Error('buildBatch requires at least one leaf');
+  if (!Array.isArray(leaves) || leaves.length === 0) {
+    throw new EmptyBatchError();
   }
 
   const normalised = leaves.map((leaf, i) => {

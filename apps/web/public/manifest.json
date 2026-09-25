@@ -1,0 +1,21 @@
+{
+  "name": "Accensa POS",
+  "short_name": "POS",
+  "description": "Accensa Retail Point of Sale",
+  "start_url": "/merchant/pos",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1e40af",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

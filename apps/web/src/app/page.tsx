@@ -7,7 +7,7 @@ import { RECEIPT_ANCHOR_ID } from '@/lib/receipt-anchor';
 import { explorerContractUrl } from '@/lib/explorer';
 import { PageContainer } from '@/components/page-container';
 import { SectionHeading } from '@/components/section-heading';
-import { CtaButton } from '@/components/cta-button';
+import { CtaButton } from '@accensa/shared';
 
 const REFUND_VAULT_ID =
   process.env.NEXT_PUBLIC_REFUND_VAULT_ID ??

@@ -39,7 +39,10 @@ export default defineConfig({
       maxDiffPixelRatio: 0.01,
     },
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+  ],
   webServer: {
     // `next dev` rather than a production build: the app's API routes are
     // type-checked lazily per request, and the e2e specs intercept every API
@@ -55,6 +58,7 @@ export default defineConfig({
       JWT_SECRET_KEY: 'playwright-e2e-secret-key',
       MERCHANT_ADDRESS: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/accensa_e2e_none',
+      NEXT_PUBLIC_STELLAR_NETWORK: 'testnet',
     },
   },
 });

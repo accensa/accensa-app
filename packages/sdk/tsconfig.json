@@ -9,8 +9,9 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "jsx": "react-jsx"
   },
-  "include": ["*.ts", "src/**/*.ts", "generated/*.ts"],
+  "include": ["*.ts", "src/**/*.ts", "src/**/*.tsx", "generated/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.d.ts", "examples"]
 }

@@ -180,12 +180,12 @@ export function Dashboard() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const pageParam = Number(searchParams.get('page') ?? '1');
+  const pageParam = Number(searchParams?.get('page') ?? '1');
   const page = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
 
   const goToPage = useCallback(
     (next: number) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(searchParams?.toString() ?? '');
       if (next <= 1) params.delete('page');
       else params.set('page', String(next));
       router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ''}`, {
