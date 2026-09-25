@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Keypair, xdr, Address } from '@stellar/stellar-sdk';
+import { Keypair, xdr, Address, Networks } from '@stellar/stellar-sdk';
 import {
   buildSorobanAuthEntry,
   parseSimulationResources,
