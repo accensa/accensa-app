@@ -21,6 +21,7 @@
     "@accensa/sdk": "workspace:^",
     "@accensa/shared": "workspace:^",
     "@albedo-link/intent": "^0.13.0",
+    "@qrcode/react": "1.0.0-beta.3",
     "@react-pdf/renderer": "^4.9.0",
     "@sentry/nextjs": "^8.20.0",
     "@stellar/freighter-api": "^6.0.1",
@@ -35,6 +36,7 @@
     "pg": "^8.22.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "recharts": "^3.10.1",
     "swr": "^2.5.1"
   },
   "devDependencies": {
