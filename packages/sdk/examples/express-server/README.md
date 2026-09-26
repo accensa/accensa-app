@@ -38,6 +38,11 @@ time. A server that takes payments while silently dropping every attribution is
 worse than one that refuses to start — the failure would otherwise surface days
 later as an empty routes column.
 
+All of the variables above are validated in one pass by `env.ts`: a missing
+`.env` is judged on its contents instead of crashing before the example runs,
+every missing required variable is listed in a single boot message, and each
+optional fallback is logged so nothing degrades silently.
+
 ## Trying it
 
 ```bash

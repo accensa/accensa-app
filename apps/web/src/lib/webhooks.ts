@@ -8,6 +8,11 @@ import type { Client } from 'pg';
  * `webhook_deliveries` row in the same transaction as the payment; a separate
  * path (`/api/webhooks/deliver`) ships the payload. A host that sleeps, 500s,
  * or rate-limits cannot stall the ledger cursor.
+ *
+ * The module reads top to bottom in layers (#350): pure policy (retry,
+ * backoff, canonical payload, signing), queue primitives (enqueue, select,
+ * claim, release), the outbound call in `sendWebhook`, per-row recording in
+ * `recordAttempt`, and `deliverDue` as the thin orchestrator over them.
  */
 
 export const MAX_ATTEMPTS = 8;
@@ -131,6 +136,206 @@ export interface AttemptResult {
   error: string | null;
 }
 
+/** What one outbound attempt observed, before it is recorded. */
+export interface DeliveryOutcome {
+  statusCode: number | null;
+  error: string | null;
+  retryAfter: string | null;
+  transportError: boolean;
+}
+
+/**
+ * Signs and POSTs one delivery, bounded by `timeoutMs` (#350).
+ *
+ * The whole network side of an attempt lives here — sign, send, race the
+ * clock — with no database in it, so the edge cases (an unusable signing key,
+ * a host that never answers, a Retry-After worth honouring) can be exercised
+ * on their own. Outcomes are returned, never thrown: the caller records the
+ * attempt against the delivery row either way.
+ */
+export async function sendWebhook(opts: {
+  deliveryId: number;
+  url: string;
+  body: string;
+  signingKey: string;
+  timeoutMs: number;
+  fetchImpl: typeof fetch;
+}): Promise<DeliveryOutcome> {
+  try {
+    const signature = signBody(opts.body, opts.signingKey);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+    try {
+      const fetchPromise = opts.fetchImpl(opts.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Signature': signature,
+          'X-Accensa-Timestamp': String(Math.floor(Date.now() / 1000)),
+          'X-Accensa-Delivery-Id': String(opts.deliveryId),
+        },
+        body: opts.body,
+        signal: controller.signal,
+      });
+      const res = await Promise.race([
+        fetchPromise,
+        new Promise<never>((_, reject) => {
+          const id = setTimeout(
+            () => reject(Object.assign(new Error('webhook timeout'), { name: 'TimeoutError' })),
+            opts.timeoutMs,
+          );
+          controller.signal.addEventListener('abort', () => {
+            clearTimeout(id);
+            reject(Object.assign(new Error('webhook timeout'), { name: 'TimeoutError' }));
+          });
+        }),
+      ]);
+      return {
+        statusCode: res.status,
+        error: res.ok ? null : `HTTP ${res.status}`,
+        retryAfter: res.headers.get('retry-after'),
+        transportError: false,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (e) {
+    return {
+      statusCode: null,
+      error: e instanceof Error ? e.message : 'transport error',
+      retryAfter: null,
+      transportError: true,
+    };
+  }
+}
+
+/** One row that was due for (re)delivery. */
+interface DueRow {
+  id: string;
+  payment_tx_hash: string;
+  url: string;
+  payload: PaymentPayload;
+  attempts: number;
+  created_at: Date;
+}
+
+/**
+ * Returns deliveries stranded in `'delivering'` — a run that crashed between
+ * claiming and recording — back to `'pending'` so they are not lost.
+ */
+async function reclaimStaleDeliveries(client: Client): Promise<void> {
+  await client.query(
+    `UPDATE webhook_deliveries
+     SET status = 'pending', updated_at = now()
+     WHERE status = 'delivering' AND updated_at < now() - interval '1 minute'`,
+  );
+}
+
+/** The pending rows whose retry time has arrived, oldest first. */
+async function selectDueRows(client: Client, now: Date): Promise<DueRow[]> {
+  const due = await client.query<DueRow>(
+    `SELECT id, payment_tx_hash, url, payload, attempts, created_at
+     FROM webhook_deliveries
+     WHERE status = 'pending'
+       AND (next_retry_at IS NULL OR next_retry_at <= $1)
+     ORDER BY next_retry_at NULLS FIRST, id ASC
+     LIMIT 50`,
+    [now],
+  );
+  return due.rows;
+}
+
+/**
+ * Claims rows one at a time, moving each from `'pending'` to `'delivering'`
+ * only if it is still pending. A row another worker grabbed concurrently
+ * yields `rowCount = 0` and is skipped — two runs never ship one delivery.
+ */
+async function claimDueRows(client: Client, rows: DueRow[]): Promise<DueRow[]> {
+  const claimed: DueRow[] = [];
+  for (const row of rows) {
+    const take = await client.query(
+      `UPDATE webhook_deliveries SET status = 'delivering', updated_at = now()
+       WHERE id = $1 AND status = 'pending'
+       RETURNING id`,
+      [row.id],
+    );
+    if ((take.rowCount ?? 0) > 0) claimed.push(row);
+  }
+  return claimed;
+}
+
+/** Hands a claimed row back to the queue when the run's budget is spent. */
+async function releaseClaim(client: Client, id: string): Promise<void> {
+  await client.query(
+    `UPDATE webhook_deliveries SET status = 'pending', updated_at = now() WHERE id = $1 AND status = 'delivering'`,
+    [id],
+  );
+}
+
+/** Everything one row's delivery needs that the run resolved up front. */
+interface DeliveryContext {
+  signingKey: string | null | undefined;
+  timeoutMs: number;
+  fetchImpl: typeof fetch;
+}
+
+/**
+ * Takes one claimed row through attempt, recording, and tallying, and reports
+ * how it ended: `'delivered'`, `'failed'` (terminal or refused), or
+ * `'retried'` (rescheduled for a later run).
+ */
+async function deliverRow(
+  client: Client,
+  row: DueRow,
+  ctx: DeliveryContext,
+): Promise<'delivered' | 'failed' | 'retried'> {
+  const body = typeof row.payload === 'string' ? row.payload : canonicalPayload(row.payload);
+  const attemptNumber = row.attempts + 1;
+  const createdAtMs =
+    row.created_at instanceof Date ? row.created_at.getTime() : Date.parse(String(row.created_at));
+
+  // Without a signing key nothing may be sent: record the refusal so an
+  // operator can see why the queue is not moving. This branch counts as
+  // failed — never as a retry — exactly as it always has (#165).
+  if (!ctx.signingKey) {
+    await recordAttempt(client, {
+      id: Number(row.id),
+      attemptNumber,
+      statusCode: null,
+      error: 'WEBHOOK_SIGNING_KEY is not configured; refusing to send an unsigned payload',
+      createdAtMs,
+      nowMs: Date.now(),
+      retryAfter: null,
+      transportError: true,
+    });
+    return 'failed';
+  }
+
+  const outcome = await sendWebhook({
+    deliveryId: Number(row.id),
+    url: row.url,
+    body,
+    signingKey: ctx.signingKey,
+    timeoutMs: ctx.timeoutMs,
+    fetchImpl: ctx.fetchImpl,
+  });
+
+  const terminal = await recordAttempt(client, {
+    id: Number(row.id),
+    attemptNumber,
+    statusCode: outcome.statusCode,
+    error: outcome.error,
+    createdAtMs,
+    nowMs: Date.now(),
+    retryAfter: outcome.retryAfter,
+    transportError: outcome.transportError,
+  });
+
+  if (terminal.status === 'delivered') return 'delivered';
+  if (terminal.status === 'failed' || terminal.status === 'dead_letter') return 'failed';
+  return 'retried';
+}
+
 export async function deliverDue(
   client: Client,
   opts: {
@@ -149,134 +354,25 @@ export async function deliverDue(
   const signingKey =
     opts.signingKey === undefined ? process.env.WEBHOOK_SIGNING_KEY : opts.signingKey;
 
-  await client.query(
-    `UPDATE webhook_deliveries
-     SET status = 'pending', updated_at = now()
-     WHERE status = 'delivering' AND updated_at < now() - interval '1 minute'`,
-  );
-
-  const due = await client.query<{
-    id: string;
-    payment_tx_hash: string;
-    url: string;
-    payload: PaymentPayload;
-    attempts: number;
-    created_at: Date;
-  }>(
-    `SELECT id, payment_tx_hash, url, payload, attempts, created_at
-     FROM webhook_deliveries
-     WHERE status = 'pending'
-       AND (next_retry_at IS NULL OR next_retry_at <= $1)
-     ORDER BY next_retry_at NULLS FIRST, id ASC
-     LIMIT 50`,
-    [now],
-  );
-
-  const claimed: typeof due.rows = [];
-  for (const row of due.rows) {
-    const take = await client.query(
-      `UPDATE webhook_deliveries SET status = 'delivering', updated_at = now()
-       WHERE id = $1 AND status = 'pending'
-       RETURNING id`,
-      [row.id],
-    );
-    if ((take.rowCount ?? 0) > 0) claimed.push(row);
-  }
+  await reclaimStaleDeliveries(client);
+  const claimed = await claimDueRows(client, await selectDueRows(client, now));
 
   let delivered = 0;
   let failed = 0;
   let retried = 0;
 
   for (const row of claimed) {
+    // Out of budget: hand the row back untouched so the next run picks it up.
     if (Date.now() >= deadline) {
-      await client.query(
-        `UPDATE webhook_deliveries SET status = 'pending', updated_at = now() WHERE id = $1 AND status = 'delivering'`,
-        [row.id],
-      );
+      await releaseClaim(client, row.id);
       continue;
     }
 
-    const body = typeof row.payload === 'string' ? row.payload : canonicalPayload(row.payload);
-    const attemptNumber = row.attempts + 1;
-    const createdAtMs =
-      row.created_at instanceof Date
-        ? row.created_at.getTime()
-        : Date.parse(String(row.created_at));
-
-    if (!signingKey) {
-      await recordAttempt(client, {
-        id: Number(row.id),
-        attemptNumber,
-        statusCode: null,
-        error: 'WEBHOOK_SIGNING_KEY is not configured; refusing to send an unsigned payload',
-        createdAtMs,
-        nowMs: Date.now(),
-        retryAfter: null,
-        transportError: true,
-      });
-      failed++;
-      continue;
-    }
-
-    let statusCode: number | null = null;
-    let error: string | null = null;
-    let retryAfter: string | null = null;
-    let transportError = false;
-
-    try {
-      const signature = signBody(body, signingKey);
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const fetchPromise = fetchImpl(row.url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Signature': signature,
-            'X-Accensa-Timestamp': String(Math.floor(Date.now() / 1000)),
-            'X-Accensa-Delivery-Id': String(row.id),
-          },
-          body,
-          signal: controller.signal,
-        });
-        const res = await Promise.race([
-          fetchPromise,
-          new Promise<never>((_, reject) => {
-            const id = setTimeout(
-              () => reject(Object.assign(new Error('webhook timeout'), { name: 'TimeoutError' })),
-              timeoutMs,
-            );
-            controller.signal.addEventListener('abort', () => {
-              clearTimeout(id);
-              reject(Object.assign(new Error('webhook timeout'), { name: 'TimeoutError' }));
-            });
-          }),
-        ]);
-        statusCode = res.status;
-        retryAfter = res.headers.get('retry-after');
-        if (!res.ok) error = `HTTP ${res.status}`;
-      } finally {
-        clearTimeout(timer);
-      }
-    } catch (e) {
-      transportError = true;
-      error = e instanceof Error ? e.message : 'transport error';
-    }
-
-    const terminal = await recordAttempt(client, {
-      id: Number(row.id),
-      attemptNumber,
-      statusCode,
-      error,
-      createdAtMs,
-      nowMs: Date.now(),
-      retryAfter,
-      transportError,
-    });
-    if (terminal.status === 'delivered') delivered++;
+    const outcome = await deliverRow(client, row, { signingKey, timeoutMs, fetchImpl });
+    if (outcome === 'delivered') delivered++;
     // A dead-lettered row is terminal, not a retry — count it as failed here
     // so the run's tallies reflect deliveries that gave up (#165).
-    else if (terminal.status === 'failed' || terminal.status === 'dead_letter') failed++;
+    else if (outcome === 'failed') failed++;
     else retried++;
   }
 
