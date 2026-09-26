@@ -1,0 +1,7 @@
+{
+  "payment": "Pago",
+  "payNow": "Pagar ahora",
+  "pending": "Pago pendiente",
+  "confirmed": "Pago confirmado",
+  "failed": "Pago fallido"
+}
