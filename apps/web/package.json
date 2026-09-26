@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "prebuild": "rm -rf .next",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
