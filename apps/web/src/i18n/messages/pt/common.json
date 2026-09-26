@@ -1,0 +1,16 @@
+{
+  "language": "Idioma",
+  "languages": {
+    "en": "Inglês",
+    "es": "Espanhol",
+    "fr": "Francês",
+    "pt": "Português"
+  },
+  "actions": {
+    "cancel": "Cancelar",
+    "close": "Fechar",
+    "save": "Guardar"
+  },
+  "currency": "Moeda",
+  "date": "Data"
+}

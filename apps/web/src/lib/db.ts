@@ -194,9 +194,11 @@ async function ensureAnchorAndWebhookSchema(client: Client): Promise<void> {
       attempt_number INT NOT NULL,
       status_code INT,
       error TEXT,
+      duration_ms INT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  await client.query(`ALTER TABLE webhook_attempts ADD COLUMN IF NOT EXISTS duration_ms INT;`);
   await client.query(
     `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
      ON webhook_deliveries (next_retry_at) WHERE status = 'pending';`,

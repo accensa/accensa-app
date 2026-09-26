@@ -1,0 +1,23 @@
+{
+  "ci": {
+    "collect": {
+      "numberOfRuns": 1,
+      "startServerCommand": "pnpm --filter web dev -- --hostname 127.0.0.1",
+      "startServerReadyPattern": "Ready",
+      "url": ["http://127.0.0.1:3000/login"],
+      "settings": {
+        "budgetPath": "./.lighthouseci/budget.json"
+      }
+    },
+    "assert": {
+      "assertions": {
+        "resource-summary:script:size": ["error", { "maxNumericValue": 358400 }],
+        "resource-summary:script:count": ["error", { "maxNumericValue": 20 }]
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": ".lighthouseci/reports"
+    }
+  }
+}

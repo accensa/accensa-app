@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { formatAmount, sumAmounts, assetLabel } from '@/lib/money';
 import { describeSync, type SyncState } from '@/lib/sync-status';
 import { CSV_BOM, paymentsCsvFilename, paymentsToCsv } from '@/lib/payments-csv';
@@ -10,13 +11,17 @@ import useSWR from 'swr';
 import { ArrowUpRight } from 'lucide-react';
 import { PageContainer } from '@/components/page-container';
 import { Pagination } from '@/components/pagination';
-import { RefundPanel } from '@/components/refund-panel';
 import { CopyButton } from '@/components/copy-button';
 import { useOnline } from '@/components/network-status';
 import { describeFailure } from '@/lib/network-status';
 import type { Role } from '@/lib/rbac';
 import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';
 import { focusRestorer, getFocusable, wrapTabTarget } from '@/lib/dialog-focus';
+
+const RefundPanel = dynamic(
+  () => import('@/components/refund-panel').then((module) => module.RefundPanel),
+  { ssr: false },
+);
 
 interface Payment {
   tx_hash: string;
@@ -264,6 +269,12 @@ export function Dashboard() {
                 className="inline-block mt-4 text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors"
               >
                 Revenue by route →
+              </Link>
+              <Link
+                href="/dashboard/webhooks"
+                className="inline-block mt-4 ml-5 text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors"
+              >
+                Webhook deliveries →
               </Link>
             </div>
           </div>

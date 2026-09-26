@@ -110,7 +110,9 @@ export const NpsFeedbackWidget: React.FC<NpsFeedbackWidgetProps> = ({
                   key={star}
                   type="button"
                   onClick={() => setRating(star)}
-                  className={`p-2 text-2xl transition-transform hover:scale-110 focus:outline-none ${
+                  aria-label={`${star} out of 5 stars`}
+                  aria-pressed={rating === star}
+                  className={`p-2 text-2xl transition-transform hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 ${
                     rating && rating >= star
                       ? 'text-yellow-400'
                       : 'text-gray-300 dark:text-gray-600'
@@ -124,6 +126,8 @@ export const NpsFeedbackWidget: React.FC<NpsFeedbackWidgetProps> = ({
             {rating !== null && (
               <div className="animate-fade-in-up">
                 <textarea
+                  id="nps-feedback"
+                  aria-label="Optional feedback"
                   value={feedbackText}
                   onChange={(e) => setFeedbackText(e.target.value)}
                   placeholder="Optional: Tell us more about your experience..."
@@ -132,7 +136,7 @@ export const NpsFeedbackWidget: React.FC<NpsFeedbackWidgetProps> = ({
                 />
                 <button
                   type="submit"
-                  className="w-full bg-blue-600 text-white rounded-md py-2 text-sm font-medium hover:bg-blue-700 transition-colors"
+                  className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
                 >
                   Submit Feedback
                 </button>

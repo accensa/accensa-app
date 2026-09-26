@@ -6,6 +6,8 @@ import {
   signTransaction,
   freighterAdapter,
   albedoAdapter,
+  hanaAdapter,
+  xBullAdapter,
   getWalletAdapters,
   getDefaultAdapter,
   getAdapterByName,
@@ -17,6 +19,12 @@ import {
   requestAccess,
   signTransaction as freighterSign,
 } from '@stellar/freighter-api';
+
+const { mockXBullConnect, mockXBullSign, mockXBullClose } = vi.hoisted(() => ({
+  mockXBullConnect: vi.fn(),
+  mockXBullSign: vi.fn(),
+  mockXBullClose: vi.fn(),
+}));
 
 /**
  * The Freighter extension is mocked at the package boundary rather than by
@@ -32,6 +40,13 @@ vi.mock('@stellar/freighter-api', () => ({
   requestAccess: vi.fn(),
   signTransaction: vi.fn(),
 }));
+vi.mock('@creit.tech/xbull-wallet-connect', () => ({
+  xBullWalletConnect: class {
+    connect = mockXBullConnect;
+    sign = mockXBullSign;
+    closeConnections = mockXBullClose;
+  },
+}));
 
 const G = 'GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6';
 
@@ -44,6 +59,9 @@ beforeEach(() => {
   vi.mocked(getNetwork).mockReset();
   vi.mocked(requestAccess).mockReset();
   vi.mocked(freighterSign).mockReset();
+  mockXBullConnect.mockReset();
+  mockXBullSign.mockReset();
+  mockXBullClose.mockReset();
 });
 
 // ---------------------------------------------------------------------------
@@ -83,6 +101,8 @@ describe('adapter registry', () => {
 
   it('finds adapters by name', () => {
     expect(getAdapterByName('freighter')).toBe(freighterAdapter);
+    expect(getAdapterByName('xbull')).toBe(xBullAdapter);
+    expect(getAdapterByName('hana')).toBe(hanaAdapter);
     expect(getAdapterByName('albedo')).toBe(albedoAdapter);
   });
 
@@ -104,6 +124,63 @@ describe('adapter registry', () => {
       expect(typeof adapter.connect).toBe('function');
       expect(typeof adapter.signTransaction).toBe('function');
     }
+  });
+});
+
+describe('Hana adapter', () => {
+  it('detects the extension and reads its connected address', async () => {
+    vi.stubGlobal('window', {
+      hanaWallet: { stellar: { getPublicKey: vi.fn().mockResolvedValue(G) } },
+    });
+
+    await expect(hanaAdapter.readStatus()).resolves.toEqual({ kind: 'connected', address: G });
+  });
+
+  it('signs with the connected account and selected network', async () => {
+    const signTransaction = vi.fn().mockResolvedValue('AAAA-signed');
+    vi.stubGlobal('window', {
+      hanaWallet: { stellar: { getPublicKey: vi.fn().mockResolvedValue(G), signTransaction } },
+    });
+
+    await expect(
+      hanaAdapter.signTransaction('AAAA', {
+        address: G,
+        networkPassphrase: 'Test SDF Network ; September 2015',
+      }),
+    ).resolves.toBe('AAAA-signed');
+    expect(signTransaction).toHaveBeenCalledWith({
+      xdr: 'AAAA',
+      accountToSign: G,
+      networkPassphrase: 'Test SDF Network ; September 2015',
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it('reports the wallet as unavailable when the extension is missing', async () => {
+    vi.stubGlobal('window', {});
+    await expect(hanaAdapter.readStatus()).resolves.toEqual({ kind: 'unavailable' });
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('xBull adapter', () => {
+  it('connects through the bridge and always closes it', async () => {
+    mockXBullConnect.mockResolvedValueOnce(G);
+    await expect(xBullAdapter.connect()).resolves.toEqual({ kind: 'connected', address: G });
+    expect(mockXBullClose).toHaveBeenCalledOnce();
+  });
+
+  it('signs with the requested account and network through the bridge', async () => {
+    mockXBullSign.mockResolvedValueOnce('AAAA-signed');
+    await expect(
+      xBullAdapter.signTransaction('AAAA', { address: G, networkPassphrase: 'TESTNET' }),
+    ).resolves.toBe('AAAA-signed');
+    expect(mockXBullSign).toHaveBeenCalledWith({
+      xdr: 'AAAA',
+      publicKey: G,
+      network: 'TESTNET',
+    });
+    expect(mockXBullClose).toHaveBeenCalledOnce();
   });
 });
 

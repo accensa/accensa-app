@@ -24,8 +24,11 @@ CREATE TABLE IF NOT EXISTS webhook_attempts (
   attempt_number INT NOT NULL,
   status_code INT,
   error TEXT,
+  duration_ms INT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE webhook_attempts ADD COLUMN IF NOT EXISTS duration_ms INT;
 
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
   ON webhook_deliveries (next_retry_at) WHERE status = 'pending';
