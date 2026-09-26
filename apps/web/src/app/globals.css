@@ -1,6 +1,11 @@
 @import 'tailwindcss';
 @custom-variant dark (&:where(.dark, .dark *));
 
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #047857;
+  outline-offset: 2px;
+}
+
 @theme {
   --font-bellavoir: var(--font-bellavoir), serif;
   --font-camiro: var(--font-camiro), sans-serif;

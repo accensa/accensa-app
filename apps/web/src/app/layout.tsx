@@ -6,6 +6,8 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { Nav } from '@/components/nav';
 import { Footer } from '@/components/footer';
 import { OfflineBanner } from '@/components/network-status';
+import { I18nProvider } from '@/i18n/I18nProvider';
+import { SessionRenewal } from '@/components/SessionRenewal';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -78,12 +80,15 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <Nav />
-          {children}
-          <Footer />
-          {/* Outside the page tree so it survives navigation and stays visible
+          <I18nProvider>
+            <SessionRenewal />
+            <Nav />
+            {children}
+            <Footer />
+            {/* Outside the page tree so it survives navigation and stays visible
  when a page-level error boundary takes over the content area. */}
-          <OfflineBanner />
+            <OfflineBanner />
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>
