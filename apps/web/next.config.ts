@@ -1,4 +1,7 @@
 import type { NextConfig } from 'next';
+import bundleAnalyzer from '@next/bundle-analyzer';
+
+const withBundleAnalyzer = bundleAnalyzer({ enabled: process.env.ANALYZE === 'true' });
 
 const nextConfig: NextConfig = {
   // The Playwright e2e harness (#202) drives the dev server from 127.0.0.1.
@@ -15,4 +18,8 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// The analyzer's published wrapper types resolve Next 14, while this app runs
+// Next 16. The wrapper only decorates the config, so keep the cast at that boundary.
+export default withBundleAnalyzer(
+  nextConfig as unknown as Parameters<typeof withBundleAnalyzer>[0],
+) as unknown as NextConfig;

@@ -139,6 +139,8 @@ export async function deliverDue(
     signingKey?: string | null;
     timeoutMs?: number;
     budgetMs?: number;
+    deliveryId?: number;
+    merchantId?: number;
   } = {},
 ): Promise<{ attempted: number; delivered: number; failed: number; retried: number }> {
   const now = opts.now ?? new Date();
@@ -167,9 +169,14 @@ export async function deliverDue(
      FROM webhook_deliveries
      WHERE status = 'pending'
        AND (next_retry_at IS NULL OR next_retry_at <= $1)
+       AND ($2::bigint IS NULL OR id = $2)
+       AND ($3::bigint IS NULL OR EXISTS (
+         SELECT 1 FROM payments p
+         WHERE p.tx_hash = webhook_deliveries.payment_tx_hash AND p.merchant_id = $3
+       ))
      ORDER BY next_retry_at NULLS FIRST, id ASC
      LIMIT 50`,
-    [now],
+    [now, opts.deliveryId ?? null, opts.merchantId ?? null],
   );
 
   const claimed: typeof due.rows = [];
@@ -202,6 +209,7 @@ export async function deliverDue(
       row.created_at instanceof Date
         ? row.created_at.getTime()
         : Date.parse(String(row.created_at));
+    const startedAt = Date.now();
 
     if (!signingKey) {
       await recordAttempt(client, {
@@ -213,6 +221,7 @@ export async function deliverDue(
         nowMs: Date.now(),
         retryAfter: null,
         transportError: true,
+        durationMs: Math.max(0, Date.now() - startedAt),
       });
       failed++;
       continue;
@@ -272,6 +281,7 @@ export async function deliverDue(
       nowMs: Date.now(),
       retryAfter,
       transportError,
+      durationMs: Math.max(0, Date.now() - startedAt),
     });
     if (terminal.status === 'delivered') delivered++;
     // A dead-lettered row is terminal, not a retry — count it as failed here
@@ -294,6 +304,7 @@ async function recordAttempt(
     nowMs: number;
     retryAfter: string | null;
     transportError: boolean;
+    durationMs: number;
   },
 ): Promise<AttemptResult> {
   const ok = input.statusCode !== null && input.statusCode >= 200 && input.statusCode < 300;
@@ -317,9 +328,9 @@ async function recordAttempt(
   else status = 'dead_letter';
 
   await client.query(
-    `INSERT INTO webhook_attempts (delivery_id, attempt_number, status_code, error)
-     VALUES ($1, $2, $3, $4)`,
-    [input.id, input.attemptNumber, input.statusCode, input.error],
+    `INSERT INTO webhook_attempts (delivery_id, attempt_number, status_code, error, duration_ms)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [input.id, input.attemptNumber, input.statusCode, input.error, input.durationMs],
   );
 
   await client.query(

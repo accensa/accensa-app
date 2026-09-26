@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:analyze": "ANALYZE=true next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -22,6 +23,7 @@
     "@accensa/sdk": "workspace:^",
     "@accensa/shared": "workspace:^",
     "@albedo-link/intent": "^0.13.0",
+    "@creit.tech/xbull-wallet-connect": "^0.4.0",
     "@react-pdf/renderer": "^4.9.0",
     "@sentry/nextjs": "^8.20.0",
     "@stellar/freighter-api": "^6.0.1",
@@ -42,6 +44,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "@next/bundle-analyzer": "^16.3.6",
     "@playwright/test": "^1.62.1",
     "@storybook/addon-essentials": "^8.6.14",
     "@storybook/nextjs": "^8.6.14",

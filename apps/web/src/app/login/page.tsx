@@ -3,25 +3,27 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ShieldAlert, Loader2 } from 'lucide-react';
-import { signTransaction, readStatus, connect } from '@/lib/freighter';
+import type { WalletAdapter } from '@/lib/wallet';
 import { PageContainer } from '@/components/page-container';
+import { WalletConnectModal } from '@/components/wallet/WalletConnectModal';
 
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [walletChooserOpen, setWalletChooserOpen] = useState(false);
 
-  const handleLogin = async () => {
+  const handleLogin = async (adapter: WalletAdapter) => {
     setLoading(true);
     setError(null);
     try {
       // Ensure wallet is connected
-      let status = await readStatus();
+      let status = await adapter.readStatus();
       if (status.kind === 'unavailable') {
-        throw new Error('Stellar wallet not found. Please install Freighter.');
+        throw new Error(`${adapter.name} was not detected. Install it or choose another wallet.`);
       }
       if (status.kind !== 'connected') {
-        status = await connect();
+        status = await adapter.connect();
         if (status.kind !== 'connected') {
           throw new Error(status.kind === 'error' ? status.message : 'Could not connect wallet.');
         }
@@ -37,7 +39,10 @@ export default function LoginPage() {
       const { xdr, networkPassphrase } = await res.json();
 
       // Sign challenge
-      const signedXdr = await signTransaction(xdr, { networkPassphrase, address: status.address });
+      const signedXdr = await adapter.signTransaction(xdr, {
+        networkPassphrase,
+        address: status.address,
+      });
 
       // Verify signature
       const verifyRes = await fetch('/api/auth/verify', {
@@ -51,10 +56,12 @@ export default function LoginPage() {
         throw new Error(error || 'Verification failed');
       }
 
+      setWalletChooserOpen(false);
       router.push('/dashboard');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Login failed';
       setError(message);
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -97,7 +104,7 @@ export default function LoginPage() {
 
           <button
             type="button"
-            onClick={handleLogin}
+            onClick={() => setWalletChooserOpen(true)}
             disabled={loading}
             aria-busy={loading}
             className="w-full flex items-center justify-center gap-2 px-8 py-4 bg-emerald-600 dark:bg-emerald-500 text-white dark:text-black font-black text-sm uppercase tracking-wider hover:bg-emerald-500 dark:hover:bg-emerald-400 disabled:opacity-50 transition-all shadow-md shadow-emerald-600/20 dark:shadow-[0_0_20px_rgba(16,185,129,0.2)] cursor-pointer disabled:cursor-not-allowed"
@@ -112,6 +119,11 @@ export default function LoginPage() {
             )}
           </button>
         </div>
+        <WalletConnectModal
+          isOpen={walletChooserOpen}
+          onClose={() => setWalletChooserOpen(false)}
+          onConnect={handleLogin}
+        />
       </PageContainer>
     </main>
   );

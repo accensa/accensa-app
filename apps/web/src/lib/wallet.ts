@@ -61,6 +61,21 @@ export interface WalletAdapter {
   ): Promise<string>;
 }
 
+interface HanaWalletProvider {
+  getPublicKey(): Promise<string>;
+  signTransaction(input: {
+    xdr: string;
+    accountToSign?: string;
+    networkPassphrase?: string;
+  }): Promise<string>;
+}
+
+declare global {
+  interface Window {
+    hanaWallet?: { stellar?: HanaWalletProvider };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Freighter adapter
 // ---------------------------------------------------------------------------
@@ -235,12 +250,89 @@ export const albedoAdapter: WalletAdapter = {
   },
 };
 
+export const hanaAdapter: WalletAdapter = {
+  name: 'Hana',
+  installUrl: 'https://hanawallet.io/',
+
+  async readStatus(): Promise<WalletStatus> {
+    if (typeof window === 'undefined' || !window.hanaWallet?.stellar) {
+      return { kind: 'unavailable' };
+    }
+    try {
+      const address = await window.hanaWallet.stellar.getPublicKey();
+      return address ? { kind: 'connected', address } : { kind: 'disconnected' };
+    } catch {
+      return { kind: 'disconnected' };
+    }
+  },
+
+  async connect(): Promise<WalletStatus> {
+    return this.readStatus();
+  },
+
+  async signTransaction(
+    xdr: string,
+    opts: { networkPassphrase: string; address?: string },
+  ): Promise<string> {
+    const provider = typeof window === 'undefined' ? undefined : window.hanaWallet?.stellar;
+    if (!provider) throw new Error('Hana wallet is not installed');
+    const signed = await provider.signTransaction({
+      xdr,
+      accountToSign: opts.address,
+      networkPassphrase: opts.networkPassphrase,
+    });
+    if (!signed) throw new Error('Hana did not return a signed transaction');
+    return signed;
+  },
+};
+
+export const xBullAdapter: WalletAdapter = {
+  name: 'xBull',
+  installUrl: 'https://xbull.app/',
+
+  async readStatus(): Promise<WalletStatus> {
+    return typeof window === 'undefined' ? { kind: 'unavailable' } : { kind: 'disconnected' };
+  },
+
+  async connect(): Promise<WalletStatus> {
+    const { xBullWalletConnect } = await import('@creit.tech/xbull-wallet-connect');
+    const bridge = new xBullWalletConnect();
+    try {
+      const address = await bridge.connect();
+      return address ? { kind: 'connected', address } : { kind: 'disconnected' };
+    } catch (error: unknown) {
+      return { kind: 'error', message: message(error) };
+    } finally {
+      bridge.closeConnections();
+    }
+  },
+
+  async signTransaction(
+    xdr: string,
+    opts: { networkPassphrase: string; address?: string },
+  ): Promise<string> {
+    const { xBullWalletConnect } = await import('@creit.tech/xbull-wallet-connect');
+    const bridge = new xBullWalletConnect();
+    try {
+      const signed = await bridge.sign({
+        xdr,
+        publicKey: opts.address,
+        network: opts.networkPassphrase,
+      });
+      if (!signed) throw new Error('xBull did not return a signed transaction');
+      return signed;
+    } finally {
+      bridge.closeConnections();
+    }
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Adapter registry
 // ---------------------------------------------------------------------------
 
 /** All registered wallet adapters, in priority order. */
-const adapters: WalletAdapter[] = [freighterAdapter, albedoAdapter];
+const adapters: WalletAdapter[] = [freighterAdapter, xBullAdapter, hanaAdapter, albedoAdapter];
 
 /**
  * Returns all registered wallet adapters.
