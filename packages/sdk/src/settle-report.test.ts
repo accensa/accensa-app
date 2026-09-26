@@ -1,11 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { HttpError } from '../retry';
-import { AccensaAuthError, AccensaError, AccensaNetworkError } from './errors';
-import { SETTLE_ENDPOINT, settleEndpointUrl, toSettleReportError } from './settle-report';
+import {
+  AccensaAuthError,
+  AccensaContractError,
+  AccensaError,
+  AccensaNetworkError,
+} from './errors';
+import {
+  SETTLE_ENDPOINT,
+  settleEndpointUrl,
+  toSettleHookPayload,
+  toSettleReportError,
+} from './settle-report';
 
 const TX = 'a'.repeat(64);
 const SETTLE_URL = `https://accensa.test${SETTLE_ENDPOINT}`;
 const httpError = (status: number) => new HttpError(new Response(null, { status }));
+
+/** A settlement with only the fields the indexer cannot do without. */
+const settlement = (overrides: Partial<Parameters<typeof toSettleHookPayload>[0]> = {}) => ({
+  txHash: TX,
+  route: '/api/v1/pay',
+  method: 'POST',
+  ...overrides,
+});
 
 describe('settleEndpointUrl', () => {
   it('appends the settle endpoint', () => {
@@ -14,6 +32,38 @@ describe('settleEndpointUrl', () => {
 
   it('does not double a trailing slash', () => {
     expect(settleEndpointUrl('https://accensa.test/')).toBe(SETTLE_URL);
+  });
+});
+
+describe('toSettleHookPayload', () => {
+  it('maps a settlement onto the wire field names', () => {
+    // Every key is snake_cased on the wire, and the mapping is the whole
+    // reason this function exists: the spec, not the in-process names, decides
+    // what goes on the wire.
+    const payload = toSettleHookPayload(
+      settlement({ requestId: 'req-1', payer: 'GABC', amount: '10', network: 'testnet' }),
+    );
+    expect(payload).toMatchObject({
+      tx_hash: TX,
+      route: '/api/v1/pay',
+      method: 'POST',
+      request_id: 'req-1',
+      payer: 'GABC',
+      amount: '10',
+      network: 'testnet',
+    });
+  });
+
+  it('leaves optional fields undefined so they are dropped from the signed body', () => {
+    const payload = toSettleHookPayload(settlement());
+    expect(payload.request_id).toBeUndefined();
+    expect(payload.payer).toBeUndefined();
+    expect(payload.amount).toBeUndefined();
+    expect(payload.network).toBeUndefined();
+  });
+
+  it('normalizes the method before signing', () => {
+    expect(toSettleHookPayload(settlement({ method: ' put ' })).method).toBe('PUT');
   });
 });
 
@@ -43,5 +93,21 @@ describe('toSettleReportError', () => {
     const error = toSettleReportError('socket hang up', TX, SETTLE_URL);
     expect(error).toBeInstanceOf(AccensaNetworkError);
     expect(error.message).toContain('socket hang up');
+  });
+
+  it('passes an AccensaError through unchanged, keeping its classification', () => {
+    // Building the report can fail before anything is sent. Reporting that as
+    // a network error would send the reader to check connectivity instead of
+    // looking at the method they attributed the payment to.
+    const contract = new AccensaContractError('bad method');
+    const error = toSettleReportError(contract, TX, SETTLE_URL);
+    expect(error).toBe(contract);
+    expect(error).toBeInstanceOf(AccensaContractError);
+    expect(error).not.toBeInstanceOf(AccensaNetworkError);
+  });
+
+  it('still classifies an auth error that reaches it as an auth error', () => {
+    const auth = new AccensaAuthError('nope', { status: 401, path: SETTLE_ENDPOINT });
+    expect(toSettleReportError(auth, TX, SETTLE_URL)).toBe(auth);
   });
 });
