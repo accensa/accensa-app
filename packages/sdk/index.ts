@@ -11,7 +11,13 @@ import {
 import { AccensaNetworkError } from './src/errors';
 import { fetchWithRetry, type RetryOptions } from './retry';
 import { signSettlementPayload } from './src/signing';
-import { SETTLE_ENDPOINT, settleEndpointUrl, toSettleReportError } from './src/settle-report';
+import {
+  SETTLE_ENDPOINT,
+  settleEndpointUrl,
+  toSettleHookPayload,
+  toSettleReportError,
+  type SettleHookPayload,
+} from './src/settle-report';
 
 export { verifyReceipt, buildBatch, receiptLeaf, type BatchInfo } from './merkle';
 export { fetchWithRetry, HttpError, type RetryOptions } from './retry';
@@ -98,6 +104,32 @@ export {
 
 export { SETTLE_ENDPOINT } from './src/settle-report';
 
+/**
+ * The wire contract of `/api/hook/settle`.
+ *
+ * Re-exported from `src/settle-report.ts`, which owns the endpoint's shapes;
+ * they are aliases of `apps/web/openapi.yaml` rather than declarations, so
+ * see `src/api/` for how that works.
+ */
+export {
+  isSettleMethod,
+  toSettleHookPayload,
+  toSettleMethod,
+  SETTLE_METHODS,
+  type SettleHookResult,
+} from './src/settle-report';
+export type { SettleHookPayload };
+
+/** Named types for the indexer's HTTP surface, from the OpenAPI spec. */
+export type {
+  ApiOperationName,
+  ApiPath,
+  HttpMethod,
+  SettlementMethod,
+  SettlementReport,
+  SettlementReportResult,
+} from './src/api';
+
 export interface AccensaHookOptions {
   /** Base URL of your Accensa deployment, e.g. https://accensa-dashboard.vercel.app */
   indexerUrl: string;
@@ -140,38 +172,6 @@ export interface AccensaHookOptions {
 export const DEFAULT_TIMEOUT_MS = 5_000;
 
 /**
- * The body POSTed to `/api/hook/settle`, and the exact bytes that get signed.
- *
- * Snake-cased because it is a wire format, not an in-process value. Declaring
- * it here means a change to either end that the other does not follow is a
- * compile error in this package rather than a 401 or 400 found in production.
- */
-export interface SettleHookPayload {
-  tx_hash: string;
-  route: string;
-  method: string;
-  request_id?: string;
-  payer?: string;
-  amount?: string;
-  network?: string;
-  reported_at?: string;
-}
-
-/** Builds the wire body for one settlement. */
-export function toSettleHookPayload(settlement: Settlement): SettleHookPayload {
-  return {
-    tx_hash: settlement.txHash,
-    route: settlement.route,
-    method: settlement.method,
-    request_id: settlement.requestId,
-    payer: settlement.payer,
-    amount: settlement.amount,
-    network: settlement.network,
-    reported_at: new Date().toISOString(),
-  };
-}
-
-/**
  * The request surface the middleware reads.
  *
  * Express's `Request` satisfies it structurally, and so does anything shaped
@@ -190,15 +190,28 @@ export interface AttributableRequest {
  * Reports one settlement to Accensa.
  *
  * Best-effort: resolves false rather than throwing, so a caller in a request
- * path can ignore the result safely.
+ * path can ignore the result safely. That holds for *every* failure, including
+ * a settlement whose method the indexer will not accept - the report is
+ * rejected through `onError` with no request made, rather than escaping from a
+ * `res.on('finish')` listener and taking the process with it.
  */
 export async function reportSettlement(
   settlement: Settlement,
   opts: AccensaHookOptions,
 ): Promise<boolean> {
   const report = opts.onError ?? reportToConsole;
-  const body = toSettleHookPayload(settlement);
   const url = settleEndpointUrl(opts.indexerUrl);
+
+  // Built inside the try: the payload is validated against the spec
+  // (`toSettleHookPayload`), and a validation failure has nowhere useful to
+  // go except the same `onError` channel as a delivery failure.
+  let body: SettleHookPayload | undefined;
+  try {
+    body = toSettleHookPayload(settlement);
+  } catch (error) {
+    report(error, body);
+    return false;
+  }
 
   const doFetch = opts.fetchImpl ?? globalThis.fetch;
   if (typeof doFetch !== 'function') {
