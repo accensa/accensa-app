@@ -37,3 +37,6 @@ Cargo.lock
 target/
 **/target/**
 **/Cargo.toml.lock
+
+# Next.js generated file
+apps/web/next-env.d.ts
