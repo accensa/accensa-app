@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { DotenvError, DotenvLoadError, DotenvParseError } from './errors.js';
 
+// @ts-expect-error - import.meta is allowed in ESM context; TS1470 is a false positive due to tsup CJS build
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -70,7 +71,7 @@ export function parseTemplate(): TemplateConfig {
     // `KEY=value` rows; skip header and section markers (the `# Ed25519...`
     // comments and the `ACCENSA_PRIVATE_KEY_HEX=` default rows).
     const match = line.match(
-      /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(?:'([^']*)'|"([^"]*)"|\$\{\s*([A-Z0-9_]+\s*)?\})\s*(?:#.*)?$/,
+      /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(?:'([^']*)'|"([^"]*)"|([^\s#]*)|\$\{\s*([A-Z0-9_]+\s*)?\})\s*(?:#.*)?$/,
     );
     if (!match) {
       errors.push(`${offendingLine}:1: expected "KEY=value", got "${line}"`);
@@ -78,7 +79,7 @@ export function parseTemplate(): TemplateConfig {
     }
 
     const key = match[1];
-    const value = match[2] ?? match[3] ?? match[4] ?? '';
+    const value = match[2] ?? match[3] ?? match[4] ?? match[5] ?? '';
     keys.push(key);
     defaults[key] = value;
   }
@@ -92,6 +93,7 @@ export function parseTemplate(): TemplateConfig {
 
 /** Load `.env` next to the current file, applying the template's default values for missing keys. */
 export function loadEnvironment(): Readonly<Record<string, string>> {
+  // @ts-expect-error - import.meta is allowed in ESM context; TS1470 is a false positive due to tsup CJS build
   const here = dirname(fileURLToPath(import.meta.url));
   const envPath = join(here, '..', '..', '.env');
 
