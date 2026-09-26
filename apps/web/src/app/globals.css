@@ -71,12 +71,48 @@
   animation: 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards scroll-reveal;
 }
 
+/* Notification badge pop — replays whenever the unread count changes,
+   because the badge span re-mounts via key={unreadCount}. */
+@keyframes notification-badge-pop {
+  0% {
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.notification-badge-pop {
+  animation: notification-badge-pop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Notification drawer slide-out from the right edge. */
+@keyframes notification-drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.notification-drawer-in {
+  animation: notification-drawer-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .js .scroll-reveal {
     opacity: 1;
     transform: none;
   }
   .js .scroll-reveal.is-visible {
+    animation: none;
+  }
+  .notification-badge-pop,
+  .notification-drawer-in {
     animation: none;
   }
 }

@@ -1,4 +1,5 @@
 import { Client } from 'pg';
+import { ensureNotificationSchema } from './notifications';
 
 /** Alias used by the indexer and sync trigger code that reaches into the DB. */
 export type PostgresClient = Client;
@@ -134,6 +135,7 @@ export async function ensureSchema(client: Client): Promise<void> {
 
   await ensureMultiMerchantSchema(client);
   await ensureAnchorAndWebhookSchema(client);
+  await ensureNotificationSchema(client);
 }
 
 /**
