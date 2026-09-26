@@ -127,3 +127,39 @@ export class AccensaContractError extends AccensaError {
     this.index = options?.index;
   }
 }
+
+/** Base class for alldotenv-related errors. */
+export class DotenvError extends AccensaError {
+  /** The path to the .env file. */
+  readonly filePath: string;
+
+  constructor(message: string, filePath: string) {
+    super(message);
+    this.name = 'DotenvError';
+    this.filePath = filePath;
+  }
+}
+
+/** Thrown when a .env file does not exist at the expected path. */
+export class DotenvLoadError extends DotenvError {
+  /** The offending line number (null for file-not-found). */
+  readonly offendingLine: number | null;
+
+  constructor(message: string, filePath: string, offendingLine: number | null) {
+    super(message, filePath);
+    this.name = 'DotenvLoadError';
+    this.offendingLine = offendingLine;
+  }
+}
+
+/** Thrown when a .env file has a parse error (invalid KEY=value format). */
+export class DotenvParseError extends DotenvError {
+  /** The 1-indexed line number where the error occurred. */
+  readonly offendingLine: number;
+
+  constructor(message: string, filePath: string, offendingLine: number) {
+    super(message, filePath);
+    this.name = 'DotenvParseError';
+    this.offendingLine = offendingLine;
+  }
+}
