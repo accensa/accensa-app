@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ThemeToggle } from './theme-toggle';
+import { NotificationCenter } from './notifications/NotificationCenterDrawer';
 import { ArrowUpRight } from 'lucide-react';
 
 /**
@@ -107,6 +108,10 @@ export function Nav() {
 
           {/* Right Nav (Theme Toggle & Connect Wallet) */}
           <div className="flex items-center gap-4">
+            {/* The notification center is authenticated, so it only renders on
+                dashboard pages — the proxy redirects everyone else to /login,
+                so a public page never shows a bell that would 401. */}
+            {pathname?.startsWith('/dashboard') && <NotificationCenter />}
             <Link href="/coming-soon" className={`hidden md:inline-flex ${WALLET_CTA}`}>
               Connect Wallet
             </Link>
