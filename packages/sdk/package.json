@@ -32,7 +32,8 @@
     "./webhooks": "./webhooks.ts",
     "./retry": "./retry.ts",
     "./currency": "./currency.ts",
-    "./zk-proof": "./src/zk-proof.ts"
+    "./zk-proof": "./src/zk-proof.ts",
+    "./payment/split": "./src/payment/split.ts"
   },
   "files": [
     "dist",

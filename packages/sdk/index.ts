@@ -366,3 +366,20 @@ function requestFacts(req: AttributableRequest): RequestFacts {
  * @module SDK Core Export Definitions
  * This module re-exports the primary primitives required by consuming clients for interaction with the Accensa protocol.
  */
+export {
+  calculateSplitPayment,
+  validateSplitTotals,
+  suggestOptimalSplit,
+  buildSplitPaymentTransaction,
+  buildSplitAuthEntries,
+  applySlippageTolerance,
+  DEFAULT_USDC_ISSUER,
+  DEFAULT_USDC_ASSET,
+  type TokenAllocation,
+  type SplitRates,
+  type SplitCustomerBalances,
+  type SplitCalculationParams,
+  type SplitCalculationResult,
+  type SplitPaymentTransactionParams,
+  type SorobanSplitAuthEntry,
+} from './src/payment/split';
