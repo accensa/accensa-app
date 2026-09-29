@@ -69,7 +69,11 @@ export function CheckoutProvider({ subtotal, tipEnabled = true, children }: Chec
           : 0;
 
     const tipSelection: TipSelection =
-      tipEnabled && customTipAmount !== null ? 'custom' : tipEnabled && tipPercent !== null ? 'percent' : 'none';
+      tipEnabled && customTipAmount !== null
+        ? 'custom'
+        : tipEnabled && tipPercent !== null
+          ? 'percent'
+          : 'none';
 
     return {
       subtotal,

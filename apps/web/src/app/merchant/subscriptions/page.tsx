@@ -64,7 +64,10 @@ export default function MerchantSubscriptionsPage() {
       );
       setPlans((prev) => [...prev, plan]);
       // A sample subscriber preview, so the merchant sees how the plan renders.
-      setSubscriptions((prev) => [...prev, startSubscription(plan, 'GSAMPLECUSTOMER', `sub-${plan.id}`)]);
+      setSubscriptions((prev) => [
+        ...prev,
+        startSubscription(plan, 'GSAMPLECUSTOMER', `sub-${plan.id}`),
+      ]);
       setForm(EMPTY_FORM);
     } catch (error: unknown) {
       setFormError(error instanceof Error ? error.message : 'Could not create the plan');

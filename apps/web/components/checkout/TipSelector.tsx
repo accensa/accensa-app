@@ -57,7 +57,9 @@ export default function TipSelector() {
 
   const optionClass = (selected: boolean) =>
     `flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-      selected ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+      selected
+        ? 'border-blue-600 bg-blue-50 text-blue-700'
+        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
     }`;
 
   return (

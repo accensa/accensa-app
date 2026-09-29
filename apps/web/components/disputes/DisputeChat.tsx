@@ -97,7 +97,10 @@ export default function DisputeChat({
   };
 
   return (
-    <div className="flex h-full flex-col rounded-lg border border-gray-200" data-testid="dispute-chat">
+    <div
+      className="flex h-full flex-col rounded-lg border border-gray-200"
+      data-testid="dispute-chat"
+    >
       <div className="flex items-center justify-between gap-2 border-b border-gray-200 p-3">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Dispute negotiation</h3>
@@ -131,7 +134,11 @@ export default function DisputeChat({
         </p>
       )}
 
-      <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto p-3" data-testid="dispute-chat-messages">
+      <div
+        ref={listRef}
+        className="flex-1 space-y-2 overflow-y-auto p-3"
+        data-testid="dispute-chat-messages"
+      >
         {messages.map((message) => (
           <div
             key={message.id}

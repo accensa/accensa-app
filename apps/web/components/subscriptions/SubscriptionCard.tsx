@@ -27,7 +27,11 @@ const STATUS_STYLE: Record<Subscription['status'], string> = {
 };
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 /**
@@ -35,7 +39,11 @@ function formatDate(iso: string): string {
  * both the customer portal (with `onToggleCancel`) and a merchant's
  * subscriber list (read-only, `onToggleCancel` omitted).
  */
-export default function SubscriptionCard({ subscription, plan, onToggleCancel }: SubscriptionCardProps) {
+export default function SubscriptionCard({
+  subscription,
+  plan,
+  onToggleCancel,
+}: SubscriptionCardProps) {
   const hasEnded = subscription.status === 'canceled' || subscription.status === 'expired';
   const canToggle = !hasEnded && !!onToggleCancel;
 
@@ -59,7 +67,9 @@ export default function SubscriptionCard({ subscription, plan, onToggleCancel }:
       <dl className="mt-3 text-sm text-gray-600">
         <div className="flex justify-between">
           <dt>{hasEnded ? 'Ended' : 'Next billing date'}</dt>
-          <dd data-testid="subscription-next-billing">{formatDate(subscription.currentPeriodEnd)}</dd>
+          <dd data-testid="subscription-next-billing">
+            {formatDate(subscription.currentPeriodEnd)}
+          </dd>
         </div>
       </dl>
 

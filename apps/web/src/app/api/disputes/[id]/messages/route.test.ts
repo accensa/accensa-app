@@ -51,7 +51,10 @@ describe('disputes/[id]/messages route', () => {
     expect(message.role).toBe('merchant');
     expect(message.disputeId).toBe('d1');
 
-    const getResponse = await GET(new Request('http://test/api/disputes/d1/messages'), params('d1'));
+    const getResponse = await GET(
+      new Request('http://test/api/disputes/d1/messages'),
+      params('d1'),
+    );
     const { messages } = await getResponse.json();
     expect(messages).toHaveLength(1);
     expect(messages[0].id).toBe(message.id);
@@ -65,7 +68,10 @@ describe('disputes/[id]/messages route', () => {
       }),
       params('d1'),
     );
-    const getResponse = await GET(new Request('http://test/api/disputes/d2/messages'), params('d2'));
+    const getResponse = await GET(
+      new Request('http://test/api/disputes/d2/messages'),
+      params('d2'),
+    );
     const { messages } = await getResponse.json();
     expect(messages).toEqual([]);
   });

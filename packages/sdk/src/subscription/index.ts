@@ -13,12 +13,7 @@
 
 export type BillingInterval = 'weekly' | 'monthly' | 'annual';
 
-export type SubscriptionStatus =
-  | 'trialing'
-  | 'active'
-  | 'past_due'
-  | 'canceled'
-  | 'expired';
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired';
 
 export interface SubscriptionPlan {
   id: string;
@@ -151,7 +146,10 @@ export function advancePeriod(
     ...subscription,
     status: 'active',
     currentPeriodStart: subscription.currentPeriodEnd,
-    currentPeriodEnd: nextBillingDate(plan.billingInterval, new Date(subscription.currentPeriodEnd)).toISOString(),
+    currentPeriodEnd: nextBillingDate(
+      plan.billingInterval,
+      new Date(subscription.currentPeriodEnd),
+    ).toISOString(),
     graceEndsAt: null,
   };
 }
@@ -171,7 +169,10 @@ export function applyChargeResult(
 }
 
 /** Expires a `past_due` subscription once its grace window has elapsed. */
-export function expireIfGraceElapsed(subscription: Subscription, now: Date = new Date()): Subscription {
+export function expireIfGraceElapsed(
+  subscription: Subscription,
+  now: Date = new Date(),
+): Subscription {
   if (subscription.status !== 'past_due' || !subscription.graceEndsAt) return subscription;
   if (new Date(subscription.graceEndsAt) > now) return subscription;
   return { ...subscription, status: 'expired' };
@@ -192,7 +193,10 @@ export function reactivate(subscription: Subscription): Subscription {
 }
 
 /** Immediately cancels a subscription, ending access now rather than at period end. */
-export function cancelImmediately(subscription: Subscription, now: Date = new Date()): Subscription {
+export function cancelImmediately(
+  subscription: Subscription,
+  now: Date = new Date(),
+): Subscription {
   return {
     ...subscription,
     status: 'canceled',

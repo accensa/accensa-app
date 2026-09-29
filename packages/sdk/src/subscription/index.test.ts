@@ -14,7 +14,9 @@ import {
 
 const NOW = new Date('2026-01-01T00:00:00.000Z');
 
-function plan(overrides: Partial<Parameters<typeof createSubscriptionPlan>[0]> = {}): SubscriptionPlan {
+function plan(
+  overrides: Partial<Parameters<typeof createSubscriptionPlan>[0]> = {},
+): SubscriptionPlan {
   return createSubscriptionPlan(
     {
       merchantId: 'merchant-1',

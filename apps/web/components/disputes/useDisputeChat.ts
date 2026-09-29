@@ -48,7 +48,9 @@ export function useDisputeChat(disputeId: string, role: 'buyer' | 'merchant') {
 
   const decorate = useCallback(async (raw: RawMessage): Promise<DisputeChatMessage> => {
     const key = keyRef.current;
-    const text = key ? await decryptPayload(key, raw.payload).catch(() => '[unable to decrypt]') : '';
+    const text = key
+      ? await decryptPayload(key, raw.payload).catch(() => '[unable to decrypt]')
+      : '';
     return {
       id: raw.id,
       disputeId: raw.disputeId,
@@ -72,9 +74,7 @@ export function useDisputeChat(disputeId: string, role: 'buyer' | 'merchant') {
         const decorated = await Promise.all(body.messages.map(decorate));
         if (!cancelled) setMessages(decorated);
 
-        source = new EventSource(
-          `/api/disputes/${encodeURIComponent(disputeId)}/messages/stream`,
-        );
+        source = new EventSource(`/api/disputes/${encodeURIComponent(disputeId)}/messages/stream`);
         source.addEventListener('open', () => {
           if (!cancelled) setConnected(true);
         });
@@ -82,14 +82,17 @@ export function useDisputeChat(disputeId: string, role: 'buyer' | 'merchant') {
           const raw = JSON.parse(event.data) as RawMessage;
           const decorated = await decorate(raw);
           if (!cancelled) {
-            setMessages((prev) => (prev.some((m) => m.id === decorated.id) ? prev : [...prev, decorated]));
+            setMessages((prev) =>
+              prev.some((m) => m.id === decorated.id) ? prev : [...prev, decorated],
+            );
           }
         });
         source.addEventListener('error', () => {
           if (!cancelled) setConnected(false);
         });
       } catch (err: unknown) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not open the dispute chat');
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : 'Could not open the dispute chat');
       }
     }
 
@@ -116,7 +119,9 @@ export function useDisputeChat(disputeId: string, role: 'buyer' | 'merchant') {
       if (!response.ok) throw new Error('Could not send the message');
       const { message: raw }: { message: RawMessage } = await response.json();
       const decorated = await decorate(raw);
-      setMessages((prev) => (prev.some((m) => m.id === decorated.id) ? prev : [...prev, decorated]));
+      setMessages((prev) =>
+        prev.some((m) => m.id === decorated.id) ? prev : [...prev, decorated],
+      );
     },
     [disputeId, role, decorate],
   );

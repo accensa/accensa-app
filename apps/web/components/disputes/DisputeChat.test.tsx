@@ -72,7 +72,9 @@ describe('DisputeChat', () => {
     render(<DisputeChat disputeId="d1" role="merchant" />);
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
 
-    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'We can offer 50% back' } });
+    fireEvent.change(screen.getByLabelText('Message'), {
+      target: { value: 'We can offer 50% back' },
+    });
     fireEvent.click(screen.getByLabelText('Send message'));
 
     await waitFor(() => expect(screen.getAllByTestId('dispute-chat-message')).toHaveLength(1));
@@ -83,7 +85,12 @@ describe('DisputeChat', () => {
     const onAccept = vi.fn();
     const onCancel = vi.fn();
     render(
-      <DisputeChat disputeId="d1" role="buyer" onAcceptPartialRefund={onAccept} onCancelDispute={onCancel} />,
+      <DisputeChat
+        disputeId="d1"
+        role="buyer"
+        onAcceptPartialRefund={onAccept}
+        onCancelDispute={onCancel}
+      />,
     );
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
 

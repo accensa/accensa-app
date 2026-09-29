@@ -3,13 +3,23 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import SubscriptionCard from './SubscriptionCard';
-import { createSubscriptionPlan, startSubscription, cancelAtPeriodEnd } from '@accensa/sdk/subscription';
+import {
+  createSubscriptionPlan,
+  startSubscription,
+  cancelAtPeriodEnd,
+} from '@accensa/sdk/subscription';
 
 const NOW = new Date('2026-01-01T00:00:00.000Z');
 
 function plan() {
   return createSubscriptionPlan(
-    { merchantId: 'm1', name: 'Pro', amount: '10.0000000', asset: 'USDC', billingInterval: 'monthly' },
+    {
+      merchantId: 'm1',
+      name: 'Pro',
+      amount: '10.0000000',
+      asset: 'USDC',
+      billingInterval: 'monthly',
+    },
     'plan-1',
     NOW,
   );
