@@ -33,7 +33,8 @@
     "./retry": "./retry.ts",
     "./currency": "./currency.ts",
     "./zk-proof": "./src/zk-proof.ts",
-    "./events": "./src/events/index.ts"
+    "./events": "./src/events/index.ts",
+    "./subscription": "./src/subscription/index.ts"
   },
   "files": [
     "dist",
