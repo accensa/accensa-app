@@ -50,6 +50,12 @@ export {
   type OrdersPage,
   type ProductsPage,
 } from './src/client';
+/** Resilient WebSocket subscription to live payments (#451). */
+export {
+  subscribeToPayments,
+  paymentsStreamUrl,
+  type SubscribeToPaymentsOptions,
+} from './src/realtime/client';
 /** Typed error classes for the failure modes consumers actually branch on. */
 export {
   AccensaError,
