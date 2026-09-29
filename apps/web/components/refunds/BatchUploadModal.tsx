@@ -25,12 +25,12 @@ export function BatchUploadModal({ onClose, escrowBalance }: BatchUploadModalPro
     reader.onload = (event) => {
       const text = event.target?.result as string;
       const lines = text.split('\n').filter(Boolean);
-      const parsedRecords: RefundRecord[] = lines.slice(1).map(line => {
+      const parsedRecords: RefundRecord[] = lines.slice(1).map((line) => {
         const [transaction_id, amount, reason] = line.split(',');
-        return { 
-          transaction_id: transaction_id?.trim() || '', 
-          amount: parseFloat(amount?.trim() || '0'), 
-          reason: reason?.trim() || ''
+        return {
+          transaction_id: transaction_id?.trim() || '',
+          amount: parseFloat(amount?.trim() || '0'),
+          reason: reason?.trim() || '',
         };
       });
       setRecords(parsedRecords);
@@ -48,7 +48,7 @@ export function BatchUploadModal({ onClose, escrowBalance }: BatchUploadModalPro
     const newResults = [];
     for (let i = 0; i < records.length; i++) {
       // Simulate processing
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50));
       newResults.push({ id: records[i].transaction_id, status: 'success' as const });
       setProgress(Math.round(((i + 1) / records.length) * 100));
     }
@@ -58,7 +58,7 @@ export function BatchUploadModal({ onClose, escrowBalance }: BatchUploadModalPro
 
   const downloadReport = () => {
     if (typeof document === 'undefined') return;
-    const csv = ['transaction_id,status', ...results.map(r => `${r.id},${r.status}`)].join('\n');
+    const csv = ['transaction_id,status', ...results.map((r) => `${r.id},${r.status}`)].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -81,7 +81,11 @@ export function BatchUploadModal({ onClose, escrowBalance }: BatchUploadModalPro
             <div className="preflight-summary">
               <p>Total Records: {records.length}</p>
               <p>Total Amount: {totalAmount}</p>
-              {isOverdrawn && <p className="error" style={{ color: 'red' }}>Amount exceeds escrow balance!</p>}
+              {isOverdrawn && (
+                <p className="error" style={{ color: 'red' }}>
+                  Amount exceeds escrow balance!
+                </p>
+              )}
               <button onClick={processBatch} disabled={isOverdrawn} className="process-button">
                 Process Batch
               </button>
@@ -92,16 +96,22 @@ export function BatchUploadModal({ onClose, escrowBalance }: BatchUploadModalPro
       {isProcessing && (
         <div className="progress-container">
           <p>Processing: {progress}%</p>
-          <progress value={progress} max="100">{progress}%</progress>
+          <progress value={progress} max="100">
+            {progress}%
+          </progress>
         </div>
       )}
       {results.length > 0 && (
         <div className="results-container">
           <p>Processing Complete!</p>
-          <button onClick={downloadReport} className="download-report">Download Report</button>
+          <button onClick={downloadReport} className="download-report">
+            Download Report
+          </button>
         </div>
       )}
-      <button onClick={onClose} className="close-button">Close</button>
+      <button onClick={onClose} className="close-button">
+        Close
+      </button>
     </div>
   );
 }

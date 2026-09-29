@@ -14,6 +14,6 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         {error && <span style={{ color: 'red' }}>{error}</span>}
       </div>
     );
-  }
+  },
 );
 Input.displayName = 'Input';

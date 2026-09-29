@@ -7,12 +7,10 @@ import {
   HashDecodeError,
   EmptyBatchError,
   MerkleError,
+  MAX_PROOF_LEN,
 } from './merkle';
 import vectors from './merkle-vectors.json';
-
-const sha256 = (buf: Buffer) => createHash('sha256').update(buf).digest();
-const leafOf = (label: string) => sha256(Buffer.from(label, 'utf8')).toString('hex');
-const VALID = 'a'.repeat(64);
+import { sha256, leafOf, VALID, generateTestLeaves } from './merkle-test-helpers';
 
 describe('verifyReceipt — shared conformance vectors', () => {
   // These are the same vectors the Soroban ReceiptAnchor tests run against.
@@ -56,7 +54,7 @@ describe('verifyReceipt — sorted-pair convention', () => {
   });
 });
 
-describe('verifyReceipt — malformed input', () => {
+describe('verifyReceipt — malformed input and length bounds', () => {
   it('rejects a leaf that is not 32 bytes', () => {
     expect(() => verifyReceipt('abcd', [], VALID)).toThrow(HashDecodeError);
     expect(() => verifyReceipt('abcd', [], VALID)).toThrow(/leaf/);
@@ -88,15 +86,18 @@ describe('verifyReceipt — malformed input', () => {
     // @ts-expect-error
     expect(() => verifyReceipt(VALID, [null], VALID)).toThrow(MerkleError);
   });
+
+  it('rejects proofs exceeding MAX_PROOF_LEN to match contract ProofTooLong constraint', () => {
+    const excessiveProof = Array.from({ length: MAX_PROOF_LEN + 1 }, () => VALID);
+    expect(() => verifyReceipt(VALID, excessiveProof, VALID)).toThrow(
+      new RegExp(`MAX_PROOF_LEN \\(${MAX_PROOF_LEN}\\)`),
+    );
+  });
 });
 
 describe('buildBatch — proofs verify against the shared convention', () => {
-  const sha256hex = (label: string) =>
-    createHash('sha256').update(Buffer.from(label, 'utf8')).digest('hex');
-
   it('matches the eight-leaf conformance root and proofs', () => {
-    const labels = Array.from({ length: 8 }, (_, i) => `bulk-receipt-${i}`);
-    const leaves = labels.map(sha256hex);
+    const leaves = generateTestLeaves(8, 'bulk-receipt');
     const batch = buildBatch(leaves);
 
     expect(batch.root).toBe('3aa0080b225e9f7bbfacd4a506648ed95261166a0ba97c5b1c54d253e0bbcb4f');
@@ -110,14 +111,14 @@ describe('buildBatch — proofs verify against the shared convention', () => {
   });
 
   it('matches the three-leaf (odd promotion) conformance root', () => {
-    const leaves = ['odd-1', 'odd-2', 'odd-3'].map(sha256hex);
+    const leaves = ['odd-1', 'odd-2', 'odd-3'].map(leafOf);
     const batch = buildBatch(leaves);
     expect(batch.root).toBe('f2ce5eb24c9bead8184a3fc3bb1404ae4aa28e34e7046e829423dd787d1ca037');
     expect(verifyReceipt(leaves[2], batch.proofs[leaves[2]], batch.root)).toBe(true);
   });
 
   it('returns an empty proof for a single-leaf batch, root equal to the leaf', () => {
-    const leaf = sha256hex('solo-receipt');
+    const leaf = leafOf('solo-receipt');
     const batch = buildBatch([leaf]);
     expect(batch.root).toBe(leaf);
     expect(batch.proofs[leaf]).toEqual([]);

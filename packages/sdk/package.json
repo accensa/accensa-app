@@ -33,7 +33,8 @@
     "./retry": "./retry.ts",
     "./currency": "./currency.ts",
     "./zk-proof": "./src/zk-proof.ts",
-    "./payment/split": "./src/payment/split.ts"
+    "./events": "./src/events/index.ts",
+    "./subscription": "./src/subscription/index.ts"
   },
   "files": [
     "dist",
@@ -49,7 +50,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "gen:vectors": "node scripts/generate-vectors.mjs",
-    "gen:api": "openapi-typescript ../../apps/web/openapi.yaml -o ./generated/api-types.ts && prettier --write ./generated/api-types.ts"
+    "gen:api": "openapi-typescript ../../apps/web/openapi.yaml -o ./generated/api-types.ts && prettier --write ./generated/api-types.ts",
+    "check-bundle-size": "node scripts/check-bundle-size.mjs"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^16.0.1"

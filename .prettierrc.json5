@@ -1,0 +1,40 @@
+/**
+ * Repository-wide Prettier configuration.
+ *
+ * This file is JSON5 rather than JSON so that it can carry comments: Prettier
+ * discovers `.prettierrc.json5` and parses it with its JSON5 grammar, which
+ * accepts `//` comments. A `//` comment written into a plain `.prettierrc`
+ * would not be ignored — Prettier's loader would turn it into a config key.
+ *
+ * Every option is listed explicitly, including the ones that currently match
+ * Prettier's defaults: an explicit value is a decision someone read, not an
+ * assumption about what the default will be after the next major release.
+ *
+ * Enforced by `tests/prettierrc.test.mjs`. Run `pnpm test` at the repo root.
+ * The `no competing config file` case in that suite fails if a second Prettier
+ * config (`.prettierrc`, `.editorconfig`, a `prettier` key in `package.json`)
+ * appears anywhere and starts shadowing this one.
+ */
+{
+  // Statements are terminated with semicolons. Matches Prettier's default;
+  // pinned so a future default change cannot drop them repo-wide unreviewed.
+  semi: true,
+
+  // String literals use single quotes. One of the two options here that
+  // differs from Prettier's default (`singleQuote` defaults to false), so this
+  // is what actually shapes the repo's string literals rather than the tool's.
+  singleQuote: true,
+
+  // Multi-line arrays, objects and argument lists end with a trailing comma.
+  // Matches Prettier 3's default — `"all"` replaced `"es5"` in v3 — pinned
+  // because dropping it would rewrite the last line of every multi-line call.
+  trailingComma: 'all',
+
+  // Lines wrap at 100 columns instead of Prettier's default 80, giving nested
+  // JSX and multi-argument calls 20 more columns before Prettier breaks them.
+  printWidth: 100,
+
+  // Indentation is two spaces per level. Matches Prettier's default; `useTabs`
+  // is left at its default of false, so indentation is spaces throughout.
+  tabWidth: 2,
+}

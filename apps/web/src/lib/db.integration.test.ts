@@ -39,6 +39,11 @@ async function setupTestDatabase(): Promise<void> {
       'receipt_batches',
       'webhook_deliveries',
       'webhook_attempts',
+      'notifications',
+      'merchant_totp',
+      // ensureSchema also re-runs ensureNotificationSchema, so the role has to
+      // own this one too or the CREATE INDEX statements are rejected.
+      'notifications',
     ]) {
       await client.query(`ALTER TABLE IF EXISTS ${table} OWNER TO test_app_user`).catch(() => {});
     }
