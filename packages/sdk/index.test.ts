@@ -890,7 +890,10 @@ describe('reportSettlement & createSettleHook — error handling & validation', 
 
     const onError2 = vi.fn();
     // @ts-expect-error testing missing indexerUrl
-    const res2 = await reportSettlement(settlement, { privateKeyHex: PRIVATE_KEY_HEX, onError: onError2 });
+    const res2 = await reportSettlement(settlement, {
+      privateKeyHex: PRIVATE_KEY_HEX,
+      onError: onError2,
+    });
     expect(res2).toBe(false);
     expect(onError2).toHaveBeenCalled();
   });

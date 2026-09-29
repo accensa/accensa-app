@@ -7,6 +7,7 @@ import {
   HashDecodeError,
   EmptyBatchError,
   MerkleError,
+  MAX_PROOF_LEN,
 } from './merkle';
 import vectors from './merkle-vectors.json';
 import { sha256, leafOf, VALID, generateTestLeaves } from './merkle-test-helpers';

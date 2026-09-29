@@ -8,7 +8,7 @@ import {
   type Settlement,
   type X402SettleResult,
 } from './settlement';
-import { AccensaNetworkError } from './src/errors';
+import { AccensaError, AccensaNetworkError } from './src/errors';
 import { fetchWithRetry, type RetryOptions } from './retry';
 import { signSettlementPayload } from './src/signing';
 import {
@@ -265,8 +265,12 @@ export async function reportSettlement(
   settlement: Settlement,
   opts: AccensaHookOptions,
 ): Promise<boolean> {
+  if (!opts || typeof opts !== 'object') {
+    reportToConsole(new AccensaError('Invalid options supplied to reportSettlement'));
+    return false;
+  }
+
   const report = opts.onError ?? reportToConsole;
-  const url = settleEndpointUrl(opts.indexerUrl);
 
   // Built inside the try: the payload is validated against the spec
   // (`toSettleHookPayload`), and a validation failure has nowhere useful to
@@ -279,15 +283,15 @@ export async function reportSettlement(
     return false;
   }
 
-  if (!opts || typeof opts !== 'object') {
-    report(new AccensaError('Invalid options supplied to reportSettlement'), body);
-    return false;
-  }
-
   if (!opts.indexerUrl || typeof opts.indexerUrl !== 'string') {
     report(new AccensaError('Missing or invalid indexerUrl in options'), body);
     return false;
   }
+
+  // Only safe once the options are known good: `settleEndpointUrl` reads
+  // `indexerUrl` directly, so deriving it earlier turns a rejected report into
+  // an uncaught TypeError on a path that promises never to throw.
+  const url = settleEndpointUrl(opts.indexerUrl);
 
   const doFetch = opts.fetchImpl ?? globalThis.fetch;
   if (typeof doFetch !== 'function') {
@@ -417,9 +421,10 @@ export interface SettleHookOptions extends AccensaHookOptions {
  * ```
  */
 export function createSettleHook(opts: SettleHookOptions) {
-  const report = (opts && typeof opts === 'object' && typeof opts.onError === 'function')
-    ? opts.onError
-    : reportToConsole;
+  let report = reportToConsole;
+  if (opts && typeof opts === 'object' && typeof opts.onError === 'function') {
+    report = opts.onError;
+  }
 
   return async function onAfterSettle(ctx: {
     result: X402SettleResult;
