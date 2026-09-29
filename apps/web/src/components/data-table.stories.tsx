@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import { DataTable } from './data-table';
-import { Badge } from './badge';
+import { Badge } from '@accensa/shared';
 
 const rows = [
   { id: '1', tx: 'aaaa…1111', amount: '1.50 XLM', route: '/api/resource' },

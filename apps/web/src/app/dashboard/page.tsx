@@ -177,15 +177,15 @@ export function Dashboard() {
   // The current page lives in the URL (?page=2) so it survives reloads and can
   // be linked to; searchParams is the single source of truth, and `goToPage`
   // writes a new URL that the router re-renders this component with.
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams()!;
   const router = useRouter();
   const pathname = usePathname();
-  const pageParam = Number(searchParams.get('page') ?? '1');
+  const pageParam = Number(searchParams?.get('page') ?? '1');
   const page = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
 
   const goToPage = useCallback(
     (next: number) => {
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(searchParams?.toString() ?? '');
       if (next <= 1) params.delete('page');
       else params.set('page', String(next));
       router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ''}`, {

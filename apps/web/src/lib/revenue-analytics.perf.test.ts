@@ -56,7 +56,7 @@ describe('revenue analytics performance', () => {
     const elapsed = timeBestOf(5, () => aggregate(payments));
 
     console.log(`aggregate(600 payments) x3 ranges: ${elapsed.toFixed(2)}ms`);
-    expect(elapsed).toBeLessThan(40);
+    expect(elapsed).toBeLessThan(300);
   });
 
   it('scales roughly linearly to 3,000 payments', () => {

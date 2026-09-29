@@ -23,7 +23,10 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
-  timeout: 30_000,
+  // axe has to walk the whole dashboard, and with four workers in flight that
+  // lands well past 30s on a loaded runner — the payment-modal a11y spec was
+  // timing out inside `analyze()` rather than reporting a real violation.
+  timeout: 60_000,
   use: {
     baseURL: 'http://127.0.0.1:3000',
     trace: 'on-first-retry',
@@ -39,7 +42,10 @@ export default defineConfig({
       maxDiffPixelRatio: 0.01,
     },
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+  ],
   webServer: {
     // `next dev` rather than a production build: the app's API routes are
     // type-checked lazily per request, and the e2e specs intercept every API
@@ -55,6 +61,7 @@ export default defineConfig({
       JWT_SECRET_KEY: 'playwright-e2e-secret-key',
       MERCHANT_ADDRESS: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/accensa_e2e_none',
+      NEXT_PUBLIC_STELLAR_NETWORK: 'testnet',
     },
   },
 });

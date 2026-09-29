@@ -44,6 +44,10 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
     },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'], viewport: { width: 1280, height: 800 } },
+    },
   ],
   webServer: {
     command: `pnpm exec next dev --port ${PORT}`,
@@ -55,6 +59,7 @@ export default defineConfig({
       JWT_SECRET_KEY: process.env.JWT_SECRET_KEY ?? 'visual-regression-test-secret',
       MERCHANT_ADDRESS:
         process.env.MERCHANT_ADDRESS ?? 'GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6',
+      NEXT_PUBLIC_STELLAR_NETWORK: 'testnet',
       PORT: String(PORT),
     },
   },

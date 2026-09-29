@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { SETTLE_METHODS, isSettleMethod } from '@accensa/sdk';
 import { parseSettlementReport } from './settlement-report';
 
 const TX = 'a'.repeat(64);
@@ -126,5 +127,50 @@ describe('parseSettlementReport', () => {
   it('rejects a future-dated reported_at', () => {
     const futureDate = new Date(Date.now() + 600000).toISOString();
     expectError({ ...valid, reported_at: futureDate }, /report_future_dated/);
+  });
+});
+
+/**
+ * Client/server parity for the method list (#381).
+ *
+ * Two lists have to agree for a settlement to be recordable: the SDK's
+ * `SETTLE_METHODS` (derived from the `method` enum in `openapi.yaml`, which
+ * is what the SDK validates against before signing) and the `METHODS` set
+ * this validator enforces. Nothing links them at the type level - one is in
+ * `@accensa/sdk`, the other is a `Set` two directories away - so a method
+ * added to one and not the other is invisible until a merchant reports a paid
+ * request with that verb and the hook silently drops it.
+ *
+ * The pairing is asserted in both directions: every method the SDK will sign
+ * is accepted here, and every method accepted here is one the SDK will sign.
+ */
+describe('method parity with @accensa/sdk', () => {
+  it('accepts every method the SDK is willing to report', () => {
+    for (const method of SETTLE_METHODS) {
+      const result = parseSettlementReport({ ...valid, method });
+      expect(result.ok, `${method} should be accepted`).toBe(true);
+      expect(result.ok && result.report.method).toBe(method);
+    }
+  });
+
+  it('rejects a method the SDK itself refuses to sign', () => {
+    // A method outside the SDK's list can never be reported, so it must not
+    // be accepted here either - otherwise a merchant's own `attribute`
+    // callback is the only thing standing between a bad verb and the database.
+    expect(isSettleMethod('TRACE')).toBe(false);
+    expectError({ ...valid, method: 'TRACE' }, /method/);
+  });
+
+  it('agrees on the exact set, in both directions', () => {
+    // Compare behaviour to behaviour over a candidate list that covers every
+    // method either side knows about, so the assertion does not restate either
+    // list and go stale.
+    const candidates = [...SETTLE_METHODS, 'TRACE', 'CONNECT', 'PROPFIND', 'PROPPATCH'];
+    const acceptedHere = candidates.filter(
+      (method) => parseSettlementReport({ ...valid, method }).ok,
+    );
+    const acceptedBySdk = candidates.filter((method) => isSettleMethod(method));
+
+    expect(acceptedHere).toEqual(acceptedBySdk);
   });
 });

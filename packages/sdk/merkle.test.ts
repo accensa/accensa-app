@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
-import { verifyReceipt, buildBatch, receiptLeaf, MAX_PROOF_LEN } from './merkle';
+import {
+  verifyReceipt,
+  buildBatch,
+  receiptLeaf,
+  HashDecodeError,
+  EmptyBatchError,
+  MerkleError,
+} from './merkle';
 import vectors from './merkle-vectors.json';
 import { sha256, leafOf, VALID, generateTestLeaves } from './merkle-test-helpers';
 
@@ -48,27 +55,35 @@ describe('verifyReceipt — sorted-pair convention', () => {
 
 describe('verifyReceipt — malformed input and length bounds', () => {
   it('rejects a leaf that is not 32 bytes', () => {
+    expect(() => verifyReceipt('abcd', [], VALID)).toThrow(HashDecodeError);
     expect(() => verifyReceipt('abcd', [], VALID)).toThrow(/leaf/);
   });
 
   it('rejects a proof entry that is not 32 bytes', () => {
+    expect(() => verifyReceipt(VALID, ['abcd'], VALID)).toThrow(HashDecodeError);
     expect(() => verifyReceipt(VALID, ['abcd'], VALID)).toThrow(/proof/);
   });
 
   it('rejects a root that is not 32 bytes', () => {
+    expect(() => verifyReceipt(VALID, [], 'abcd')).toThrow(HashDecodeError);
     expect(() => verifyReceipt(VALID, [], 'abcd')).toThrow(/root/);
   });
 
   it('rejects non-hex characters rather than silently truncating', () => {
-    // Buffer.from(hex) stops at the first invalid character instead of throwing,
-    // so a value like this would otherwise decode to 1 byte and compare short.
     const sneaky = 'ab' + 'zz' + 'a'.repeat(60);
     expect(sneaky).toHaveLength(64);
-    expect(() => verifyReceipt(sneaky, [], VALID)).toThrow(/leaf/);
+    expect(() => verifyReceipt(sneaky, [], VALID)).toThrow(HashDecodeError);
   });
 
   it('rejects an odd-length hex string', () => {
-    expect(() => verifyReceipt('a'.repeat(63), [], VALID)).toThrow(/leaf/);
+    expect(() => verifyReceipt('a'.repeat(63), [], VALID)).toThrow(HashDecodeError);
+  });
+
+  it('rejects non-string inputs', () => {
+    // @ts-expect-error Intentionally passing invalid types to ensure runtime guard works
+    expect(() => verifyReceipt(123, [], VALID)).toThrow(MerkleError);
+    // @ts-expect-error
+    expect(() => verifyReceipt(VALID, [null], VALID)).toThrow(MerkleError);
   });
 
   it('rejects proofs exceeding MAX_PROOF_LEN to match contract ProofTooLong constraint', () => {
@@ -110,11 +125,13 @@ describe('buildBatch — proofs verify against the shared convention', () => {
   });
 
   it('throws on an empty input rather than inventing a zero root', () => {
-    expect(() => buildBatch([])).toThrow(/at least one leaf/);
+    expect(() => buildBatch([])).toThrow(EmptyBatchError);
+    // @ts-expect-error
+    expect(() => buildBatch(null)).toThrow(EmptyBatchError);
   });
 
   it('rejects a malformed leaf rather than silently truncating', () => {
-    expect(() => buildBatch(['abcd'])).toThrow(/leaves\[0\]/);
+    expect(() => buildBatch(['abcd'])).toThrow(HashDecodeError);
   });
 });
 
@@ -133,7 +150,12 @@ describe('receiptLeaf — production preimage', () => {
   });
 
   it('rejects a value that is not 32 bytes', () => {
-    expect(() => receiptLeaf('abcd')).toThrow(/tx_hash/);
+    expect(() => receiptLeaf('abcd')).toThrow(HashDecodeError);
+  });
+
+  it('rejects non-string values gracefully', () => {
+    // @ts-expect-error
+    expect(() => receiptLeaf(123)).toThrow(TypeError); // String methods fail before decodeHash
   });
 });
 

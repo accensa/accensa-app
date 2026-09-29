@@ -8,8 +8,16 @@ import {
   type Settlement,
   type X402SettleResult,
 } from './settlement';
-import { AccensaAuthError, AccensaError, AccensaNetworkError } from './src/errors';
-import { fetchWithRetry, HttpError, type RetryOptions } from './retry';
+import { AccensaNetworkError } from './src/errors';
+import { fetchWithRetry, type RetryOptions } from './retry';
+import { signSettlementPayload } from './src/signing';
+import {
+  SETTLE_ENDPOINT,
+  settleEndpointUrl,
+  toSettleHookPayload,
+  toSettleReportError,
+  type SettleHookPayload,
+} from './src/settle-report';
 
 export { verifyReceipt, buildBatch, receiptLeaf, MAX_PROOF_LEN, type BatchInfo } from './merkle';
 export { fetchWithRetry, HttpError, type RetryOptions } from './retry';
@@ -42,6 +50,12 @@ export {
   type OrdersPage,
   type ProductsPage,
 } from './src/client';
+/** Resilient WebSocket subscription to live payments (#451). */
+export {
+  subscribeToPayments,
+  paymentsStreamUrl,
+  type SubscribeToPaymentsOptions,
+} from './src/realtime/client';
 /** Typed error classes for the failure modes consumers actually branch on. */
 export {
   AccensaError,
@@ -77,6 +91,66 @@ export {
   type OpeningProof,
   type ZkVerifier,
 } from './src/zk-proof';
+/** Escrow dispute and refund request functionality (#387). */
+export {
+  DisputeReason,
+  submitDispute,
+  validateDisputeRequest,
+  estimateDisputeFee,
+  mapDisputeReason,
+  type DisputeRequest,
+  type DisputeOptions,
+  type DisputeResult,
+} from './src/dispute';
+
+/**
+ * Widget exports. These are browser-only (the web component touches
+ * `customElements` and `window` at module scope), so the module registers
+ * itself only when a DOM exists; importing it in Node is still safe.
+ */
+import { AccensaCheckoutWidget } from './src/widget/checkout-widget';
+export { AccensaCheckoutWidget };
+export {
+  type CheckoutConfig,
+  type WidgetMessage,
+  type ParentMessage,
+} from './src/widget/checkout-widget';
+export {
+  initWidgetHost,
+  sendToWidget,
+  embedWidget,
+  createWidget,
+  type WidgetHostOptions,
+  type PaymentRequest,
+} from './src/widget';
+
+/** Strongly-typed Soroban contract event definitions and decoders (#421). */
+export {
+  decodeAccensaEvent,
+  tryDecodeAccensaEvent,
+  matchAccensaEvent,
+  isDepositEvent,
+  isRefundEvent,
+  isDisputeEvent,
+  isAnchorEvent,
+  isMultisigEvent,
+  depositTopicFilter,
+  refundTopicFilter,
+  disputeTopicFilter,
+  anchorTopicFilter,
+  multisigTopicFilter,
+  EventDecodeError,
+  type AccensaEvent,
+  type AccensaEventType,
+  type DepositEvent,
+  type RefundEvent,
+  type DisputeEvent,
+  type DisputeStatus,
+  type AnchorEvent,
+  type MultisigEvent,
+  type MultisigOperation,
+  type RawSorobanRpcEvent,
+} from './src/events';
 
 /**
  * This package deliberately ships no paywall middleware.
@@ -94,8 +168,33 @@ export {
  * contract documented at the top of `settlement.ts` forbids.
  */
 
-/** Path the Accensa app exposes for merchant-reported route attribution. */
-export const SETTLE_ENDPOINT = '/api/hook/settle';
+export { SETTLE_ENDPOINT } from './src/settle-report';
+
+/**
+ * The wire contract of `/api/hook/settle`.
+ *
+ * Re-exported from `src/settle-report.ts`, which owns the endpoint's shapes;
+ * they are aliases of `apps/web/openapi.yaml` rather than declarations, so
+ * see `src/api/` for how that works.
+ */
+export {
+  isSettleMethod,
+  toSettleHookPayload,
+  toSettleMethod,
+  SETTLE_METHODS,
+  type SettleHookResult,
+} from './src/settle-report';
+export type { SettleHookPayload };
+
+/** Named types for the indexer's HTTP surface, from the OpenAPI spec. */
+export type {
+  ApiOperationName,
+  ApiPath,
+  HttpMethod,
+  SettlementMethod,
+  SettlementReport,
+  SettlementReportResult,
+} from './src/api';
 
 export interface AccensaHookOptions {
   /** Base URL of your Accensa deployment, e.g. https://accensa-dashboard.vercel.app */
@@ -138,87 +237,6 @@ export interface AccensaHookOptions {
  */
 export const DEFAULT_TIMEOUT_MS = 5_000;
 
-/** PKCS#8 wrapper for a raw 32-byte Ed25519 private seed (RFC 8410). */
-const ED25519_PKCS8_PREFIX = '302e020100300506032b657004220420';
-
-function privateKeyPkcs8(privateKeyHex: string): ArrayBuffer {
-  if (!/^[0-9a-fA-F]{64}$/.test(privateKeyHex)) {
-    throw new Error('Ed25519 private key must be exactly 32 bytes encoded as hex');
-  }
-  const result = new Uint8Array(48);
-  for (let i = 0; i < ED25519_PKCS8_PREFIX.length; i += 2) {
-    result[i / 2] = Number.parseInt(ED25519_PKCS8_PREFIX.slice(i, i + 2), 16);
-  }
-  for (let i = 0; i < 32; i += 1) {
-    result[16 + i] = Number.parseInt(privateKeyHex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return result.buffer;
-}
-
-async function signSettlementPayload(payload: string, privateKeyHex: string): Promise<string> {
-  const data = new TextEncoder().encode(payload);
-  const pkcs8 = privateKeyPkcs8(privateKeyHex);
-  const subtle = globalThis.crypto?.subtle;
-
-  if (subtle) {
-    try {
-      const key = await subtle.importKey('pkcs8', pkcs8, { name: 'Ed25519' }, false, ['sign']);
-      const signature = await subtle.sign({ name: 'Ed25519' }, key, data);
-      return Array.from(new Uint8Array(signature), (byte) =>
-        byte.toString(16).padStart(2, '0'),
-      ).join('');
-    } catch {
-      // Ed25519 is not available in every WebCrypto implementation; try Node below.
-    }
-  }
-
-  try {
-    const crypto = await import('node:crypto');
-    const privateKey = crypto.createPrivateKey({
-      key: Buffer.from(pkcs8),
-      format: 'der',
-      type: 'pkcs8',
-    });
-    return crypto.sign(null, Buffer.from(data), privateKey).toString('hex');
-  } catch {
-    throw new Error(
-      'Ed25519 signing unavailable: WebCrypto Ed25519 support and Node.js crypto are missing',
-    );
-  }
-}
-
-/**
- * The body POSTed to `/api/hook/settle`, and the exact bytes that get signed.
- *
- * Snake-cased because it is a wire format, not an in-process value. Declaring
- * it here means a change to either end that the other does not follow is a
- * compile error in this package rather than a 401 or 400 found in production.
- */
-export interface SettleHookPayload {
-  tx_hash: string;
-  route: string;
-  method: string;
-  request_id?: string;
-  payer?: string;
-  amount?: string;
-  network?: string;
-  reported_at?: string;
-}
-
-/** Builds the wire body for one settlement. */
-export function toSettleHookPayload(settlement: Settlement): SettleHookPayload {
-  return {
-    tx_hash: settlement.txHash,
-    route: settlement.route,
-    method: settlement.method,
-    request_id: settlement.requestId,
-    payer: settlement.payer,
-    amount: settlement.amount,
-    network: settlement.network,
-    reported_at: new Date().toISOString(),
-  };
-}
-
 /**
  * The request surface the middleware reads.
  *
@@ -238,22 +256,28 @@ export interface AttributableRequest {
  * Reports one settlement to Accensa.
  *
  * Best-effort: resolves false rather than throwing, so a caller in a request
- * path can ignore the result safely.
+ * path can ignore the result safely. That holds for *every* failure, including
+ * a settlement whose method the indexer will not accept - the report is
+ * rejected through `onError` with no request made, rather than escaping from a
+ * `res.on('finish')` listener and taking the process with it.
  */
 export async function reportSettlement(
   settlement: Settlement,
   opts: AccensaHookOptions,
 ): Promise<boolean> {
-  const report = (opts && typeof opts === 'object' && typeof opts.onError === 'function')
-    ? opts.onError
-    : reportToConsole;
+  const report = opts.onError ?? reportToConsole;
+  const url = settleEndpointUrl(opts.indexerUrl);
 
-  if (!settlement || typeof settlement !== 'object') {
-    report(new AccensaError('Invalid settlement payload supplied to reportSettlement'));
+  // Built inside the try: the payload is validated against the spec
+  // (`toSettleHookPayload`), and a validation failure has nowhere useful to
+  // go except the same `onError` channel as a delivery failure.
+  let body: SettleHookPayload | undefined;
+  try {
+    body = toSettleHookPayload(settlement);
+  } catch (error) {
+    report(error, body);
     return false;
   }
-
-  const body = toSettleHookPayload(settlement);
 
   if (!opts || typeof opts !== 'object') {
     report(new AccensaError('Invalid options supplied to reportSettlement'), body);
@@ -286,7 +310,7 @@ export async function reportSettlement(
     // with exponential backoff (#123) — a 4xx, or the abort above firing,
     // still fails on the first attempt, since retrying either changes nothing.
     await fetchWithRetry(
-      `${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`,
+      url,
       {
         method: 'POST',
         headers: {
@@ -301,37 +325,7 @@ export async function reportSettlement(
     );
     return true;
   } catch (error) {
-    if (error instanceof HttpError) {
-      // A 401/403 means the report itself was rejected, not that the network
-      // is down — classify it so callers can distinguish the two.
-      const { status } = error;
-      report(
-        status === 401 || status === 403
-          ? new AccensaAuthError(`Accensa returned ${status} for ${settlement.txHash}`, {
-              status,
-              path: SETTLE_ENDPOINT,
-            })
-          : new AccensaError(`Accensa returned ${status} for ${settlement.txHash}`, {
-              status,
-            }),
-        body,
-      );
-    } else {
-      // A dropped connection, a timeout (surfacing as an AbortError), or a
-      // network-level failure that exhausted its retries. The underlying
-      // message rides along so `report` can show why the report failed.
-      const causeText = error instanceof Error ? error.message : String(error);
-      report(
-        new AccensaNetworkError(
-          `Failed to reach the Accensa indexer at ${SETTLE_ENDPOINT}: ${causeText}`,
-          {
-            url: `${opts.indexerUrl.replace(/\/$/, '')}${SETTLE_ENDPOINT}`,
-            cause: error,
-          },
-        ),
-        body,
-      );
-    }
+    report(toSettleReportError(error, settlement.txHash, url), body);
     return false;
   } finally {
     clearTimeout(timer);

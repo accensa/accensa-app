@@ -199,10 +199,27 @@ pnpm gen:api   # regenerates packages/sdk/generated/api-types.ts from the spec
 
 CI regenerates the file and fails the build if it does not match what's
 checked in, the same way `gen:vectors` is checked for the Merkle conformance
-fixture. Only the wire type the SDK directly depends on
-(`SettleHookPayload`) has been switched over so far; the spec also documents
-`/api/payments`, `/api/routes`, `/api/verify` and `/api/sync` for the same
-treatment later.
+fixture.
+
+The generated file is deliberately mechanical, so consuming it means
+four-level index chains and `never` guards at both ends. `src/api/` is the
+hand-written layer over it:
+
+- `src/api/schema.ts` names every schema in the spec (`SettlementReport`,
+  `PaymentsResponse`, `VerifyResponse`, ...) in one reviewable list.
+- `src/api/operations.ts` names what each `operationId` sends and returns, and
+  derives the types: `RequestBodyOf<'reportSettlement'>`,
+  `ResponseBodyOf<'reportSettlement', 400>`, `QueryParams<'listPayments'>`,
+  `ApiOperation<'/api/hook/settle', 'post'>`.
+- `SettleHookPayload` is defined _as_ the spec's `SettlementReport`, so a
+  change to `openapi.yaml` reaches what the SDK POSTs. That narrowing is
+  visible at runtime too: a settlement whose method is not one of the seven
+  the spec enumerates is refused locally, through `onError`, before anything
+  is signed or sent.
+
+Both lists are asserted to have the spec's exact key sets in
+`src/api/api-types.test-d.ts`, which `pnpm test` type-checks, so a schema or
+operation added to the spec cannot be left unaliased.
 
 ## Reading Orders and Products
 

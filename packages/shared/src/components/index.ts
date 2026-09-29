@@ -17,3 +17,7 @@ export interface ComponentConfig {
 export function defineComponent(config: ComponentConfig): ComponentConfig {
   return config;
 }
+export * from './badge';
+export * from './cta-button';
+export * from './Input';
+export * from './Modal';

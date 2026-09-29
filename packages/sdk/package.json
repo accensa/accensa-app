@@ -32,7 +32,8 @@
     "./webhooks": "./webhooks.ts",
     "./retry": "./retry.ts",
     "./currency": "./currency.ts",
-    "./zk-proof": "./src/zk-proof.ts"
+    "./zk-proof": "./src/zk-proof.ts",
+    "./events": "./src/events/index.ts"
   },
   "files": [
     "dist",
@@ -48,21 +49,27 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "gen:vectors": "node scripts/generate-vectors.mjs",
-    "gen:api": "openapi-typescript ../../apps/web/openapi.yaml -o ./generated/api-types.ts && prettier --write ./generated/api-types.ts"
+    "gen:api": "openapi-typescript ../../apps/web/openapi.yaml -o ./generated/api-types.ts && prettier --write ./generated/api-types.ts",
+    "check-bundle-size": "node scripts/check-bundle-size.mjs"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^16.0.1"
   },
   "peerDependencies": {
-    "express": ">=4"
+    "express": ">=4",
+    "react": ">=18"
   },
   "peerDependenciesMeta": {
     "express": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     }
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/react": "^18.3.3",
     "@types/supertest": "^7.2.1",
     "openapi-typescript": "^7.13.0",
     "supertest": "^7.2.2",
