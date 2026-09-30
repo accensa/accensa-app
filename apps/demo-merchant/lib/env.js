@@ -98,7 +98,10 @@ export function parseBaseUrl(name, fallback) {
 export function parseRouteList(name, fallback = DEFAULT_AGENT_ROUTES) {
   const value = readEnv(name);
   if (value === undefined) return fallback.split(',').map((route) => route.trim());
-  const routes = value.split(',').map((route) => route.trim()).filter(Boolean);
+  const routes = value
+    .split(',')
+    .map((route) => route.trim())
+    .filter(Boolean);
   if (routes.length === 0) {
     throw new EnvError(name, `"${value}" contains no usable routes`);
   }
