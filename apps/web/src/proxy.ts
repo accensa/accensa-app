@@ -90,9 +90,14 @@ export default async function proxy(request: NextRequest) {
     path.startsWith('/api/auth') ||
     path.startsWith('/api/hook/') ||
     path.startsWith('/api/receipts/');
-  const isCronSync =
-    (path === '/api/sync' || path === '/api/webhooks/deliver') && request.method === 'GET';
-  const isPrivateApi = path.startsWith('/api/') && !isPublicApi && !isCronSync;
+  // `GET /api/health` belongs here, not in the session group. Its only consumer
+  // is `.github/workflows/stale-check.yml` (and any external uptime monitor), and
+  // neither can present an `accensa_session` cookie, so gating it by session made
+  // the alerting path permanently unreachable: every scheduled run died on a 401.
+  const isCronGated =
+    (path === '/api/sync' || path === '/api/webhooks/deliver' || path === '/api/health') &&
+    request.method === 'GET';
+  const isPrivateApi = path.startsWith('/api/') && !isPublicApi && !isCronGated;
   const isDashboard = path.startsWith('/dashboard');
 
   if (isPrivateApi || isDashboard) {
@@ -146,10 +151,15 @@ export default async function proxy(request: NextRequest) {
     }
   }
 
-  // Enforce CRON_SECRET for GET /api/sync and GET /api/webhooks/deliver
-  if (isCronSync) {
+  // Enforce CRON_SECRET for the scheduler- and monitor-only GETs.
+  if (isCronGated) {
+    const secret = process.env.CRON_SECRET;
     const authHeader = request.headers.get('authorization');
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    // Fail closed on a missing secret. Without this guard the comparison below
+    // degenerates to the literal string `Bearer undefined`, which is the one
+    // value an unauthenticated caller can always guess — the same trap
+    // `lib/cron-auth.ts` documents for the Node-side check.
+    if (!secret || authHeader !== `Bearer ${secret}`) {
       return harden(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }), csp);
     }
   }
