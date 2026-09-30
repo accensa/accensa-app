@@ -22,16 +22,12 @@
  *   STELLAR_RPC_URL      Soroban RPC; defaults to the testnet endpoint.
  */
 import 'dotenv/config';
+import { boot, loadPayerEnv } from './lib/env.js';
 import { createPayer, payForResource } from './lib/x402-payer.js';
 
-const MERCHANT_URL = (process.env.MERCHANT_URL ?? 'http://localhost:3001').replace(/\/$/, '');
-const RPC_URL = process.env.STELLAR_RPC_URL;
-
-const PRIVATE_KEY = process.env.STELLAR_PRIVATE_KEY;
-if (!PRIVATE_KEY) {
-  console.error('❌ STELLAR_PRIVATE_KEY is not set. Fund a testnet payer first — see README.md.');
-  process.exit(1);
-}
+// Same single source of env truth as agent.js (issue #344): required values
+// abort with a named message, optional values validate before first use.
+const { privateKey: PRIVATE_KEY, merchantUrl: MERCHANT_URL, rpcUrl: RPC_URL } = boot(loadPayerEnv);
 
 /**
  * The mix this driver makes. Cheap and frequent, expensive and rare — a
