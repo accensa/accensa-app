@@ -48,6 +48,7 @@
     "lint": "echo 'No lint configured for @accensa/sdk'",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench": "vitest bench",
     "typecheck": "tsc --noEmit",
     "gen:vectors": "node scripts/generate-vectors.mjs",
     "gen:api": "openapi-typescript ../../apps/web/openapi.yaml -o ./generated/api-types.ts && prettier --write ./generated/api-types.ts",
