@@ -18,6 +18,7 @@ import { fetchWithRetry, HttpError, retryAfterMs, type RetryOptions } from '../r
 import type { Order } from './types/order';
 import type { Product } from './types/product';
 import type { SyncEvent } from './types/sync-event';
+import { subscribeToPayments, type SubscribeToPaymentsOptions } from './realtime/client';
 
 // Re-exported from `./errors` (which owns the canonical definitions) so that
 // consumers importing the error classes from `@accensa/sdk` keep working.
@@ -214,6 +215,22 @@ export class AccensaClient {
     source.onopen = () => handlers.onStatus?.(true);
     source.onerror = () => handlers.onStatus?.(false);
     return () => source.close();
+  }
+
+  /**
+   * Subscribes to a merchant's payments over a WebSocket (#451).
+   *
+   * Reconnects with exponential backoff after a drop and pings the server to
+   * detect zombie connections. Returns an unsubscribe function that closes the
+   * socket for good. Failures (malformed frames, disconnects) go to `onError`.
+   */
+  subscribeToPayments(
+    opts: Omit<SubscribeToPaymentsOptions, 'indexerUrl'> & { indexerUrl?: string },
+  ): () => void {
+    return subscribeToPayments({
+      ...opts,
+      indexerUrl: opts.indexerUrl ?? this.indexerUrl,
+    });
   }
 
   /**

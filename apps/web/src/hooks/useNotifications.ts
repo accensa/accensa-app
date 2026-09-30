@@ -3,6 +3,7 @@
 import useSWR from 'swr';
 import { useCallback } from 'react';
 import type { Notification, NotificationAction } from '@/lib/notifications';
+export type { NotificationAction };
 
 /** How often the drawer re-fetches so the badge count stays live. */
 export const NOTIFICATION_POLL_INTERVAL_MS = 15_000;
@@ -100,7 +101,10 @@ export function useNotifications(): UseNotificationsResult {
   );
 
   const markAllAsRead = useCallback(() => runAction({ action: 'mark-all-read' }), [runAction]);
-  const markAsRead = useCallback((id: number) => runAction({ action: 'mark-read', id }), [runAction]);
+  const markAsRead = useCallback(
+    (id: number) => runAction({ action: 'mark-read', id }),
+    [runAction],
+  );
   const dismiss = useCallback((id: number) => runAction({ action: 'dismiss', id }), [runAction]);
 
   return {

@@ -32,8 +32,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         working-directory: .
-      - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        # Firefox as well as chromium: the visual config runs both projects,
+        # and a missing browser binary fails the job after the server is up.
+        run: pnpm exec playwright install --with-deps chromium firefox
       - name: Run visual tests
         env:
           JWT_SECRET_KEY: visual-regression-test-secret

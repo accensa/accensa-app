@@ -17,7 +17,8 @@ const {
     MERCHANT: merchant,
     mockWithClient: vi.fn(async (fn: (client: unknown) => Promise<unknown>) => fn({})),
     mockWithMerchantClient: vi.fn(
-      async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) => fn({ query: vi.fn() }),
+      async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) =>
+        fn({ query: vi.fn() }),
     ),
     mockGetMerchantFromRequest: vi.fn().mockResolvedValue(merchant),
     mockListNotifications: vi.fn().mockResolvedValue([]),

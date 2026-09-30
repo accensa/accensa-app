@@ -22,6 +22,16 @@ export class EmptyBatchError extends MerkleError {
 }
 
 /**
+ * Deepest proof `verifyReceipt` will accept, in siblings.
+ *
+ * Mirrors the on-chain `ProofTooLong` bound in `ReceiptAnchor`: a tree of 2^32
+ * leaves is already beyond any real batch, so a longer proof is malformed
+ * rather than merely large. Rejecting it here keeps the SDK and the contract
+ * agreeing on which proofs are admissible.
+ */
+export const MAX_PROOF_LEN = 32;
+
+/**
  * Verifies a payment receipt against an anchored batch root, off-chain.
  *
  * Mirrors `ReceiptAnchor.verify_receipt` exactly: proof siblings are combined
@@ -32,9 +42,13 @@ export class EmptyBatchError extends MerkleError {
  * @param leaf  hex-encoded 32-byte hash of the receipt (payment hash + metadata)
  * @param proof hex-encoded 32-byte sibling hashes, leaf-to-root order
  * @param root  hex-encoded 32-byte Merkle root anchored on-chain
- * @throws if any input is not a hex-encoded 32-byte value
+ * @throws if any input is not a hex-encoded 32-byte value or if proof length exceeds MAX_PROOF_LEN
  */
 export function verifyReceipt(leaf: string, proof: string[], root: string): boolean {
+  if (proof.length > MAX_PROOF_LEN) {
+    throw new Error(`proof length exceeds MAX_PROOF_LEN (${MAX_PROOF_LEN})`);
+  }
+
   let computed = decodeHash(leaf, 'leaf');
 
   for (const siblingHex of proof) {

@@ -17,6 +17,7 @@ import { describeFailure } from '@/lib/network-status';
 import type { Role } from '@/lib/rbac';
 import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';
 import { focusRestorer, getFocusable, wrapTabTarget } from '@/lib/dialog-focus';
+import { SocialShareButtons } from '@/components/receipts/SocialShareButtons';
 
 interface Payment {
   tx_hash: string;
@@ -177,7 +178,7 @@ export function Dashboard() {
   // The current page lives in the URL (?page=2) so it survives reloads and can
   // be linked to; searchParams is the single source of truth, and `goToPage`
   // writes a new URL that the router re-renders this component with.
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams()!;
   const router = useRouter();
   const pathname = usePathname();
   const pageParam = Number(searchParams?.get('page') ?? '1');
@@ -560,6 +561,14 @@ export function PaymentModal({
             >
               View on Explorer <ArrowUpRight className="w-4 h-4 opacity-70" />
             </a>
+          </div>
+
+          <div className="pt-6 mt-6 border-t border-slate-100 dark:border-white/10 transition-colors duration-300">
+            <SocialShareButtons
+              txHash={selected.tx_hash}
+              amount={formatAmount(selected.amount)}
+              asset={assetLabel(selected.asset)}
+            />
           </div>
 
           {canRefund !== false && (

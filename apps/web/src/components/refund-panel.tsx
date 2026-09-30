@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { formatAmount, assetLabel } from '@/lib/money';
-import { readStatus, truncateAddress } from '@/lib/freighter';
+import { readStatus, connect, truncateAddress } from '@/lib/freighter';
 import { explorerTxUrl } from '@/lib/explorer';
 import { submitRefund, type RefundOutcome } from '@/lib/refund-submit';
 import type { RefundPreflightResponse } from '@/app/api/refund/preflight/route';
@@ -52,12 +52,30 @@ export function RefundPanel({
 
   useEffect(() => {
     let live = true;
-    void readStatus().then((status) => {
-      if (live) setMerchant(status.kind === 'connected' ? status.address : null);
-    });
+    const checkWallet = () => {
+      void readStatus().then((status) => {
+        if (live) setMerchant(status.kind === 'connected' ? status.address : null);
+      });
+    };
+
+    checkWallet();
+    const interval = setInterval(checkWallet, 2000);
+    window.addEventListener('focus', checkWallet);
+    document.addEventListener('visibilitychange', checkWallet);
+
     return () => {
       live = false;
+      clearInterval(interval);
+      window.removeEventListener('focus', checkWallet);
+      document.removeEventListener('visibilitychange', checkWallet);
     };
+  }, []);
+
+  const handleConnect = useCallback(async () => {
+    const status = await connect();
+    if (status.kind === 'connected') {
+      setMerchant(status.address);
+    }
   }, []);
 
   const check = useCallback(async () => {
@@ -109,6 +127,7 @@ export function RefundPanel({
       onCheck={check}
       onConfirm={confirm}
       onReset={reset}
+      onConnect={handleConnect}
     />
   );
 }
@@ -130,6 +149,7 @@ export function RefundPanelView({
   onCheck,
   onConfirm,
   onReset,
+  onConnect,
 }: {
   phase: Phase;
   merchant: string | null;
@@ -138,15 +158,23 @@ export function RefundPanelView({
   onCheck: () => void;
   onConfirm: () => void;
   onReset: () => void;
+  onConnect?: () => void;
 }) {
   const asset = assetLabel(payment.asset);
 
   if (!merchant) {
     return (
-      <Note>
-        Connect a Stellar wallet to issue refunds. The refund is signed by your own account —
-        Accensa never holds a key that can move your float.
-      </Note>
+      <div className="space-y-3">
+        <Note>
+          Connect a Stellar wallet to issue refunds. The refund is signed by your own account —
+          Accensa never holds a key that can move your float.
+        </Note>
+        {onConnect && (
+          <SmallButton onClick={onConnect} tone="primary">
+            Connect wallet
+          </SmallButton>
+        )}
+      </div>
     );
   }
 

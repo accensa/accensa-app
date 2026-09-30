@@ -31,6 +31,7 @@ import { broadcastSyncEvent, hasSubscribers } from '@/lib/sync-events';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 import { logSyncFailure, notifySyncFailure, type SyncFailureContext } from '@/lib/sync-logger';
 import { createHmac } from 'node:crypto';
+import { enqueueChatNotifications } from '@/lib/notifications/chatNotifier';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -308,6 +309,22 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
           // window that may have been only partially drained.
           const payments = await insertPaymentRows(client, merchant.id, rows);
           inserted += payments.length;
+
+          try {
+            await enqueueChatNotifications(
+              client,
+              merchant.id,
+              payments.map((payment) => ({
+                event: 'settlement' as const,
+                amount: String(payment.amount ?? ''),
+                asset: String(payment.asset ?? 'XLM'),
+                customerAddress: String(payment.payer ?? 'Unavailable'),
+                txHash: String(payment.tx_hash ?? ''),
+              })),
+            );
+          } catch (error) {
+            console.error('Failed to queue chat payment notifications:', error);
+          }
 
           // Webhooks fire after COMMIT, so a slow or failing webhook can neither
           // hold the transaction open nor roll back a committed batch. The
