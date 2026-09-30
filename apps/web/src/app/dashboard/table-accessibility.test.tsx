@@ -33,9 +33,10 @@ describe('Dashboard tables accessibility', () => {
     expect(html).toContain('<th scope="col" class="px-8 py-5">Payer</th>');
     expect(html).toContain('<th scope="col" class="px-8 py-5">Route</th>');
     expect(html).toContain('<th scope="col" class="px-8 py-5">Time</th>');
+    expect(html).toContain('<th scope="col" class="px-8 py-5">Risk</th>');
 
     const thMatches = html.match(/<th\b[^>]*>/g) ?? [];
-    expect(thMatches.length).toBe(5);
+    expect(thMatches.length).toBe(6);
     for (const th of thMatches) {
       expect(th).toContain('scope="col"');
     }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
-import { EvidenceUpload } from '../../../src/components/disputes/EvidenceUpload';
+import { EvidenceUpload } from '@/components/disputes/EvidenceUpload';
 
 interface DisputeEvent {
   label: string;

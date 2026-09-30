@@ -34,7 +34,8 @@
     "./currency": "./currency.ts",
     "./zk-proof": "./src/zk-proof.ts",
     "./events": "./src/events/index.ts",
-    "./subscription": "./src/subscription/index.ts"
+    "./subscription": "./src/subscription/index.ts",
+    "./session/express": "./src/session/express.ts"
   },
   "files": [
     "dist",

@@ -18,6 +18,9 @@ import type { Role } from '@/lib/rbac';
 import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';
 import { focusRestorer, getFocusable, wrapTabTarget } from '@/lib/dialog-focus';
 import { SocialShareButtons } from '@/components/receipts/SocialShareButtons';
+import { SavingsBanner } from '@/components/merchant/SavingsBanner';
+import { summarizeSavings } from '@/lib/analytics/savingsCalculator';
+import { RiskScoreBadge } from '@/components/transactions/RiskScoreBadge';
 
 interface Payment {
   tx_hash: string;
@@ -138,9 +141,17 @@ function saveRefundedToStorage(refunded: ReadonlySet<string>): void {
   }
 }
 
+const RISK_THRESHOLD_STORAGE_KEY = 'accensa-risk-review-threshold';
+
+function loadRiskThreshold(): number {
+  if (typeof window === 'undefined') return 75;
+  const stored = Number(localStorage.getItem(RISK_THRESHOLD_STORAGE_KEY));
+  return Number.isInteger(stored) && stored >= 0 && stored <= 100 ? stored : 75;
+}
+
 export function Dashboard() {
   const [selected, setSelected] = useState<Payment | null>(null);
-  const [manualReviewAbove, setManualReviewAbove] = useState(75);
+  const [manualReviewAbove, setManualReviewAbove] = useState(() => loadRiskThreshold());
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   // Refunds issued in this session. The indexer does not watch RefundVault
   // events yet, so a refund is otherwise invisible until someone opens the
@@ -162,13 +173,6 @@ export function Dashboard() {
     [],
   );
   const online = useOnline();
-
-  useEffect(() => {
-    const stored = Number(localStorage.getItem('accensa-risk-review-threshold'));
-    if (Number.isInteger(stored) && stored >= 0 && stored <= 100) {
-      setManualReviewAbove(stored);
-    }
-  }, []);
 
   useEffect(() => {
     let live = true;
@@ -361,7 +365,7 @@ export function Dashboard() {
                     const value = Number(event.target.value);
                     if (Number.isInteger(value) && value >= 0 && value <= 100) {
                       setManualReviewAbove(value);
-                      localStorage.setItem('accensa-risk-review-threshold', String(value));
+                      localStorage.setItem(RISK_THRESHOLD_STORAGE_KEY, String(value));
                     }
                   }}
                   className="w-16 border border-slate-300 bg-white px-2 py-1 text-slate-900 dark:border-white/20 dark:bg-white/5 dark:text-white"

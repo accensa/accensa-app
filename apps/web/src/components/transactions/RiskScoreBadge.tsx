@@ -28,7 +28,11 @@ export function RiskScoreBadge({
       className={`inline-flex items-center gap-1.5 border px-2 py-1 text-xs font-semibold ${tone}`}
       title={requiresManualReview ? 'Requires manual review' : `Risk score ${boundedScore} of 100`}
     >
-      {flag && <span aria-label={`Country ${countryCode}`} role="img">{flag}</span>}
+      {flag && (
+        <span aria-label={`Country ${countryCode}`} role="img">
+          {flag}
+        </span>
+      )}
       <span>{boundedScore}</span>
       {requiresManualReview && <span className="sr-only">Requires manual review</span>}
     </span>

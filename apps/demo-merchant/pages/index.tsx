@@ -3,7 +3,6 @@ import ProductCard from '../components/ProductCard';
 import Cart from '../components/Cart';
 import { FaucetButton } from '../components/FaucetButton';
 
-
 const products = [
   {
     id: '1',

@@ -71,7 +71,9 @@ export function evaluatePaymentRisk(
     windowMinutes <= rules.velocityWindowMinutes
   ) {
     score += 20;
-    reasons.push(`More than ${rules.velocityLimit} failed attempts in ${rules.velocityWindowMinutes} minutes`);
+    reasons.push(
+      `More than ${rules.velocityLimit} failed attempts in ${rules.velocityWindowMinutes} minutes`,
+    );
   }
 
   const boundedScore = Math.min(100, Math.max(0, Math.round(score)));

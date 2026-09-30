@@ -12,7 +12,7 @@ const coupon: Coupon = {
 
 function render(props: Partial<Parameters<typeof CouponInput>[0]> = {}) {
   const html = renderToString(
-    <CouponInput orderAmount="100" lookupCoupon={async () => coupon()} {...props} />,
+    <CouponInput orderAmount="100" lookupCoupon={async () => coupon} {...props} />,
   );
   // React inserts <!-- --> around interpolated values; strip them so
   // assertions read as the rendered text a user sees.

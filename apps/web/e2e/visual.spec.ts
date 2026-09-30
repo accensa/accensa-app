@@ -49,6 +49,11 @@ const SAMPLE_PAYMENTS = {
 
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  // The dashboard's savings banner prints the current month, so without a
+  // fixed clock these baselines silently expire at the start of every month.
+  // `setFixedTime` fakes `Date` only and leaves timers alone, so the
+  // assertions' own polling is unaffected.
+  await page.clock.setFixedTime(new Date('2026-09-15T12:00:00.000Z'));
 });
 
 test('navbar on the landing page', async ({ page }) => {

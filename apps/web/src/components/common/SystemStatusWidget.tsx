@@ -57,28 +57,54 @@ export function SystemStatusWidget() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-200 pb-4 dark:border-white/10">
-              <h2 id="system-status-title" className="text-lg font-bold text-slate-900 dark:text-white">System status</h2>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Close system status" className="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">✕</button>
+              <h2
+                id="system-status-title"
+                className="text-lg font-bold text-slate-900 dark:text-white"
+              >
+                System status
+              </h2>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close system status"
+                className="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              >
+                ✕
+              </button>
             </div>
             <div className="mt-5 space-y-4">
-              {([
-                ['Horizon RPC / Soroban', data?.services.rpc],
-                ['Indexer database', data?.services.indexer],
-                ['Facilitator / relayer', data?.services.relayer],
-              ] as const).map(([label, status]) => {
+              {(
+                [
+                  ['Horizon RPC / Soroban', data?.services.rpc],
+                  ['Indexer database', data?.services.indexer],
+                  ['Facilitator / relayer', data?.services.relayer],
+                ] as const
+              ).map(([label, status]) => {
                 const value = status ?? (error ? 'unavailable' : 'unknown');
                 return (
-                  <div key={label} className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/5">
+                  <div
+                    key={label}
+                    className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/5"
+                  >
                     <span className="text-sm text-slate-700 dark:text-slate-200">{label}</span>
                     <span className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      <span aria-hidden="true" className={`size-2 rounded-full ${COLORS[value]}`} />{LABELS[value]}
+                      <span aria-hidden="true" className={`size-2 rounded-full ${COLORS[value]}`} />
+                      {LABELS[value]}
                     </span>
                   </div>
                 );
               })}
             </div>
-            {data?.checkedAt && <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">Checked {new Date(data.checkedAt).toLocaleTimeString()}</p>}
-            {error && <p role="status" className="mt-4 text-sm text-amber-800 dark:text-amber-300">Live status could not be refreshed. Showing the last available result.</p>}
+            {data?.checkedAt && (
+              <p className="mt-6 text-xs text-slate-500 dark:text-slate-400">
+                Checked {new Date(data.checkedAt).toLocaleTimeString()}
+              </p>
+            )}
+            {error && (
+              <p role="status" className="mt-4 text-sm text-amber-800 dark:text-amber-300">
+                Live status could not be refreshed. Showing the last available result.
+              </p>
+            )}
           </section>
         </div>
       )}

@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import { fundTestnetAccount } from '../lib/stellar/faucet';
 
-export function FaucetButton({ publicKey, onFunded }: { publicKey: string, onFunded?: () => void }) {
+export function FaucetButton({
+  publicKey,
+  onFunded,
+}: {
+  publicKey: string;
+  onFunded?: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');

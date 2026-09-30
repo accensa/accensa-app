@@ -24,7 +24,13 @@ export function canSpendExpress(amount: string, allowance: ExpressAllowance): bo
   const requested = amountUnits(amount);
   const spent = amountUnits(allowance.spent);
   const limit = amountUnits(allowance.limit);
-  return requested !== null && spent !== null && limit !== null && requested > 0n && spent + requested <= limit;
+  return (
+    requested !== null &&
+    spent !== null &&
+    limit !== null &&
+    requested > 0n &&
+    spent + requested <= limit
+  );
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -52,9 +58,15 @@ function writeSession(database: IDBDatabase, session: StoredExpressSession): Pro
   });
 }
 
-function readSession(database: IDBDatabase, sessionId: string): Promise<StoredExpressSession | undefined> {
+function readSession(
+  database: IDBDatabase,
+  sessionId: string,
+): Promise<StoredExpressSession | undefined> {
   return new Promise((resolve, reject) => {
-    const request = database.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(sessionId);
+    const request = database
+      .transaction(STORE_NAME, 'readonly')
+      .objectStore(STORE_NAME)
+      .get(sessionId);
     request.onsuccess = () => resolve(request.result as StoredExpressSession | undefined);
     request.onerror = () => reject(request.error ?? new Error('Could not read session'));
   });
@@ -104,7 +116,8 @@ export async function removeExpressSession(sessionId: string): Promise<void> {
       const transaction = database.transaction(STORE_NAME, 'readwrite');
       transaction.objectStore(STORE_NAME).delete(sessionId);
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error ?? new Error('Could not remove session'));
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error('Could not remove session'));
     });
   } finally {
     database.close();
