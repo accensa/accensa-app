@@ -9,9 +9,14 @@ export interface ReceiptEmailProps {
   date: string;
 }
 
-export const ReceiptEmail: React.FC<ReceiptEmailProps> = ({ txHash, merchantName, amount, date }) => {
+export const ReceiptEmail: React.FC<ReceiptEmailProps> = ({
+  txHash,
+  merchantName,
+  amount,
+  date,
+}) => {
   const explorerUrl = `https://stellar.expert/explorer/testnet/tx/${txHash}`;
-  
+
   return (
     <Html>
       <Head />
@@ -19,7 +24,9 @@ export const ReceiptEmail: React.FC<ReceiptEmailProps> = ({ txHash, merchantName
       <Body style={{ backgroundColor: '#ffffff', fontFamily: 'sans-serif' }}>
         <Container>
           <Section>
-            <Text style={{ fontSize: '24px', fontWeight: 'bold' }}>Receipt from {merchantName}</Text>
+            <Text style={{ fontSize: '24px', fontWeight: 'bold' }}>
+              Receipt from {merchantName}
+            </Text>
             <Text>Amount: {amount}</Text>
             <Text>Date: {date}</Text>
             <Text>Transaction Hash: {txHash}</Text>

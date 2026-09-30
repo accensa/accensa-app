@@ -1,0 +1,17 @@
+[package]
+name = "accensa-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "Rust verification for Accensa Merkle vectors"
+
+[lib]
+name = "accensa_sdk"
+path = "src/lib.rs"
+
+[[test]]
+name = "vectors_test"
+path = "tests/vectors_test.rs"
+
+[dependencies]
+sha2 = "0.10"
+hex = "0.4"

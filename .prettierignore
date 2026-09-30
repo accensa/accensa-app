@@ -8,3 +8,4 @@ pnpm-lock.yaml
 .merkle-vectors.json
 packages/sdk/merkle-vectors.json
 packages/sdk/vectors.rs
+apps/web/next-env.d.ts

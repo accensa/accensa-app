@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
@@ -7,26 +8,29 @@ import {
 } from '@x402/express';
 import { HTTPFacilitatorClient } from '@x402/core/server';
 import { ExactStellarScheme } from '@x402/stellar/exact/server';
+import { boot, loadServerEnv } from './lib/env.js';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
 
-// Where to report route attribution. Point this at your Accensa deployment.
-const ACCENSA_URL = process.env.ACCENSA_URL || 'http://localhost:3000';
-const HOOK_API_KEY = process.env.HOOK_API_KEY;
-
-// Shared secret for verifying inbound webhook signatures from Accensa.
-// Must match the WEBHOOK_SECRET configured in the Accensa deployment.
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+// Every variable this server reads is parsed, validated, and — for optional
+// ones — announced in lib/env.js (issue #344). A malformed value aborts boot
+// with the variable named instead of surfacing later as a broken payment
+// requirement or a NaN port. Where a fallback is documented behaviour
+// (ACCENSA_URL, TOKEN_ADDRESS), the fallback still applies, with a warning.
+const {
+  port: PORT,
+  accensaUrl: ACCENSA_URL,
+  hookApiKey: HOOK_API_KEY,
+  webhookSecret: WEBHOOK_SECRET,
+  // Native XLM Stellar Asset Contract on testnet unless overridden. Priced as
+  // an explicit AssetAmount rather than a bare number: the default money
+  // parser assumes USDC, and the asset has to match what the indexer watches
+  // (ASSET_CONTRACT_IDS) or the settled transfer is never picked up.
+  tokenAddress: XLM_SAC,
+  payTo: PAY_TO,
+} = boot(loadServerEnv);
 
 const NETWORK = 'stellar:testnet';
-
-// Native XLM Stellar Asset Contract on testnet. Priced as an explicit
-// AssetAmount rather than a bare number: the default money parser assumes
-// USDC, and the asset has to match what the indexer watches
-// (ASSET_CONTRACT_IDS) or the settled transfer is never picked up.
-const XLM_SAC =
-  process.env.TOKEN_ADDRESS || 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
 
 /**
  * x402 identifies the paid resource by absolute URL. Attribution wants the path
@@ -180,7 +184,7 @@ const routesConfig = {
       scheme: 'exact',
       price: { asset: XLM_SAC, amount: '1000' }, // 1000 stroops
       network: NETWORK,
-      payTo: process.env.MERCHANT_ADDRESS || 'GAQW...REPLACE_WITH_REAL_ADDRESS',
+      payTo: PAY_TO,
     },
   },
   // Mid price — 0.0025 XLM. A different magnitude from /api/hello so per-route
@@ -190,7 +194,7 @@ const routesConfig = {
       scheme: 'exact',
       price: { asset: XLM_SAC, amount: '25000' }, // 25,000 stroops
       network: NETWORK,
-      payTo: process.env.MERCHANT_ADDRESS || 'GAQW...REPLACE_WITH_REAL_ADDRESS',
+      payTo: PAY_TO,
     },
   },
   // Expensive and rare — 0.1 XLM. A third, much larger magnitude so decimal
@@ -200,7 +204,7 @@ const routesConfig = {
       scheme: 'exact',
       price: { asset: XLM_SAC, amount: '1000000' }, // 1,000,000 stroops
       network: NETWORK,
-      payTo: process.env.MERCHANT_ADDRESS || 'GAQW...REPLACE_WITH_REAL_ADDRESS',
+      payTo: PAY_TO,
     },
   },
 };
@@ -459,7 +463,4 @@ app.listen(PORT, () => {
   console.log(`Reporting attribution to: ${ACCENSA_URL}/api/hook/settle`);
   console.log(`Webhook endpoint: POST http://localhost:${PORT}/api/webhooks/accensa`);
   console.log(`SSE stream: GET http://localhost:${PORT}/api/events`);
-  if (!WEBHOOK_SECRET) {
-    console.warn('⚠️  WEBHOOK_SECRET is not set — webhook signature verification is disabled');
-  }
 });

@@ -51,15 +51,8 @@ const BADGE_MAX = 99;
  */
 export function NotificationCenter() {
   const [open, setOpen] = useState(false);
-  const {
-    notifications,
-    unreadCount,
-    loading,
-    error,
-    markAllAsRead,
-    markAsRead,
-    dismiss,
-  } = useNotifications();
+  const { notifications, unreadCount, loading, error, markAllAsRead, markAsRead, dismiss } =
+    useNotifications();
 
   return (
     <>
@@ -101,9 +94,7 @@ export function NotificationBell({
       type="button"
       onClick={onClick}
       data-testid="notification-bell"
-      aria-label={
-        unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'
-      }
+      aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
       className="relative p-2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
     >
       <Bell className="w-5 h-5" />
@@ -272,11 +263,7 @@ export function NotificationDrawer({
           role="tablist"
           aria-label="Filter notifications by category"
         >
-          <CategoryTab
-            active={category === 'all'}
-            label="All"
-            onClick={() => setCategory('all')}
-          />
+          <CategoryTab active={category === 'all'} label="All" onClick={() => setCategory('all')} />
           {NOTIFICATION_CATEGORIES.map((c) => (
             <CategoryTab
               key={c}
@@ -322,7 +309,9 @@ export function NotificationDrawer({
                 <Inbox className="w-6 h-6" />
               </div>
               <p className="text-sm font-bold text-slate-900 dark:text-white">
-                {notifications.length === 0 ? 'No notifications yet' : `No ${CATEGORY_META[category as NotificationCategory]?.label ?? ''} notifications`}
+                {notifications.length === 0
+                  ? 'No notifications yet'
+                  : `No ${CATEGORY_META[category as NotificationCategory]?.label ?? ''} notifications`}
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {notifications.length === 0
@@ -394,9 +383,7 @@ function NotificationRow({
   return (
     <li
       className={`px-6 py-5 flex gap-4 group ${
-        notification.read
-          ? 'bg-transparent'
-          : 'bg-emerald-50/50 dark:bg-emerald-500/[0.04]'
+        notification.read ? 'bg-transparent' : 'bg-emerald-50/50 dark:bg-emerald-500/[0.04]'
       }`}
     >
       <div

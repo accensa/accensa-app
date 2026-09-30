@@ -19,7 +19,7 @@ import { ExactStellarScheme } from '@x402/stellar/exact/server';
 import { createSettleHook, attachAccensaHook } from '@accensa/sdk';
 
 const app = express();
-const PORT = Number(process.env.PORT ?? 3001);
+const PORT = parsePort();
 
 const NETWORK = 'stellar:testnet';
 
@@ -146,11 +146,31 @@ app.get('/admin/stats', requireAdmin, (_req, res) => {
   res.json({ note: 'Your own metrics live here.' });
 });
 
+// An admin surface that rejects everything is a configuration mistake, not a
+// policy — say so at boot instead of waiting for the first confusing 401.
+if (!process.env.ADMIN_TOKEN) {
+  console.warn('⚠️  ADMIN_TOKEN is not set — /admin/stats will reject every request.');
+}
+
 app.listen(PORT, () => {
   console.log(`x402 seller listening on http://localhost:${PORT}`);
   console.log(`Paid route: GET /api/hello`);
   console.log(`Reporting attribution to ${accensa.indexerUrl}/api/hook/settle`);
 });
+
+/**
+ * A malformed PORT is an operator mistake, not a defaultable option: `NaN`
+ * would surface as an opaque listen failure several modules deeper.
+ */
+function parsePort(): number {
+  const raw = process.env.PORT?.trim();
+  if (!raw) return 3001;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`PORT: "${raw}" is not a valid port (integer 1-65535). See .env.example.`);
+  }
+  return port;
+}
 
 /**
  * Fails at boot rather than at settlement time.

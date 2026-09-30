@@ -22,6 +22,17 @@ export function parseNotificationCategory(value: unknown): NotificationCategory 
     : null;
 }
 
+/**
+ * A read/dismissal action POSTed to `/api/notifications`.
+ *
+ * Shared by the API route (which validates it) and the client hook (which
+ * builds it), so the two ends of the wire cannot drift apart.
+ */
+export type NotificationAction =
+  | { action: 'mark-all-read' }
+  | { action: 'mark-read'; id: number }
+  | { action: 'dismiss'; id: number };
+
 /** A notification as `/api/notifications` returns it. */
 export interface Notification {
   id: number;
@@ -191,10 +202,10 @@ export async function dismissNotification(
   merchantId: number,
   id: number,
 ): Promise<boolean> {
-  const res = await client.query(
-    `DELETE FROM notifications WHERE merchant_id = $1 AND id = $2`,
-    [merchantId, id],
-  );
+  const res = await client.query(`DELETE FROM notifications WHERE merchant_id = $1 AND id = $2`, [
+    merchantId,
+    id,
+  ]);
   return (res.rowCount ?? 0) > 0;
 }
 

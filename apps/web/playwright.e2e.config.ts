@@ -23,7 +23,10 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
-  timeout: 30_000,
+  // axe has to walk the whole dashboard, and with four workers in flight that
+  // lands well past 30s on a loaded runner — the payment-modal a11y spec was
+  // timing out inside `analyze()` rather than reporting a real violation.
+  timeout: 60_000,
   use: {
     baseURL: 'http://127.0.0.1:3000',
     trace: 'on-first-retry',

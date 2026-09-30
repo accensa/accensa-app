@@ -5,6 +5,14 @@ import type { VerifyResponse } from '../api/verify/route';
 import { PageContainer } from '@/components/page-container';
 import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';
 import { CopyButton } from '@/components/copy-button';
+import ReceiptProofViewer from '../../../components/verify/ReceiptProofViewer';
+import {
+  buildAudit,
+  parseReceiptJson,
+  verifyPartySignature,
+  type AuditBreakdown,
+  type ParsedReceipt,
+} from '@/lib/receipt-proof';
 
 const SAMPLE = {
   batchId: '1',
@@ -68,7 +76,7 @@ export function validate(batchId: string, leaf: string, proof: string): FieldErr
 type State =
   | { status: 'idle' }
   | { status: 'checking' }
-  | { status: 'done'; result: VerifyResponse }
+  | { status: 'done'; result: VerifyResponse; audit: AuditBreakdown }
   | { status: 'error'; message: string };
 
 export default function VerifyPage() {
@@ -76,6 +84,9 @@ export default function VerifyPage() {
   const [leaf, setLeaf] = useState('');
   const [proof, setProof] = useState('');
   const [state, setState] = useState<State>({ status: 'idle' });
+  const [receipt, setReceipt] = useState<ParsedReceipt | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const resultRef = React.useRef<HTMLDivElement>(null);
   const errorRef = React.useRef<HTMLDivElement>(null);
@@ -109,7 +120,23 @@ export default function VerifyPage() {
         setState({ status: 'error', message: body.error ?? `Request failed (${res.status})` });
         return;
       }
-      setState({ status: 'done', result: body as VerifyResponse });
+      const result = body as VerifyResponse;
+      // Signatures cover the leaf as it stands in the form, so editing the hash
+      // after loading a file makes them fail rather than silently pass.
+      const currentLeaf = normalizeHex(leaf);
+      const [merchantSig, customerSig] = await Promise.all([
+        verifyPartySignature(currentLeaf, receipt?.signatures.merchant),
+        verifyPartySignature(currentLeaf, receipt?.signatures.customer),
+      ]);
+      setState({
+        status: 'done',
+        result,
+        audit: buildAudit(
+          { local: result.local.ok, onchain: result.onchain.ok },
+          merchantSig,
+          customerSig,
+        ),
+      });
     } catch (error) {
       setState({
         status: 'error',
@@ -118,7 +145,25 @@ export default function VerifyPage() {
     }
   }
 
+  async function loadFile(file: File | undefined) {
+    setFileError(null);
+    if (!file) return;
+    const parsed = parseReceiptJson(await file.text());
+    if (!parsed.ok) {
+      setReceipt(null);
+      setFileError(parsed.error);
+      return;
+    }
+    setReceipt(parsed.receipt);
+    setBatchId(String(parsed.receipt.batchId));
+    setLeaf(parsed.receipt.leaf);
+    setProof(parsed.receipt.proof.join('\n'));
+    setState({ status: 'idle' });
+  }
+
   function loadSample(forged = false) {
+    setReceipt(null);
+    setFileError(null);
     setBatchId(SAMPLE.batchId);
     setLeaf(forged ? FORGED_LEAF : SAMPLE.leaf);
     setProof(SAMPLE.proof);
@@ -167,6 +212,43 @@ export default function VerifyPage() {
             >
               Forged Sample
             </button>
+          </div>
+
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              void loadFile(e.dataTransfer.files[0]);
+            }}
+            className={`mb-8 border-2 border-dashed p-6 text-center transition-colors ${dragging ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10' : 'border-slate-300 dark:border-white/10'}`}
+          >
+            <label className="block cursor-pointer text-sm font-medium text-slate-600 dark:text-slate-300">
+              Drop a receipt JSON file here, or <span className="underline">browse</span>
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="sr-only"
+                onChange={(e) => void loadFile(e.target.files?.[0])}
+              />
+            </label>
+            {receipt && (
+              <p role="status" className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">
+                Loaded receipt for batch #{receipt.batchId}
+                {receipt.signatures.merchant || receipt.signatures.customer
+                  ? ' with signatures.'
+                  : '.'}
+              </p>
+            )}
+            {fileError && (
+              <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">
+                {fileError}
+              </p>
+            )}
           </div>
 
           <form onSubmit={submit} className="space-y-8">
@@ -238,7 +320,20 @@ export default function VerifyPage() {
           </div>
         )}
 
-        {state.status === 'done' && <Result result={state.result} resultRef={resultRef} />}
+        {state.status === 'done' && (
+          <>
+            <Result result={state.result} resultRef={resultRef} />
+            <ReceiptProofViewer
+              receipt={{
+                batchId: Number(batchId),
+                leaf: normalizeHex(leaf),
+                txHash: receipt?.txHash,
+              }}
+              result={state.result}
+              audit={state.audit}
+            />
+          </>
+        )}
       </PageContainer>
     </main>
   );

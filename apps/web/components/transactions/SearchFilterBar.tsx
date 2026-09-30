@@ -4,10 +4,16 @@ import { useTransactionFilters } from '../../hooks/useTransactionFilters';
 export const SearchFilterBar: React.FC = () => {
   const { filters, updateFilters, clearFilters } = useTransactionFilters();
   const [searchInput, setSearchInput] = useState(filters.search);
-
-  useEffect(() => {
+  // External filter changes (e.g. Clear All) must reset the input. Per the
+  // React docs this is done by adjusting state during render — the component
+  // re-renders immediately without committing — rather than mirroring the
+  // prop into state from an effect, which cascades renders and is rejected
+  // by react-hooks/set-state-in-effect.
+  const [lastExternalSearch, setLastExternalSearch] = useState(filters.search);
+  if (filters.search !== lastExternalSearch) {
+    setLastExternalSearch(filters.search);
     setSearchInput(filters.search);
-  }, [filters.search]);
+  }
 
   useEffect(() => {
     const handler = setTimeout(() => {

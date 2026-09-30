@@ -35,20 +35,19 @@
  */
 import { createHash } from 'node:crypto';
 import 'dotenv/config';
+import { boot, loadPayerEnv } from './lib/env.js';
 import { createPayer, payForResource } from './lib/x402-payer.js';
 
-const MERCHANT_URL = (process.env.MERCHANT_URL ?? 'http://localhost:3001').replace(/\/$/, '');
-const ROUTES = (process.env.ROUTES ?? '/api/hello,/api/insights/daily')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const RPC_URL = process.env.STELLAR_RPC_URL;
-
-const PRIVATE_KEY = process.env.STELLAR_PRIVATE_KEY;
-if (!PRIVATE_KEY) {
-  console.error('❌ STELLAR_PRIVATE_KEY is not set. Fund a testnet payer first — see README.md.');
-  process.exit(1);
-}
+// Configuration and its failure modes live in lib/env.js (issue #344): a
+// missing STELLAR_PRIVATE_KEY aborts with the variable named, optional URLs
+// are validated before first use, and a malformed value can never degrade
+// into a silent default mid-run.
+const {
+  privateKey: PRIVATE_KEY,
+  merchantUrl: MERCHANT_URL,
+  routes: ROUTES,
+  rpcUrl: RPC_URL,
+} = boot(loadPayerEnv);
 
 /**
  * A receipt leaf in the Accensa convention: the SHA-256 of a receipt label
@@ -92,7 +91,7 @@ function proofFor(leaves, index) {
 }
 
 async function main() {
-  console.log(`Agent payer: ${process.env.STELLAR_PRIVATE_KEY ? 'configured' : 'missing'}`);
+  console.log('Agent payer: STELLAR_PRIVATE_KEY configured (value not logged)');
   console.log(`Target merchant: ${MERCHANT_URL}`);
   console.log(`Routes to pay: ${ROUTES.join(', ')}`);
   console.log('');

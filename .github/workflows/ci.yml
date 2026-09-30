@@ -122,6 +122,24 @@ jobs:
         working-directory: ./scripts/reconcile-payments
         run: pnpm test
 
+  test-config:
+    name: test (prettier config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pnpm
+        run: npm install -g pnpm@11
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # Unit tests for /.prettierrc.json5: file integrity, option catalogue,
+      # value schema, resolution and behaviour. No services required.
+      - name: Test Prettier configuration
+        run: pnpm test
+
   typecheck:
     name: typecheck
     runs-on: ubuntu-latest
@@ -238,9 +256,14 @@ jobs:
         run: npm install -g pnpm@11
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Install Playwright browser
+      - name: Build SDK (web resolves @accensa/sdk from dist)
+        working-directory: ./packages/sdk
+        run: pnpm build
+      - name: Install Playwright browsers
         working-directory: ./apps/web
-        run: pnpm exec playwright install --with-deps chromium
+        # Firefox as well as chromium: the e2e config runs both projects, and
+        # a missing browser binary fails the job after the server is up.
+        run: pnpm exec playwright install --with-deps chromium firefox
       - name: Run e2e + accessibility suite
         working-directory: ./apps/web
         env:

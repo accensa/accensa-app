@@ -8,6 +8,7 @@ import {
   markNotificationAsRead,
   dismissNotification,
   type Notification,
+  type NotificationAction,
 } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
@@ -19,11 +20,6 @@ export interface NotificationsListResponse {
   notifications: Notification[];
   unreadCount: number;
 }
-
-export type NotificationAction =
-  | { action: 'mark-all-read' }
-  | { action: 'mark-read'; id: number }
-  | { action: 'dismiss'; id: number };
 
 export interface NotificationActionResult {
   /** True when the action changed at least one row. */

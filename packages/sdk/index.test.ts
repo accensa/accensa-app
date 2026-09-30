@@ -13,11 +13,10 @@ import {
   AccensaAuthError,
   AccensaError,
   AccensaNetworkError,
-  createSettleHook,
   type Settlement,
 } from './index';
 
-const settlement: Settlement = {
+const settlement: Settlement = Object.freeze({
   txHash: 'a'.repeat(64),
   route: '/api/hello',
   method: 'GET',
@@ -25,7 +24,7 @@ const settlement: Settlement = {
   payer: 'G' + 'A'.repeat(55),
   amount: '1000',
   network: 'stellar:testnet',
-};
+});
 
 /**
  * A real Ed25519 seed. `reportSettlement` signs the body with node:crypto, so
@@ -49,7 +48,20 @@ const opts = (over: Partial<Parameters<typeof reportSettlement>[1]> = {}) => ({
   ...over,
 });
 
-const ok = () => new globalThis.Response(null, { status: 200 });
+/**
+ * Null-bodied Responses are immutable and never consumed by the code under
+ * test (only `status` is read), so one instance per status is safe to share
+ * across every call of every stub. Before this, each mocked request allocated
+ * a fresh Response; the retry cases alone rebuilt the 503 four times a test.
+ */
+const OK_RESPONSE = new globalThis.Response(null, { status: 200 });
+const ok = () => OK_RESPONSE;
+const responseWith = (status: number) => new globalThis.Response(null, { status });
+const UNAUTHORIZED_401 = responseWith(401);
+const FORBIDDEN_403 = responseWith(403);
+const SERVER_ERROR_500 = responseWith(500);
+const UNAVAILABLE_503 = responseWith(503);
+const GATEWAY_TIMEOUT_504 = responseWith(504);
 
 /** Typed as `fetch` itself so mock.calls carries the real init type. */
 const okFetch = () => vi.fn<typeof fetch>(async () => ok());
@@ -140,6 +152,25 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('test harness — fixture allocation', () => {
+  // Guards the #338 optimisation: null-bodied Responses are immutable and the
+  // SDK only reads `status`, so every stub call must share the module-level
+  // fixture instead of allocating one Response per attempt. A retry run used
+  // to build four identical objects per test; this pins the reuse so a future
+  // refactor cannot silently reintroduce it.
+  it('serves the same Response fixture to every retry attempt', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => UNAVAILABLE_503);
+    await reportSettlement(
+      settlement,
+      opts({ fetchImpl, onError: vi.fn(), retry: { baseDelayMs: 1, maxRetries: 2 } }),
+    );
+
+    const responses = await Promise.all(fetchImpl.mock.results.map((r) => r.value));
+    expect(responses.length).toBe(3);
+    for (const response of responses) expect(response).toBe(UNAVAILABLE_503);
+  });
+});
+
 describe('toSettleHookPayload', () => {
   it('maps a settlement onto the wire field names', () => {
     expect(toSettleHookPayload(settlement)).toEqual({
@@ -219,7 +250,7 @@ describe('reportSettlement', () => {
 
   it('reports a non-2xx response as a failure without throwing', async () => {
     const onError = vi.fn();
-    const fetchImpl = vi.fn(async () => new globalThis.Response(null, { status: 401 }));
+    const fetchImpl = vi.fn(async () => UNAUTHORIZED_401);
 
     await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
     const reported = reportedError(onError);
@@ -240,7 +271,7 @@ describe('reportSettlement', () => {
 
   it('reports a non-auth non-2xx response as a plain AccensaError', async () => {
     const onError = vi.fn();
-    const fetchImpl = vi.fn(async () => new globalThis.Response(null, { status: 500 }));
+    const fetchImpl = vi.fn(async () => SERVER_ERROR_500);
 
     await expect(reportSettlement(settlement, opts({ fetchImpl, onError }))).resolves.toBe(false);
     const reported = reportedError(onError);
@@ -302,8 +333,8 @@ describe('reportSettlement', () => {
 describe('reportSettlement — retry (#123)', () => {
   it('retries a transient 5xx from the indexer and succeeds once it recovers', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
-    fetchImpl.mockResolvedValueOnce(new globalThis.Response(null, { status: 503 }));
-    fetchImpl.mockResolvedValueOnce(new globalThis.Response(null, { status: 504 }));
+    fetchImpl.mockResolvedValueOnce(UNAVAILABLE_503);
+    fetchImpl.mockResolvedValueOnce(GATEWAY_TIMEOUT_504);
     fetchImpl.mockResolvedValueOnce(ok());
 
     const onError = vi.fn();
@@ -318,9 +349,7 @@ describe('reportSettlement — retry (#123)', () => {
   });
 
   it('gives up and reports failure after exhausting retries against a persistent 503', async () => {
-    const fetchImpl = vi.fn<typeof fetch>(
-      async () => new globalThis.Response(null, { status: 503 }),
-    );
+    const fetchImpl = vi.fn<typeof fetch>(async () => UNAVAILABLE_503);
     const onError = vi.fn();
 
     const result = await reportSettlement(
@@ -349,9 +378,7 @@ describe('reportSettlement — retry (#123)', () => {
   });
 
   it('respects a custom maxRetries', async () => {
-    const fetchImpl = vi.fn<typeof fetch>(
-      async () => new globalThis.Response(null, { status: 503 }),
-    );
+    const fetchImpl = vi.fn<typeof fetch>(async () => UNAVAILABLE_503);
 
     await reportSettlement(
       settlement,
@@ -364,10 +391,6 @@ describe('reportSettlement — retry (#123)', () => {
 });
 
 describe('reportSettlement — network timeout', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   /** A fetch that never answers, exactly like a dropped connection. */
   const hangingFetch = () =>
     vi.fn<typeof fetch>(
@@ -635,7 +658,7 @@ describe('reportSettlement — signing and headers', () => {
 
   it('reports 403 as an auth error, like 401', async () => {
     const onError = vi.fn();
-    const fetchImpl = vi.fn(async () => new globalThis.Response(null, { status: 403 }));
+    const fetchImpl = vi.fn(async () => FORBIDDEN_403);
     await reportSettlement(settlement, opts({ fetchImpl, onError }));
     expect(onError.mock.calls[0][0]).toBeInstanceOf(AccensaAuthError);
     expect(onError.mock.calls[0][0]).toMatchObject({ status: 403, path: SETTLE_ENDPOINT });
@@ -819,8 +842,7 @@ describe('createSettleHook', () => {
     ).resolves.toBeUndefined();
     expect(onError.mock.calls[0][0]).toBeInstanceOf(AccensaNetworkError);
   });
-});
-describe('createSettleHook', () => {
+
   it('reports settlement on after settle event', async () => {
     const fetchImpl = okFetch();
     const hook = createSettleHook(opts({ fetchImpl }));
@@ -877,6 +899,25 @@ describe('createSettleHook', () => {
     });
 
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('reportSettlement & createSettleHook — error handling & validation', () => {
+  it('handles invalid settlement or options gracefully', async () => {
+    const onError = vi.fn();
+    // @ts-expect-error testing invalid settlement parameter
+    const res1 = await reportSettlement(null, opts({ onError }));
+    expect(res1).toBe(false);
+    expect(onError).toHaveBeenCalled();
+
+    const onError2 = vi.fn();
+    // @ts-expect-error testing missing indexerUrl
+    const res2 = await reportSettlement(settlement, {
+      privateKeyHex: PRIVATE_KEY_HEX,
+      onError: onError2,
+    });
+    expect(res2).toBe(false);
+    expect(onError2).toHaveBeenCalled();
   });
 });
 
