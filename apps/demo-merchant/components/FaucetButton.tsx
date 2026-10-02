@@ -22,7 +22,7 @@ export function FaucetButton({
     setSuccess('');
     try {
       await fundTestnetAccount(publicKey);
-      setSuccess('Funded 10,000 XLM!');
+      setSuccess('Funded the fixed demo account with 10,000 XLM!');
       onFunded?.();
       setTimeout(() => setSuccess(''), 5000);
     } catch (err: any) {
