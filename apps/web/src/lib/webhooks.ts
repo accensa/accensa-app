@@ -33,6 +33,10 @@ export type { AttemptResult, DeliveryStatus, PaymentPayload } from './webhooks/t
 export { backoffMs, nextRetryAt, parseRetryAfter, shouldRetry } from './webhooks/retry-policy.ts';
 export { canonicalPayload, payloadFromRow } from './webhooks/payload.ts';
 export { bodyDigest, signBody } from './webhooks/signing.ts';
-export { enqueueWebhookDelivery, pendingDue } from './webhooks/repository.ts';
+export {
+  enqueueWebhookDelivery,
+  pendingDue,
+  requeueFailedDelivery,
+} from './webhooks/repository.ts';
 export { deliverDue } from './webhooks/delivery.ts';
 export { webhookSummary } from './webhooks/summary.ts';

@@ -3,13 +3,17 @@ packages:
   - 'packages/*'
   - 'scripts/*'
 allowBuilds:
+  '@reown/appkit': false
   '@sentry/cli': true
   '@swc/core': true
+  bufferutil: false
   core-js: true
   core-js-pure: true
   esbuild: true
+  secp256k1: false
   sharp: true
   unrs-resolver: true
+  utf-8-validate: false
 minimumReleaseAgeExclude:
   - esbuild@0.24.3
   - serialize-javascript@7.0.3 || 7.0.5

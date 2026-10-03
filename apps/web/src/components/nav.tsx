@@ -7,6 +7,7 @@ import { ThemeToggle } from './theme-toggle';
 import { NotificationCenter } from './notifications/NotificationCenterDrawer';
 import { StoreSwitcher } from './merchant/StoreSwitcher';
 import { ArrowUpRight } from 'lucide-react';
+import { WalletConnectModal, type ConnectedWallet } from './wallet/WalletConnectModal';
 
 /**
  * Shared styling for the navbar's wallet entry point.
@@ -23,6 +24,8 @@ const WALLET_CTA =
 
 export function Nav() {
   const [isOpen, setIsOpen] = useState(false);
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [connectedWallet, setConnectedWallet] = useState<ConnectedWallet | null>(null);
   const pathname = usePathname();
 
   // Close on Escape key
@@ -93,6 +96,14 @@ export function Nav() {
                 Chat Alerts
               </Link>
             )}
+            {pathname?.startsWith('/dashboard') && (
+              <Link
+                href="/merchant/webhooks"
+                className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+              >
+                Webhooks
+              </Link>
+            )}
             {pathname !== '/support' && (
               <Link
                 href="/support"
@@ -124,9 +135,15 @@ export function Nav() {
             {(pathname?.startsWith('/dashboard') || pathname?.startsWith('/merchant')) && (
               <StoreSwitcher />
             )}
-            <Link href="/coming-soon" className={`hidden md:inline-flex ${WALLET_CTA}`}>
-              Connect Wallet
-            </Link>
+            <button
+              type="button"
+              onClick={() => setWalletModalOpen(true)}
+              className={`hidden md:inline-flex ${WALLET_CTA}`}
+            >
+              {connectedWallet
+                ? `${connectedWallet.provider} · ${connectedWallet.address.slice(0, 4)}…${connectedWallet.address.slice(-4)}`
+                : 'Connect Wallet'}
+            </button>
             <ThemeToggle />
           </div>
         </div>
@@ -236,6 +253,20 @@ export function Nav() {
             </Link>
           )}
 
+          {pathname?.startsWith('/dashboard') && (
+            <Link
+              href="/merchant/webhooks"
+              onClick={() => setIsOpen(false)}
+              className={`text-4xl font-bold tracking-tight transition-colors flex items-center gap-3.5 ${
+                pathname === '/merchant/webhooks'
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-slate-900 dark:text-white hover:text-emerald-500 dark:hover:text-emerald-400'
+              }`}
+            >
+              Webhooks
+            </Link>
+          )}
+
           <Link
             href="/support"
             onClick={() => setIsOpen(false)}
@@ -274,15 +305,26 @@ export function Nav() {
 
         {/* Minimal Bottom CTA Button */}
         <div>
-          <Link
-            href="/coming-soon"
-            onClick={() => setIsOpen(false)}
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              setWalletModalOpen(true);
+            }}
             className={`w-full justify-center py-4 text-sm inline-flex ${WALLET_CTA}`}
           >
-            Connect Wallet
-          </Link>
+            {connectedWallet
+              ? `${connectedWallet.provider} · ${connectedWallet.address.slice(0, 4)}…${connectedWallet.address.slice(-4)}`
+              : 'Connect Wallet'}
+          </button>
         </div>
       </div>
+
+      <WalletConnectModal
+        open={walletModalOpen}
+        onOpenChange={setWalletModalOpen}
+        onConnected={setConnectedWallet}
+      />
     </>
   );
 }

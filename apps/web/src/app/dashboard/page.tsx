@@ -2,6 +2,7 @@
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatAmount, sumAmounts, assetLabel } from '@/lib/money';
+import { type Payment } from './payments-merge';
 import { describeSync, type SyncState } from '@/lib/sync-status';
 import { CSV_BOM, paymentsCsvFilename, paymentsToCsv } from '@/lib/payments-csv';
 import Link from 'next/link';
@@ -21,20 +22,6 @@ import { SocialShareButtons } from '@/components/receipts/SocialShareButtons';
 import { SavingsBanner } from '@/components/merchant/SavingsBanner';
 import { summarizeSavings } from '@/lib/analytics/savingsCalculator';
 import { RiskScoreBadge } from '@/components/transactions/RiskScoreBadge';
-
-interface Payment {
-  tx_hash: string;
-  ledger: number | null;
-  payer: string;
-  amount: string;
-  asset: string | null;
-  ts: string;
-  route: string | null;
-  method: string | null;
-  risk_score?: number;
-  risk_country_code?: string;
-  requires_manual_review?: boolean;
-}
 
 type LoadState =
   | { status: 'loading' }
@@ -79,26 +66,6 @@ async function fetchPaymentsPage(url: string): Promise<PaymentsResponse> {
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `Error ${res.status}`);
   return res.json();
-}
-
-/**
- * Merges the polled head page with any older pages the merchant has scrolled
- * in, newest first, de-duplicated by `tx_hash`.
- *
- * The head is re-fetched every poll and a new settlement lands at its top, so
- * an already-loaded older page can overlap it after a sync; the dedupe keeps
- * that from showing a row twice. The head wins on a duplicate, so the freshest
- * row data is shown.
- */
-export function mergePayments(head: Payment[], older: Payment[]): Payment[] {
-  const seen = new Set<string>();
-  const out: Payment[] = [];
-  for (const payment of [...head, ...older]) {
-    if (seen.has(payment.tx_hash)) continue;
-    seen.add(payment.tx_hash);
-    out.push(payment);
-  }
-  return out;
 }
 
 function truncate(value: string, head = 8, tail = 6) {
@@ -149,7 +116,7 @@ function loadRiskThreshold(): number {
   return Number.isInteger(stored) && stored >= 0 && stored <= 100 ? stored : 75;
 }
 
-export function Dashboard() {
+function Dashboard() {
   const [selected, setSelected] = useState<Payment | null>(null);
   const [manualReviewAbove, setManualReviewAbove] = useState(() => loadRiskThreshold());
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -490,7 +457,7 @@ export function Dashboard() {
 
 const PAYMENT_MODAL_HEADING_ID = 'payment-details-heading';
 
-export function PaymentModal({
+function PaymentModal({
   selected,
   onClose,
   refunded,
@@ -663,7 +630,7 @@ export function PaymentModal({
   );
 }
 
-export function PaymentsCardList({
+function PaymentsCardList({
   payments,
   onSelect,
   manualReviewAbove = 75,
@@ -750,7 +717,7 @@ export function PaymentsCardList({
   );
 }
 
-export function PaymentsTable({
+function PaymentsTable({
   payments,
   refunded,
   onSelect,
@@ -1131,7 +1098,7 @@ function ExportCsvButton({ payments, totalCount }: { payments: Payment[]; totalC
   );
 }
 
-export function TableSkeleton() {
+function TableSkeleton() {
   return (
     <>
       {/* Mobile Card List Skeleton */}

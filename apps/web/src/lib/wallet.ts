@@ -39,7 +39,12 @@ export type WalletStatus =
   /** Extension present, but the site has no approved address. */
   | { kind: 'disconnected' }
   /** Extension present and an address is approved for this site. */
-  | { kind: 'connected'; address: string; network?: string }
+  | {
+      kind: 'connected';
+      address: string;
+      network?: string;
+      networkPassphrase?: string;
+    }
   /** A call failed. Carries a message fit to render. */
   | { kind: 'error'; message: string };
 
@@ -47,6 +52,8 @@ export type WalletStatus =
 export interface WalletAdapter {
   /** Human-readable name for error messages and UI labels. */
   readonly name: string;
+  /** Stable provider identifier used to restore the last wallet selection. */
+  readonly providerId?: string;
   /** Where a merchant installs the wallet, for the unavailable state. */
   readonly installUrl: string;
 
@@ -65,6 +72,8 @@ export interface WalletAdapter {
 // Freighter adapter
 // ---------------------------------------------------------------------------
 
+export const LAST_WALLET_PROVIDER_KEY = 'accensa:last-wallet-provider';
+
 /** Normalises anything the API or the runtime can hand back. */
 function message(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
@@ -77,18 +86,22 @@ function message(error: unknown): string {
 }
 
 /** Reads the network name, treating its absence as "unknown" rather than a fault. */
-async function readNetwork(): Promise<string | undefined> {
+async function readNetwork(): Promise<{ network?: string; networkPassphrase?: string }> {
   try {
     const result = await freighterGetNetwork();
-    if (result.error || !result.network) return undefined;
-    return result.network;
+    if (result.error) return {};
+    return {
+      network: result.network || undefined,
+      networkPassphrase: result.networkPassphrase || undefined,
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
 export const freighterAdapter: WalletAdapter = {
   name: 'Freighter',
+  providerId: 'freighter',
   installUrl: 'https://freighter.app/',
 
   async readStatus(): Promise<WalletStatus> {
@@ -100,7 +113,7 @@ export const freighterAdapter: WalletAdapter = {
       const account = await freighterGetAddress();
       if (account.error || !account.address) return { kind: 'disconnected' };
 
-      return { kind: 'connected', address: account.address, network: await readNetwork() };
+      return { kind: 'connected', address: account.address, ...(await readNetwork()) };
     } catch (error: unknown) {
       return { kind: 'error', message: message(error) };
     }
@@ -113,8 +126,9 @@ export const freighterAdapter: WalletAdapter = {
 
       const access = await freighterRequestAccess();
       if (access.error || !access.address) return { kind: 'disconnected' };
+      rememberWalletProvider('freighter');
 
-      return { kind: 'connected', address: access.address, network: await readNetwork() };
+      return { kind: 'connected', address: access.address, ...(await readNetwork()) };
     } catch (error: unknown) {
       return { kind: 'error', message: message(error) };
     }
@@ -186,6 +200,7 @@ function albedoNetwork(networkPassphrase: string): string {
 
 export const albedoAdapter: WalletAdapter = {
   name: 'Albedo',
+  providerId: 'albedo',
   installUrl: 'https://albedo.link/',
 
   async readStatus(): Promise<WalletStatus> {
@@ -205,6 +220,7 @@ export const albedoAdapter: WalletAdapter = {
     try {
       const result = await albedo.publicKey({});
       if (!result.pubkey) return { kind: 'disconnected' };
+      rememberWalletProvider('albedo');
       return { kind: 'connected', address: result.pubkey, network: undefined };
     } catch {
       // User closed the popup or declined.
@@ -235,12 +251,128 @@ export const albedoAdapter: WalletAdapter = {
   },
 };
 
+type WalletKitModule = import('@creit.tech/stellar-wallets-kit/types').ModuleInterface;
+type WalletKit = typeof import('@creit.tech/stellar-wallets-kit/sdk').StellarWalletsKit;
+
+interface WalletKitState {
+  kit: WalletKit;
+  modules: WalletKitModule[];
+}
+
+let walletKitPromise: Promise<WalletKitState> | undefined;
+
+function lastWalletProvider(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(LAST_WALLET_PROVIDER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function rememberWalletProvider(providerId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LAST_WALLET_PROVIDER_KEY, providerId);
+  } catch {
+    // Connection still succeeds when storage is disabled or full.
+  }
+}
+
+async function loadWalletKit(): Promise<WalletKitState> {
+  const [sdk, freighter, xbull, hana] = await Promise.all([
+    import('@creit.tech/stellar-wallets-kit/sdk'),
+    import('@creit.tech/stellar-wallets-kit/modules/freighter'),
+    import('@creit.tech/stellar-wallets-kit/modules/xbull'),
+    import('@creit.tech/stellar-wallets-kit/modules/hana'),
+  ]);
+  const modules = [
+    new freighter.FreighterModule(),
+    new xbull.xBullModule(),
+    new hana.HanaModule(),
+  ];
+  const preferredWalletId = modules.find(
+    (module) => module.productName.toLowerCase().startsWith(lastWalletProvider() ?? ''),
+  )?.productId;
+  sdk.StellarWalletsKit.init({
+    modules,
+    ...(preferredWalletId ? { selectedWalletId: preferredWalletId } : {}),
+  });
+  return { kit: sdk.StellarWalletsKit, modules };
+}
+
+function getWalletKit(): Promise<WalletKitState> {
+  walletKitPromise ??= loadWalletKit().catch((error: unknown) => {
+    walletKitPromise = undefined;
+    throw error;
+  });
+  return walletKitPromise;
+}
+
+function kitAdapter(providerName: 'xBull' | 'Hana', installUrl: string): WalletAdapter {
+  const findModule = (modules: WalletKitModule[]) =>
+    modules.find((module) => module.productName.toLowerCase().startsWith(providerName.toLowerCase()));
+
+  return {
+    name: providerName,
+    providerId: providerName.toLowerCase(),
+    installUrl,
+
+    async readStatus(): Promise<WalletStatus> {
+      try {
+        const { kit, modules } = await getWalletKit();
+        const walletModule = findModule(modules);
+        if (!walletModule || !(await walletModule.isAvailable())) return { kind: 'unavailable' };
+        if (lastWalletProvider() !== providerName.toLowerCase()) return { kind: 'disconnected' };
+        kit.setWallet(walletModule.productId);
+        const { address } = await kit.fetchAddress();
+        const { network, networkPassphrase } = await kit.getNetwork();
+        return { kind: 'connected', address, network, networkPassphrase };
+      } catch (error: unknown) {
+        return { kind: 'error', message: message(error) };
+      }
+    },
+
+    async connect(): Promise<WalletStatus> {
+      try {
+        const { kit, modules } = await getWalletKit();
+        const walletModule = findModule(modules);
+        if (!walletModule || !(await walletModule.isAvailable())) return { kind: 'unavailable' };
+        kit.setWallet(walletModule.productId);
+        const { address } = await kit.fetchAddress();
+        if (!address) return { kind: 'disconnected' };
+        rememberWalletProvider(providerName.toLowerCase());
+        const { network, networkPassphrase } = await kit.getNetwork();
+        return { kind: 'connected', address, network, networkPassphrase };
+      } catch (error: unknown) {
+        return { kind: 'error', message: message(error) };
+      }
+    },
+
+    async signTransaction(
+      xdr: string,
+      opts: { networkPassphrase: string; address?: string },
+    ): Promise<string> {
+      const { kit, modules } = await getWalletKit();
+      const walletModule = findModule(modules);
+      if (!walletModule) throw new Error(`${providerName} wallet is unavailable`);
+      kit.setWallet(walletModule.productId);
+      const result = await kit.signTransaction(xdr, opts);
+      if (!result.signedTxXdr) throw new Error(`${providerName} did not return a signed transaction`);
+      return result.signedTxXdr;
+    },
+  };
+}
+
+export const xBullAdapter = kitAdapter('xBull', 'https://www.xbull.app/');
+export const hanaAdapter = kitAdapter('Hana', 'https://hanawallet.io/');
+
 // ---------------------------------------------------------------------------
 // Adapter registry
 // ---------------------------------------------------------------------------
 
 /** All registered wallet adapters, in priority order. */
-const adapters: WalletAdapter[] = [freighterAdapter, albedoAdapter];
+const adapters: WalletAdapter[] = [freighterAdapter, xBullAdapter, hanaAdapter, albedoAdapter];
 
 /**
  * Returns all registered wallet adapters.

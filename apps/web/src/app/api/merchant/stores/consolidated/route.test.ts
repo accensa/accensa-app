@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sumDecimalStrings } from './route';
+import { sumDecimalStrings } from './sum-decimal-strings';
 
 describe('sumDecimalStrings', () => {
   it('adds decimal values without floating-point precision loss', () => {

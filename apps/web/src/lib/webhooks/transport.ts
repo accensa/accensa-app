@@ -6,6 +6,7 @@ export interface DeliveryAttemptOutcome {
   error: string | null;
   retryAfter: string | null;
   transportError: boolean;
+  durationMs: number;
 }
 
 /**
@@ -24,6 +25,7 @@ export async function attemptDelivery(input: {
   fetchImpl: typeof fetch;
   timeoutMs: number;
 }): Promise<DeliveryAttemptOutcome> {
+  const startedAt = Date.now();
   let statusCode: number | null = null;
   let error: string | null = null;
   let retryAfter: string | null = null;
@@ -69,5 +71,5 @@ export async function attemptDelivery(input: {
     logger.warn('Webhook delivery attempt failed', { id: input.id, error, transportError: true });
   }
 
-  return { statusCode, error, retryAfter, transportError };
+  return { statusCode, error, retryAfter, transportError, durationMs: Date.now() - startedAt };
 }

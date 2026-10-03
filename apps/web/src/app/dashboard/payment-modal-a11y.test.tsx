@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { PaymentModal } from './page';
+import { PaymentModal } from './page-components';
 
 const payment = {
   tx_hash: 'f'.repeat(64),
