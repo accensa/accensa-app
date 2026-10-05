@@ -56,6 +56,9 @@ test('Merchant Dashboard - empty state @visual', async ({ page, context }) => {
     });
   });
   await page.goto('/dashboard');
+  // The dashboard first paints a viewport-high loading state; capture only
+  // once the payments response has rendered.
+  await expect(page.getByText('Awaiting Data')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('main')).toHaveScreenshot('dashboard-empty.png', {
     mask: [page.locator('time')],
   });
@@ -71,6 +74,8 @@ test('Merchant Dashboard - payments table @visual', async ({ page, context }) =>
     });
   });
   await page.goto('/dashboard');
+  // The table collapses to cards below md, so anchor on the summary line.
+  await expect(page.getByText('Showing all 1 payment')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('main')).toHaveScreenshot('dashboard-payments.png', {
     mask: [page.locator('time')],
   });
@@ -95,4 +100,3 @@ test('POS Terminal @visual', async ({ page, context }) => {
   await page.goto('/merchant/pos');
   await expect(page).toHaveScreenshot('pos-terminal.png');
 });
-
