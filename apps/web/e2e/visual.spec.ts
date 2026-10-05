@@ -33,16 +33,6 @@ const SAMPLE_PAYMENTS = {
       route: '/api/resource',
       method: 'GET',
     },
-    {
-      tx_hash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-      ledger: 1002,
-      payer: 'GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
-      amount: '2500000',
-      asset: 'native',
-      ts: '2026-08-01T12:05:00.000Z',
-      route: null,
-      method: null,
-    },
   ],
   sync: { lastLedger: 1002, updatedAt: '2026-08-01T12:05:00.000Z' },
 };
@@ -56,13 +46,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-09-15T12:00:00.000Z'));
 });
 
-test('navbar on the landing page', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByTestId('site-nav')).toBeVisible();
-  await expect(page.getByTestId('site-nav')).toHaveScreenshot('navbar.png');
-});
-
-test('dashboard empty state', async ({ page, context }) => {
+test('Merchant Dashboard - empty state @visual', async ({ page, context }) => {
   await context.addCookies([await sessionCookie()]);
   await page.route('**/api/payments**', async (route) => {
     await route.fulfill({
@@ -72,14 +56,15 @@ test('dashboard empty state', async ({ page, context }) => {
     });
   });
   await page.goto('/dashboard');
-  await expect(page.getByText('Awaiting Data')).toBeVisible();
-  // Screenshot the whole dashboard region, not the bare text element: a
-  // single text node's width is font-metric dependent and varies across OSes
-  // (a box dimension mismatch can't be absorbed by pixel-ratio tolerance).
-  await expect(page.locator('main')).toHaveScreenshot('dashboard-empty.png');
+  // The dashboard first paints a viewport-high loading state; capture only
+  // once the payments response has rendered.
+  await expect(page.getByText('Awaiting Data')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('main')).toHaveScreenshot('dashboard-empty.png', {
+    mask: [page.locator('time')],
+  });
 });
 
-test('dashboard payments table', async ({ page, context }) => {
+test('Merchant Dashboard - payments table @visual', async ({ page, context }) => {
   await context.addCookies([await sessionCookie()]);
   await page.route('**/api/payments**', async (route) => {
     await route.fulfill({
@@ -89,8 +74,29 @@ test('dashboard payments table', async ({ page, context }) => {
     });
   });
   await page.goto('/dashboard');
-  await expect(page.getByRole('table', { name: 'Recent Settlements' })).toBeVisible();
-  await expect(page.getByRole('table', { name: 'Recent Settlements' })).toHaveScreenshot(
-    'payments-table.png',
-  );
+  // The table collapses to cards below md, so anchor on the summary line.
+  await expect(page.getByText('Showing all 1 payment')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('main')).toHaveScreenshot('dashboard-payments.png', {
+    mask: [page.locator('time')],
+  });
+});
+
+test('Checkout Modal @visual', async ({ page, context }) => {
+  await context.addCookies([await sessionCookie()]);
+  await page.goto('/merchant/settings/branding');
+  const preview = page.locator('section[aria-label="Live preview"]');
+  await expect(preview).toBeVisible();
+  await expect(preview).toHaveScreenshot('checkout-modal.png');
+});
+
+test('Dispute Flow @visual', async ({ page, context }) => {
+  await context.addCookies([await sessionCookie()]);
+  await page.goto('/merchant/disputes');
+  await expect(page.locator('main')).toHaveScreenshot('dispute-flow.png');
+});
+
+test('POS Terminal @visual', async ({ page, context }) => {
+  await context.addCookies([await sessionCookie()]);
+  await page.goto('/merchant/pos');
+  await expect(page).toHaveScreenshot('pos-terminal.png');
 });

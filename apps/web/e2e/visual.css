@@ -1,0 +1,6 @@
+/* Applied only while toHaveScreenshot captures. `next dev` injects its
+   dev-tools badge (and issue count) into every page; it is not app UI and its
+   contents vary with whatever warnings the dev server has seen. */
+nextjs-portal {
+  display: none !important;
+}

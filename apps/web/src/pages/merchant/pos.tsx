@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Keypad from '../../../components/pos/Keypad';
+import { useOnline } from '@/components/network-status';
 
 interface OfflineTransaction {
   amount: string;
@@ -10,28 +11,21 @@ interface OfflineTransaction {
 export default function POS() {
   const [amount, setAmount] = useState('0');
   const [offlineQueue, setOfflineQueue] = useState<OfflineTransaction[]>([]);
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true,
-  );
+  // useSyncExternalStore-backed, so the server render and hydration agree
+  // (both assume online) and the real value is read on the client.
+  const isOnline = useOnline();
 
   useEffect(() => {
     const handleOnline = () => {
-      setIsOnline(true);
       // Process offline queue when back online
       if (offlineQueue.length > 0) {
         console.log('Processing offline transactions', offlineQueue);
         setOfflineQueue([]);
       }
     };
-    const handleOffline = () => setIsOnline(false);
 
     window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
+    return () => window.removeEventListener('online', handleOnline);
   }, [offlineQueue]);
 
   const handleInput = (val: string) => {

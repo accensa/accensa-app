@@ -5,12 +5,12 @@ on:
     branches: ['main']
     paths:
       - 'apps/web/**'
-      - '.github/workflows/visual.yml'
+      - '.github/workflows/visual-test.yml'
   push:
     branches: ['main']
     paths:
       - 'apps/web/**'
-      - '.github/workflows/visual.yml'
+      - '.github/workflows/visual-test.yml'
 
 jobs:
   visual:
@@ -33,9 +33,8 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: .
       - name: Install Playwright browsers
-        # Firefox as well as chromium: the visual config runs both projects,
-        # and a missing browser binary fails the job after the server is up.
-        run: pnpm exec playwright install --with-deps chromium firefox
+        # Every visual project runs in Chromium (see playwright.config.ts).
+        run: pnpm exec playwright install --with-deps chromium
       - name: Run visual tests
         env:
           JWT_SECRET_KEY: visual-regression-test-secret
