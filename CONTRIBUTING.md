@@ -123,4 +123,5 @@ pnpm pack
 
 Then create a scratch directory outside the workspace, install the tarball, and
 confirm both entry points resolve in ESM and CJS. This is also run
-automatically in CI (see `.github/workflows/ci.yml`, the `verify-pack` job).
+automatically in CI (see `.github/workflows/ci.yml`, the `Verify tarball
+installs and imports in ESM and CJS` step).

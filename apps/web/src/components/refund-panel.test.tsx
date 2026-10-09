@@ -77,6 +77,7 @@ describe('RefundPanelView', () => {
 // Compile-time contract: `RefundPanelView` handles every `Phase` in an
 // exhaustive `switch`, and its `default` branch calls `assertNever(phase)`.
 // Adding a variant to `Phase` without a matching `case` narrows `phase` to that
-// variant instead of `never`, so `assertNever` stops type-checking and the
-// `typecheck` CI job fails. That is the guardrail this bug (a missing
-// `submitting` case) needed; there is no runtime test that can stand in for it.
+// variant instead of `never`, so `assertNever` stops type-checking and the CI
+// `Typecheck workspace packages` step fails. That is the guardrail this bug (a
+// missing `submitting` case) needed; there is no runtime test that can stand in
+// for it.

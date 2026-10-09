@@ -6,71 +6,20 @@ on:
   pull_request:
     branches: ['main']
 
+# One job, one status check line. This file used to declare ten jobs — format,
+# lint, test-sdk, test-web, test-reconcile, test-config, typecheck, build,
+# verify-pack, e2e — which is ten runner lifecycles, ten `pnpm install
+# --frozen-lockfile` runs and zero cache (main run 595: 639 runner-seconds
+# across 10 check lines, 160s wall clock). Every step below is one of those
+# jobs' steps, in dependency order, after a single install. Nothing was
+# weakened: each `run` is the same command the removed job ran.
 jobs:
-  format:
-    name: format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Check formatting
-        run: pnpm format:check
-
-  lint:
-    name: lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      # Lints apps/web from the root.
-      # packages/sdk has no ESLint config; typecheck covers it in the typecheck job.
-      # apps/docs (Docusaurus) and apps/demo-merchant (example JS) are excluded.
-      - name: Lint workspace packages
-        run: pnpm lint
-
-  test-sdk:
-    name: test (sdk)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Test SDK
-        working-directory: ./packages/sdk
-        run: pnpm test
-      - name: Verify generated API types are reproducible
-        run: |
-          pnpm --filter @accensa/sdk gen:api
-          git diff --exit-code -- packages/sdk/generated/api-types.ts
-      - name: Verify conformance vectors are reproducible
-        run: |
-          node packages/sdk/scripts/generate-vectors.mjs
-          git diff --exit-code -- packages/sdk/merkle-vectors.json packages/sdk/vectors.rs
-
-  test-web:
-    name: test (web)
+  ci:
     runs-on: ubuntu-latest
     services:
+      # Only `pnpm --filter web test` reads a database, and the old test-web
+      # job was the only one that had this service. Job-scoped services stay up
+      # for the whole job, so it is present exactly when the web tests run.
       postgres:
         image: postgres:15
         env:
@@ -86,122 +35,85 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+
+      # Before setup-node, and pinned. Combined with setup-node's `cache: pnpm`
+      # this is the ordering the action documents; `npm install -g pnpm@11` into
+      # whichever node happens to be active first is not. 11.28.5 is what
+      # `pnpm@11` resolves to on npm today, so the toolchain is unchanged.
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
+          cache: pnpm
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build SDK (web resolves @accensa/sdk from dist)
-        working-directory: ./packages/sdk
-        run: pnpm build
-      - name: Test web
-        working-directory: ./apps/web
-        env:
-          DATABASE_URL: postgres://postgres:password@localhost:5432/accensa_test
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      # Lints apps/web from the root.
+      # packages/sdk has no ESLint config; typecheck covers it in the typecheck step.
+      # apps/docs (Docusaurus) and apps/demo-merchant (example JS) are excluded.
+      # The `@accensa/sdk` half of this script is an `echo` — see issue #511.
+      - name: Lint workspace packages
+        run: pnpm lint
+
+      # Unit tests for /.prettierrc.json5: file integrity, option catalogue,
+      # value schema, resolution and behaviour. No services required.
+      - name: Test Prettier configuration
         run: pnpm test
 
-  test-reconcile:
-    name: test (reconcile-payments)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Build SDK
+        working-directory: ./packages/sdk
+        run: pnpm build
+
+      - name: Test SDK
+        working-directory: ./packages/sdk
+        run: pnpm test
+
+      - name: Verify generated API types are reproducible
+        run: |
+          pnpm --filter @accensa/sdk gen:api
+          git diff --exit-code -- packages/sdk/generated/api-types.ts
+
+      - name: Verify conformance vectors are reproducible
+        run: |
+          node packages/sdk/scripts/generate-vectors.mjs
+          git diff --exit-code -- packages/sdk/merkle-vectors.json packages/sdk/vectors.rs
+
       # Unit tests only: synthetic and fixture data, no live RPC or database.
       # The live reconciliation itself runs on a schedule, in reconcile.yml.
       - name: Test reconcile-payments
         working-directory: ./scripts/reconcile-payments
         run: pnpm test
 
-  test-config:
-    name: test (prettier config)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      # Unit tests for /.prettierrc.json5: file integrity, option catalogue,
-      # value schema, resolution and behaviour. No services required.
-      - name: Test Prettier configuration
+      - name: Test web
+        working-directory: ./apps/web
+        env:
+          DATABASE_URL: postgres://postgres:password@localhost:5432/accensa_test
         run: pnpm test
 
-  typecheck:
-    name: typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
       # Typechecks apps/web and packages/sdk from the root.
       # apps/docs (Docusaurus) uses its own tsconfig via @docusaurus/tsconfig
       # and is excluded — its types are checked by docusaurus build instead.
       # apps/demo-merchant is plain JavaScript and has no TypeScript to check.
-      - name: Build SDK (web typecheck resolves @accensa/sdk from dist)
-        working-directory: ./packages/sdk
-        run: pnpm build
       - name: Typecheck workspace packages
         run: pnpm typecheck
 
-  build:
-    name: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build SDK (web build resolves @accensa/sdk from dist)
-        working-directory: ./packages/sdk
-        run: pnpm build
       - name: Build Next.js app
         working-directory: ./apps/web
         run: pnpm build
 
-  verify-pack:
-    name: verify SDK tarball
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build SDK
-        working-directory: ./packages/sdk
-        run: pnpm build
       - name: Pack SDK tarball
         working-directory: ./packages/sdk
         run: pnpm pack --pack-destination /tmp/sdk-tarball
+
       - name: Verify tarball installs and imports in ESM and CJS
         run: |
           TARBALL=$(ls /tmp/sdk-tarball/*.tgz)
@@ -243,27 +155,12 @@ jobs:
 
           echo "All import checks passed"
 
-  e2e:
-    name: e2e (web)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build SDK (web resolves @accensa/sdk from dist)
-        working-directory: ./packages/sdk
-        run: pnpm build
       - name: Install Playwright browsers
         working-directory: ./apps/web
         # Firefox as well as chromium: the e2e config runs both projects, and
         # a missing browser binary fails the job after the server is up.
         run: pnpm exec playwright install --with-deps chromium firefox
+
       - name: Run e2e + accessibility suite
         working-directory: ./apps/web
         env:
