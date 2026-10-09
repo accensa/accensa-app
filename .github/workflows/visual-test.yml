@@ -1,16 +1,21 @@
 name: Visual regression
 
+# Runs on merge, not on the PR. The e2e suite in ci.yml deliberately ignores
+# visual.spec.ts (see apps/web/playwright.e2e.config.ts `testIgnore`), so this
+# is the only guard for the committed screenshots — which is why it stays rather
+# than being deleted. What moving it off the PR path costs: a visual regression
+# is found after it lands on main instead of before it merges. `pnpm
+# test:visual:update` already lets an author bless a change without review, so
+# the pre-merge check was never enforcing snapshot stability anyway. Fire this
+# manually on a branch that touches layout before merging if you want the diff
+# pre-merge.
 on:
-  pull_request:
-    branches: ['main']
-    paths:
-      - 'apps/web/**'
-      - '.github/workflows/visual-test.yml'
   push:
     branches: ['main']
     paths:
       - 'apps/web/**'
       - '.github/workflows/visual-test.yml'
+  workflow_dispatch:
 
 jobs:
   visual:
