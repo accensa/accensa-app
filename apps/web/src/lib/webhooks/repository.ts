@@ -116,13 +116,14 @@ export async function persistAttempt(input: {
   attemptNumber: number;
   statusCode: number | null;
   error: string | null;
+  durationMs: number;
   status: string;
   next: Date | null;
 }): Promise<void> {
   await input.client.query(
-    `INSERT INTO webhook_attempts (delivery_id, attempt_number, status_code, error)
-       VALUES ($1, $2, $3, $4)`,
-    [input.id, input.attemptNumber, input.statusCode, input.error],
+    `INSERT INTO webhook_attempts (delivery_id, attempt_number, status_code, error, duration_ms)
+       VALUES ($1, $2, $3, $4, $5)`,
+    [input.id, input.attemptNumber, input.statusCode, input.error, input.durationMs],
   );
 
   await input.client.query(
@@ -139,15 +140,26 @@ export async function persistAttempt(input: {
   );
 }
 
-export async function pendingDue(client: Client, opts: { now?: Date } = {}): Promise<number> {
+export async function pendingDue(
+  client: Client,
+  opts: { now?: Date; merchantId?: number } = {},
+): Promise<number> {
   try {
     const now = (opts.now ?? new Date()).toISOString();
+    const merchantScope =
+      opts.merchantId === undefined
+        ? ''
+        : `AND EXISTS (
+             SELECT 1 FROM payments p
+             WHERE p.tx_hash = webhook_deliveries.payment_tx_hash AND p.merchant_id = $2
+           )`;
     const res = await client.query<{ count: string }>(
       `SELECT count(*)::text AS count
        FROM webhook_deliveries
        WHERE status = 'pending'
-         AND (next_retry_at IS NULL OR next_retry_at <= $1::timestamptz)`,
-      [now],
+         AND (next_retry_at IS NULL OR next_retry_at <= $1::timestamptz)
+         ${merchantScope}`,
+      opts.merchantId === undefined ? [now] : [now, opts.merchantId],
     );
     const count = Number(res.rows[0]?.count ?? 0);
     logger.debug('Pending due count retrieved', { count });
@@ -160,9 +172,16 @@ export async function pendingDue(client: Client, opts: { now?: Date } = {}): Pro
   }
 }
 
-export async function fetchStatusCounts(client: Client): Promise<{ status: string; n: string }[]> {
+export async function fetchStatusCounts(
+  client: Client,
+  merchantId: number,
+): Promise<{ status: string; n: string }[]> {
   const counts = await client.query<{ status: string; n: string }>(
-    `SELECT status, count(*)::text AS n FROM webhook_deliveries GROUP BY status`,
+    `SELECT d.status, count(*)::text AS n
+       FROM webhook_deliveries d
+       JOIN payments p ON p.tx_hash = d.payment_tx_hash AND p.merchant_id = $1
+       GROUP BY d.status`,
+    [merchantId],
   );
   return counts.rows;
 }
@@ -177,13 +196,86 @@ export interface RecentFailureRow {
   updated_at: Date;
 }
 
-export async function fetchRecentFailures(client: Client): Promise<RecentFailureRow[]> {
+export async function fetchRecentFailures(
+  client: Client,
+  merchantId: number,
+): Promise<RecentFailureRow[]> {
   const recent = await client.query<RecentFailureRow>(
-    `SELECT id, payment_tx_hash, status, attempts, last_status_code, last_error, updated_at
-        FROM webhook_deliveries
-        WHERE status IN ('failed', 'dead_letter')
-        ORDER BY updated_at DESC
+    `SELECT d.id, d.payment_tx_hash, d.status, d.attempts, d.last_status_code, d.last_error, d.updated_at
+        FROM webhook_deliveries d
+        JOIN payments p ON p.tx_hash = d.payment_tx_hash AND p.merchant_id = $1
+        WHERE d.status IN ('failed', 'dead_letter')
+        ORDER BY d.updated_at DESC
         LIMIT 20`,
+    [merchantId],
   );
   return recent.rows;
+}
+
+export interface DeliveryLogRow {
+  id: string;
+  payment_tx_hash: string;
+  payload: PaymentPayload;
+  status: string;
+  attempts: number;
+  last_status_code: number | null;
+  last_error: string | null;
+  created_at: Date;
+  updated_at: Date;
+  attempt_history: Array<{
+    attemptNumber: number;
+    statusCode: number | null;
+    error: string | null;
+    durationMs: number;
+    createdAt: Date | string;
+  }>;
+}
+
+export async function fetchRecentDeliveries(
+  client: Client,
+  merchantId: number,
+): Promise<DeliveryLogRow[]> {
+  const result = await client.query<DeliveryLogRow>(
+    `SELECT d.id, d.payment_tx_hash, d.payload, d.status, d.attempts,
+            d.last_status_code, d.last_error, d.created_at, d.updated_at,
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'attemptNumber', a.attempt_number,
+                  'statusCode', a.status_code,
+                  'error', a.error,
+                  'durationMs', a.duration_ms,
+                  'createdAt', a.created_at
+                ) ORDER BY a.attempt_number
+              ) FILTER (WHERE a.id IS NOT NULL),
+              '[]'::json
+            ) AS attempt_history
+       FROM webhook_deliveries d
+      JOIN payments p ON p.tx_hash = d.payment_tx_hash AND p.merchant_id = $1
+       LEFT JOIN webhook_attempts a ON a.delivery_id = d.id
+       GROUP BY d.id
+       ORDER BY d.updated_at DESC, d.id DESC
+       LIMIT 50`,
+    [merchantId],
+  );
+  return result.rows;
+}
+
+export async function requeueFailedDelivery(
+  client: Client,
+  id: number,
+  merchantId: number,
+): Promise<boolean> {
+  const result = await client.query(
+    `UPDATE webhook_deliveries
+       SET status = 'pending', attempts = 0, next_retry_at = now(), updated_at = now()
+       WHERE id = $1 AND status IN ('failed', 'dead_letter')
+         AND EXISTS (
+           SELECT 1 FROM payments p
+           WHERE p.tx_hash = webhook_deliveries.payment_tx_hash AND p.merchant_id = $2
+         )
+       RETURNING id`,
+    [id, merchantId],
+  );
+  return (result.rowCount ?? 0) > 0;
 }

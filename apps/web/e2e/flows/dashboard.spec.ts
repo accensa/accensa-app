@@ -115,7 +115,7 @@ test.describe('auth', () => {
     await page.goto('/login');
     await expect(page.getByRole('heading', { name: 'Merchant Login' })).toBeVisible();
     // No wallet in the test browser; connecting leads to an error state.
-    const connect = page.getByRole('button', { name: 'Connect Wallet' });
+    const connect = page.getByRole('main').getByRole('button', { name: 'Connect Wallet' });
     await connect.click();
     await expect(page.getByRole('alert')).toBeVisible();
   });

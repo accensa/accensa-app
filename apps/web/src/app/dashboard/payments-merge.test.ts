@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { mergePayments } from './page';
+import { mergePayments } from './payments-merge';
 
 type P = Parameters<typeof mergePayments>[0][number];
 

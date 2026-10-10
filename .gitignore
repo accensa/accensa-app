@@ -13,6 +13,7 @@ dist/
 
 # Deployment tooling
 .vercel/
+apps/web/test-results/
 
 # Coding-agent scratch state, including git worktrees under .claude/worktrees.
 # Untracked but not ignored means one `git add -A` away from committing several

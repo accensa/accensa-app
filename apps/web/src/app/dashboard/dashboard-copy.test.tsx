@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { PaymentModal } from './page';
+import { PaymentModal } from './page-components';
 
 describe('Dashboard modal copy affordances', () => {
   it('renders copy controls for full transaction hash and payer address in payment modal', () => {

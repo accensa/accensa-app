@@ -135,9 +135,152 @@ export async function ensureSchema(client: Client): Promise<void> {
   );
 
   await ensureMultiMerchantSchema(client);
+  await ensureRoleTupleSchema(client);
+  await ensureStoreSchema(client);
+  await ensureInventorySchema(client);
   await ensureAnchorAndWebhookSchema(client);
   await ensureNotificationSchema(client);
   await ensureChatNotifierSchema(client);
+}
+
+async function ensureRoleTupleSchema(client: Client): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS role_tuples (
+      object TEXT NOT NULL,
+      relation TEXT NOT NULL,
+      "user" TEXT NOT NULL,
+      merchant_id INT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (object, relation, "user")
+    );
+  `);
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_role_tuples_merchant ON role_tuples (merchant_id);`,
+  );
+  await client.query(`ALTER TABLE role_tuples ENABLE ROW LEVEL SECURITY;`);
+  await client.query(`ALTER TABLE role_tuples FORCE ROW LEVEL SECURITY;`);
+  await client.query(`DROP POLICY IF EXISTS role_tuples_merchant_isolation ON role_tuples;`);
+  await client.query(`
+    CREATE POLICY role_tuples_merchant_isolation ON role_tuples
+      USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
+      WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);
+  `);
+}
+
+async function ensureStoreSchema(client: Client): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS merchant_stores (
+      id SERIAL PRIMARY KEY,
+      organization_merchant_id INT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+      store_merchant_id INT NOT NULL UNIQUE REFERENCES merchants(id) ON DELETE CASCADE,
+      name VARCHAR(120) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (organization_merchant_id, name),
+      CHECK (organization_merchant_id <> store_merchant_id)
+    );
+  `);
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_merchant_stores_organization
+     ON merchant_stores (organization_merchant_id, id);`,
+  );
+  await client.query(`ALTER TABLE merchant_stores ENABLE ROW LEVEL SECURITY;`);
+  await client.query(`ALTER TABLE merchant_stores FORCE ROW LEVEL SECURITY;`);
+  await client.query(
+    `DROP POLICY IF EXISTS merchant_stores_organization_isolation ON merchant_stores;`,
+  );
+  await client.query(`
+    CREATE POLICY merchant_stores_organization_isolation ON merchant_stores
+      USING (organization_merchant_id = current_setting('accensa.merchant_id', true)::int)
+      WITH CHECK (organization_merchant_id = current_setting('accensa.merchant_id', true)::int);
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS merchant_api_keys (
+      id UUID PRIMARY KEY,
+      merchant_id INT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+      name VARCHAR(120) NOT NULL,
+      key_prefix VARCHAR(24) NOT NULL,
+      secret_hash VARCHAR(64) NOT NULL UNIQUE,
+      permissions TEXT[] NOT NULL DEFAULT ARRAY['read'],
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      revoked_at TIMESTAMPTZ
+    );
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS merchant_catalog_items (
+      merchant_id INT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+      sku VARCHAR(100) NOT NULL,
+      name VARCHAR(160) NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      price NUMERIC(30, 12),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (merchant_id, sku)
+    );
+  `);
+  for (const table of ['merchant_api_keys', 'merchant_catalog_items']) {
+    await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+    await client.query(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    await client.query(`DROP POLICY IF EXISTS ${table}_merchant_isolation ON ${table};`);
+    await client.query(`
+      CREATE POLICY ${table}_merchant_isolation ON ${table}
+        USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
+        WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);
+    `);
+  }
+}
+
+async function ensureInventorySchema(client: Client): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS inventory_items (
+      merchant_id INT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+      sku VARCHAR(100) NOT NULL,
+      name VARCHAR(160) NOT NULL,
+      stock_quantity INT NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
+      low_stock_threshold INT NOT NULL DEFAULT 5 CHECK (low_stock_threshold >= 0),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (merchant_id, sku)
+    );
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS inventory_reservations (
+      id UUID PRIMARY KEY,
+      merchant_id INT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+      checkout_id VARCHAR(128) NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'committed', 'released', 'expired')),
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (merchant_id, checkout_id)
+    );
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS inventory_reservation_items (
+      reservation_id UUID NOT NULL REFERENCES inventory_reservations(id) ON DELETE CASCADE,
+      merchant_id INT NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+      sku VARCHAR(100) NOT NULL,
+      quantity INT NOT NULL CHECK (quantity > 0),
+      PRIMARY KEY (reservation_id, sku),
+      FOREIGN KEY (merchant_id, sku) REFERENCES inventory_items(merchant_id, sku) ON DELETE CASCADE
+    );
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_inventory_reservations_expiry
+      ON inventory_reservations (merchant_id, expires_at) WHERE status = 'active';
+  `);
+  for (const table of [
+    'inventory_items',
+    'inventory_reservations',
+    'inventory_reservation_items',
+  ]) {
+    await client.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+    await client.query(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    await client.query(`DROP POLICY IF EXISTS ${table}_merchant_isolation ON ${table};`);
+    await client.query(`
+      CREATE POLICY ${table}_merchant_isolation ON ${table}
+        USING (merchant_id = current_setting('accensa.merchant_id', true)::int)
+        WITH CHECK (merchant_id = current_setting('accensa.merchant_id', true)::int);
+    `);
+  }
 }
 
 /**
@@ -198,9 +341,13 @@ async function ensureAnchorAndWebhookSchema(client: Client): Promise<void> {
       attempt_number INT NOT NULL,
       status_code INT,
       error TEXT,
+      duration_ms INT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  await client.query(
+    `ALTER TABLE webhook_attempts ADD COLUMN IF NOT EXISTS duration_ms INT NOT NULL DEFAULT 0;`,
+  );
   await client.query(
     `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
      ON webhook_deliveries (next_retry_at) WHERE status = 'pending';`,

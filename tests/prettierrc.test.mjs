@@ -539,6 +539,13 @@ describe(`${CONFIG_NAME} — resolution`, () => {
     const walk = (dir) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (entry.isDirectory()) {
+          const relativePath = path
+            .relative(ROOT, path.join(dir, entry.name))
+            .split(path.sep)
+            .join('/');
+          if (relativePath === '.kilo/worktrees' || relativePath === '.claude/worktrees') {
+            continue;
+          }
           if (!SKIP_DIRS.has(entry.name)) walk(path.join(dir, entry.name));
           continue;
         }

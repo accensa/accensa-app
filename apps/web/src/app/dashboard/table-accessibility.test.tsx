@@ -2,8 +2,8 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { PaymentsCardList, PaymentsTable, TableSkeleton } from './page';
-import { RouteTable } from './routes/page';
+import { PaymentsCardList, PaymentsTable, TableSkeleton } from './page-components';
+import { RouteTable } from './routes/route-table';
 
 describe('Dashboard tables accessibility', () => {
   it('renders PaymentsTable with accessible caption and column scopes on all headers', () => {

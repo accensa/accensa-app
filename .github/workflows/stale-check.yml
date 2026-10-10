@@ -5,6 +5,12 @@ name: Indexer staleness check
 # still fires and the failure is visible. Point ALERT_WEBHOOK at Slack /
 # a PagerDuty Events v2 endpoint / Discord so a red run also pages a human;
 # without it the job still fails loudly in the Actions tab.
+#
+# Required repository secrets:
+#   HEALTH_URL     https://<deployment>/api/health
+#   CRON_SECRET    must match the CRON_SECRET on the Vercel project; the
+#                  proxy serves /api/health to this bearer token only.
+#   ALERT_WEBHOOK  optional; page a human instead of only failing the run.
 
 on:
   workflow_dispatch:
@@ -22,11 +28,17 @@ jobs:
       - name: Poll /api/health
         env:
           HEALTH_URL: ${{ secrets.HEALTH_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
           ALERT_WEBHOOK: ${{ secrets.ALERT_WEBHOOK }}
         run: |
           if [ -z "$HEALTH_URL" ]; then echo "HEALTH_URL secret is not set"; exit 1; fi
+          # The endpoint is bearer-gated, so a missing secret here is a misconfig,
+          # not an unhealthy indexer. Say which, instead of reporting HTTP 401 as
+          # if the deployment were down.
+          if [ -z "$CRON_SECRET" ]; then echo "CRON_SECRET secret is not set"; exit 1; fi
 
-          resp=$(curl -sS --max-time 30 -w '\n%{http_code}' "$HEALTH_URL" || echo $'\n000')
+          resp=$(curl -sS --max-time 30 -w '\n%{http_code}' \
+            -H "Authorization: Bearer $CRON_SECRET" "$HEALTH_URL" || echo $'\n000')
           body=$(printf '%s' "$resp" | sed '$d')
           code=$(printf '%s' "$resp" | tail -n1)
           echo "HTTP $code"

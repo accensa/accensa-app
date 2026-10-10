@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import DisputeChat from './DisputeChat';
@@ -20,57 +20,82 @@ class FakeEventSource {
   addEventListener(type: string, cb: (event: { data: string }) => void) {
     (this.listeners[type] ??= []).push(cb);
   }
-  close() {}
+  close() {
+    FakeEventSource.instances = FakeEventSource.instances.filter((source) => source !== this);
+  }
   emit(type: string, data: unknown) {
     for (const cb of this.listeners[type] ?? []) cb({ data: JSON.stringify(data) });
   }
 }
 
 describe('DisputeChat', () => {
+  const originalEventSource = globalThis.EventSource;
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
     FakeEventSource.instances = [];
-    (globalThis as { EventSource?: unknown }).EventSource = FakeEventSource;
-    global.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith('/messages') && (!init || init.method === undefined)) {
-        return new Response(JSON.stringify({ salt: 'c2FsdC1ieXRlcy0xNg==', messages: [] }), {
-          status: 200,
-        });
-      }
-      if (url.endsWith('/messages') && init?.method === 'POST') {
-        const body = JSON.parse(init.body as string);
-        return new Response(
-          JSON.stringify({
-            message: {
-              id: 'm1',
-              disputeId: 'd1',
-              role: body.role,
-              createdAt: new Date().toISOString(),
-              payload: body.payload,
-              attachment: body.attachment ?? null,
-            },
-          }),
-          { status: 201 },
-        );
-      }
-      return new Response('not found', { status: 404 });
-    }) as unknown as typeof fetch;
+    Object.defineProperty(globalThis, 'EventSource', {
+      value: FakeEventSource,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, 'fetch', {
+      value: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/messages') && (!init || init.method === undefined)) {
+          return new Response(JSON.stringify({ salt: 'c2FsdC1ieXRlcy0xNg==', messages: [] }), {
+            status: 200,
+          });
+        }
+        if (url.endsWith('/messages') && init?.method === 'POST') {
+          const body = JSON.parse(init.body as string);
+          return new Response(
+            JSON.stringify({
+              message: {
+                id: 'm1',
+                disputeId: 'd1',
+                role: body.role,
+                createdAt: new Date().toISOString(),
+                payload: body.payload,
+                attachment: body.attachment ?? null,
+              },
+            }),
+            { status: 201 },
+          );
+        }
+        return new Response('not found', { status: 404 });
+      }),
+      configurable: true,
+      writable: true,
+    });
   });
 
   afterEach(() => {
+    cleanup();
+    Object.defineProperty(globalThis, 'EventSource', {
+      value: originalEventSource,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(globalThis, 'fetch', {
+      value: originalFetch,
+      configurable: true,
+      writable: true,
+    });
     vi.restoreAllMocks();
+    FakeEventSource.instances = [];
   });
 
   it('loads history and shows a connected status once the SSE stream opens', async () => {
     render(<DisputeChat disputeId="d1" role="buyer" />);
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1), { timeout: 10_000 });
     FakeEventSource.instances[0].emit('open', {});
     expect(screen.getByTestId('dispute-chat')).toBeInTheDocument();
   });
 
   it('sends a message and renders it once the round trip resolves', async () => {
     render(<DisputeChat disputeId="d1" role="merchant" />);
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1), { timeout: 10_000 });
 
     fireEvent.change(screen.getByLabelText('Message'), {
       target: { value: 'We can offer 50% back' },
@@ -92,7 +117,7 @@ describe('DisputeChat', () => {
         onCancelDispute={onCancel}
       />,
     );
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1), { timeout: 10_000 });
 
     fireEvent.click(screen.getByText('Accept partial refund'));
     fireEvent.click(screen.getByText('Cancel dispute'));

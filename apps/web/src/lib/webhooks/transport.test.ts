@@ -15,12 +15,13 @@ describe('attemptDelivery — the extracted HTTP edge of deliverDue (#350)', () 
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
     const outcome = await attemptDelivery({ ...base, fetchImpl, timeoutMs: 1_000 });
 
-    expect(outcome).toEqual({
+    expect(outcome).toMatchObject({
       statusCode: 204,
       error: null,
       retryAfter: null,
       transportError: false,
     });
+    expect(outcome.durationMs).toBeGreaterThanOrEqual(0);
     const [, init] = fetchImpl.mock.calls[0]!;
     expect(init?.method).toBe('POST');
     expect((init?.headers as Record<string, string>)['X-Signature']).toMatch(/^[0-9a-f]{128}$/);
@@ -45,12 +46,13 @@ describe('attemptDelivery — the extracted HTTP edge of deliverDue (#350)', () 
     });
     const outcome = await attemptDelivery({ ...base, fetchImpl, timeoutMs: 1_000 });
 
-    expect(outcome).toEqual({
+    expect(outcome).toMatchObject({
       statusCode: null,
       error: 'ECONNRESET',
       retryAfter: null,
       transportError: true,
     });
+    expect(outcome.durationMs).toBeGreaterThanOrEqual(0);
   });
 
   // Edge case the inline block used to hide: a signing failure must not throw

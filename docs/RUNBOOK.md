@@ -7,6 +7,11 @@ name/rotation here).
 `/api/health` returns `{ status, head, merchants: [{ lagLedgers, ageMs, status,
 reasons }] }` and a `503` when any merchant is `critical`.
 
+It is authenticated by `Authorization: Bearer $CRON_SECRET` (the same secret
+`sync.yml` uses), not by a session cookie — the poller is a GitHub Actions
+runner, which has no browser session. A 401 here means the workflow lost its
+`CRON_SECRET`, not that the indexer is unhealthy.
+
 ## `skippedLedgers > 0` — data permanently lost (incident, not a warning)
 
 **What fired:** a sync response carried `skippedLedgers` > 0. The cursor fell

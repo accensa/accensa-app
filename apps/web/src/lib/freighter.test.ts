@@ -150,6 +150,7 @@ describe('freighterAdapter.readStatus', () => {
       kind: 'connected',
       address: G,
       network: 'TESTNET',
+      networkPassphrase: 'Test SDF Network ; September 2015',
     });
   });
 

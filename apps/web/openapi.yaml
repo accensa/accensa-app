@@ -149,6 +149,16 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/routes:
     get:
@@ -177,6 +187,16 @@ paths:
                   $ref: '#/components/schemas/RouteRevenue'
         '401':
           description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/verify:
     post:
@@ -201,6 +221,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: The anchored batch could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/sync:
     get:
@@ -215,8 +241,16 @@ paths:
                 $ref: '#/components/schemas/SyncResult'
         '401':
           description: Missing or invalid CRON_SECRET.
-        '429':
-          description: A sync ran within the cooldown window.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: The scheduled sync failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     post:
       operationId: runManualSync
       summary: Manual entry point behind the dashboard's "Sync now" button. Session-authenticated.
@@ -229,8 +263,22 @@ paths:
                 $ref: '#/components/schemas/SyncResult'
         '401':
           description: Unauthorized.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '429':
           description: A sync ran within the cooldown window.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncResult'
+        '500':
+          description: The manual sync failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   schemas:

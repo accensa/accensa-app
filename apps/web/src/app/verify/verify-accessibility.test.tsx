@@ -2,7 +2,8 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import VerifyPage, { Result } from './page';
+import VerifyPage from './page';
+import { Result } from './result';
 
 describe('Verify page accessibility', () => {
   it('renders an in-progress status live region for screen readers', () => {

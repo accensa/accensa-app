@@ -2,14 +2,30 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'scripts/*'
+# `@next/bundle-analyzer`'s `index.d.ts` does `import type { NextConfig } from
+# 'next'` but its package.json declares no `next` peer, so TypeScript resolves
+# that import by walking up out of the package into pnpm's hidden hoist store.
+# With `apps/demo-merchant` still on next@14 and `apps/web` on next@16, that
+# store holds both, and which one wins is not stable across installs — in CI it
+# came out next@14, making `withBundleAnalyzer(nextConfig)` a type error against
+# the app's own next@16 config. Declaring the missing peer makes pnpm link each
+# importer's own `next` into the analyzer, so resolution stops at the right one.
+packageExtensions:
+  '@next/bundle-analyzer':
+    peerDependencies:
+      next: '*'
 allowBuilds:
+  '@reown/appkit': false
   '@sentry/cli': true
   '@swc/core': true
+  bufferutil: false
   core-js: true
   core-js-pure: true
   esbuild: true
+  secp256k1: false
   sharp: true
   unrs-resolver: true
+  utf-8-validate: false
 minimumReleaseAgeExclude:
   - esbuild@0.24.3
   - serialize-javascript@7.0.3 || 7.0.5

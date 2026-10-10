@@ -77,6 +77,7 @@ export async function deliverDue(
           attemptNumber,
           statusCode: null,
           error: 'WEBHOOK_SIGNING_KEY is not configured; refusing to send an unsigned payload',
+          durationMs: 0,
           createdAtMs,
           nowMs: Date.now(),
           retryAfter: null,
@@ -107,6 +108,7 @@ export async function deliverDue(
         attemptNumber,
         statusCode: outcome.statusCode,
         error: outcome.error,
+        durationMs: outcome.durationMs,
         createdAtMs,
         nowMs: Date.now(),
         retryAfter: outcome.retryAfter,
@@ -134,6 +136,7 @@ export async function recordAttempt(
     attemptNumber: number;
     statusCode: number | null;
     error: string | null;
+    durationMs: number;
     createdAtMs: number;
     nowMs: number;
     retryAfter: string | null;
@@ -163,6 +166,7 @@ export async function recordAttempt(
       attemptNumber: input.attemptNumber,
       statusCode: input.statusCode,
       error: input.error,
+      durationMs: input.durationMs,
       status,
       next,
     });

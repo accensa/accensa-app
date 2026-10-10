@@ -3,6 +3,9 @@ node_modules
 build
 dist
 .docusaurus
+.kilo/worktrees/
+.claude/worktrees/
+apps/web/test-results/
 pnpm-lock.yaml
 *.min.js
 .merkle-vectors.json

@@ -12,6 +12,7 @@ import {
   payloadFromRow,
   pendingDue,
   webhookSummary,
+  requeueFailedDelivery,
 } from './webhooks';
 
 describe('shouldRetry', () => {
@@ -139,7 +140,7 @@ describe('enqueueWebhookDelivery', () => {
 describe('deliverDue — a sleeping host cannot stall the caller past the budget', () => {
   it('returns before a webhook that never responds would exhaust the indexer budget', async () => {
     const hanging = () => new Promise<Response>(() => {});
-    const query = vi.fn(async (sql: string) => {
+    const query = vi.fn(async (sql: string, _params?: unknown[]) => {
       if (sql.includes("SET status = 'delivering'")) return { rowCount: 1, rows: [{ id: 1 }] };
       if (sql.includes('FROM webhook_deliveries')) {
         return {
@@ -200,7 +201,7 @@ describe('pendingDue — the lag signal a consumer fleet scales on (#165)', () =
 describe('webhookSummary', () => {
   it('reports lag and the dead-letter count alongside the existing tallies', async () => {
     const query = vi.fn(async (sql: string) => {
-      if (/^SELECT status, count/.test(sql)) {
+      if (/^SELECT d\.status, count/.test(sql)) {
         return {
           rows: [
             { status: 'pending', n: '2' },
@@ -215,7 +216,7 @@ describe('webhookSummary', () => {
       return { rows: [] };
     });
 
-    const summary = await webhookSummary({ query } as never);
+    const summary = await webhookSummary({ query } as never, 7);
 
     expect(summary.pending).toBe(2);
     expect(summary.delivered).toBe(5);
@@ -226,9 +227,10 @@ describe('webhookSummary', () => {
 
   it('lists dead-lettered deliveries in recentFailed for operator inspection', async () => {
     const query = vi.fn(async (sql: string) => {
-      if (/^SELECT status, count/.test(sql)) return { rows: [{ status: 'dead_letter', n: '1' }] };
+      if (/^SELECT d\.status, count/.test(sql))
+        return { rows: [{ status: 'dead_letter', n: '1' }] };
       if (/^SELECT count\(\*\)::text AS count/.test(sql)) return { rows: [{ count: '0' }] };
-      if (/^SELECT id, payment_tx_hash/.test(sql)) {
+      if (/^SELECT d\.id, d\.payment_tx_hash/.test(sql) && !sql.includes('json_agg')) {
         return {
           rows: [
             {
@@ -246,10 +248,65 @@ describe('webhookSummary', () => {
       return { rows: [] };
     });
 
-    const summary = await webhookSummary({ query } as never);
+    const summary = await webhookSummary({ query } as never, 7);
 
     expect(summary.deadLetter).toBe(1);
     expect(summary.recentFailed[0].status).toBe('dead_letter');
     expect(summary.recentFailed[0].attempts).toBe(8);
+  });
+
+  it('returns a merchant-scoped delivery and its attempt history', async () => {
+    const delivery = {
+      id: '12',
+      payment_tx_hash: 'a'.repeat(64),
+      payload: { amount: '1.00' },
+      status: 'delivered',
+      attempts: 1,
+      last_status_code: 204,
+      last_error: null,
+      created_at: new Date('2026-10-01T10:00:00.000Z'),
+      updated_at: new Date('2026-10-01T10:00:01.000Z'),
+      attempt_history: [
+        {
+          attemptNumber: 1,
+          statusCode: 204,
+          error: null,
+          durationMs: 24,
+          createdAt: new Date('2026-10-01T10:00:01.000Z'),
+        },
+      ],
+    };
+    const query = vi.fn(async (sql: string, _params?: unknown[]) => {
+      if (sql.includes('json_agg')) return { rows: [delivery] };
+      if (/^SELECT d\.status, count/.test(sql)) return { rows: [] };
+      if (/^SELECT d\.id, d\.payment_tx_hash/.test(sql)) return { rows: [] };
+      if (/^SELECT count\(\*\)::text AS count/.test(sql)) return { rows: [{ count: '0' }] };
+      return { rows: [] };
+    });
+
+    const summary = await webhookSummary({ query } as never, 7);
+
+    expect(summary.recentDeliveries[0]).toMatchObject({
+      id: 12,
+      paymentTxHash: 'a'.repeat(64),
+      status: 'delivered',
+      attemptHistory: [{ attemptNumber: 1, statusCode: 204, durationMs: 24 }],
+    });
+    const logQuery = query.mock.calls.find(([sql]) => sql.includes('json_agg'));
+    expect(logQuery?.[0]).toContain('p.merchant_id = $1');
+    expect(logQuery?.[1]).toEqual([7]);
+  });
+});
+
+describe('requeueFailedDelivery', () => {
+  it('resets the retry budget for a failure without deleting its attempt history', async () => {
+    const query = vi.fn().mockResolvedValue({ rowCount: 1 });
+    const queued = await requeueFailedDelivery({ query } as never, 12, 7);
+
+    expect(queued).toBe(true);
+    expect(query.mock.calls[0][0]).toContain("status IN ('failed', 'dead_letter')");
+    expect(query.mock.calls[0][0]).toContain('p.merchant_id = $2');
+    expect(query.mock.calls[0][0]).not.toContain('DELETE FROM webhook_attempts');
+    expect(query.mock.calls[0][1]).toEqual([12, 7]);
   });
 });

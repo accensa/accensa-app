@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { MetricCard } from '@/components/merchant/MetricCard';
-import { VolumeChart } from '@/components/merchant/VolumeChart';
 import { useMerchantTelemetry } from '@/hooks/useMerchantTelemetry';
 import { useOnline } from '@/components/network-status';
 import { ArrowUpRight, TrendingUp, Shield, Zap } from 'lucide-react';
@@ -22,6 +22,15 @@ interface VolumeData {
 }
 
 type TimeRange = '24h' | '7d' | '30d' | 'custom';
+
+const VolumeChart = dynamic(
+  () => import('@/components/merchant/VolumeChart').then((module) => module.VolumeChart),
+  {
+    loading: () => (
+      <div className="h-80 animate-pulse border border-slate-200 bg-white/60 dark:border-white/10 dark:bg-white/5" />
+    ),
+  },
+);
 
 async function fetchMetrics(url: string): Promise<DashboardMetrics> {
   const res = await fetch(url, { cache: 'no-store' });

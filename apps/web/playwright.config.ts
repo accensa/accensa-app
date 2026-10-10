@@ -3,9 +3,24 @@ import { defineConfig, devices } from '@playwright/test';
 const PORT = Number(process.env.PLAYWRIGHT_PORT ?? 3100);
 const baseURL = `http://127.0.0.1:${PORT}`;
 
+const desktop = { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } };
+const tablet = {
+  ...devices['Desktop Chrome'],
+  viewport: { width: 768, height: 1024 },
+  isMobile: true,
+  hasTouch: true,
+};
+const mobile = {
+  ...devices['Desktop Chrome'],
+  viewport: { width: 375, height: 812 },
+  isMobile: true,
+  hasTouch: true,
+};
+
 /**
- * Visual regression for the merchant dashboard: navbar, empty state, and
- * the payments table. Screenshots are committed under e2e/__screenshots__.
+ * Visual regression for the merchant dashboard (empty state and payments
+ * table), the checkout branding preview, disputes, and the POS terminal.
+ * Screenshots are committed under e2e/__screenshots__/<project>.
  *
  * A session JWT is minted in the spec so /dashboard is reachable without
  * driving Freighter. /api/payments is intercepted — these tests assert
@@ -27,27 +42,30 @@ export default defineConfig({
     trace: 'on-first-retry',
     colorScheme: 'light',
   },
-  // Platform-independent snapshot paths (no {platform}/{projectName}) so the
-  // same committed PNGs are compared on every OS CI runs on. A pixel ratio
-  // tolerance absorbs cross-OS font rasterization differences while the
-  // screenshots still catch layout regressions. 0.04 comfortably covers the
-  // Windows-vs-Linux rendering delta (~2% observed for the navbar) with ~2x
-  // headroom, whereas a real layout regression produces a much larger diff.
-  snapshotPathTemplate: '{testDir}/__screenshots__/{arg}{ext}',
+  // One baseline set per project (viewport x colour scheme), no {platform}
+  // segment: the baselines are rendered by the ubuntu-latest CI runner, which
+  // is the only place they are compared. The tight pixel ratio relies on that
+  // single renderer; regenerate them there rather than on a dev machine.
+  snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{arg}{ext}',
+  updateSnapshots: 'none',
   expect: {
     toHaveScreenshot: {
-      maxDiffPixelRatio: 0.04,
+      maxDiffPixelRatio: 0.005,
+      stylePath: './e2e/visual.css',
     },
   },
+  // Every project runs in Chromium. The app's CSP sends
+  // `upgrade-insecure-requests`, which WebKit applies to the http://127.0.0.1
+  // test server (Chromium exempts loopback), so under WebKit the page's CSS and
+  // JS are rewritten to https and the screenshots capture a blank or unstyled
+  // page. Breakpoints are covered by viewport + touch emulation instead.
   projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
-    },
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'], viewport: { width: 1280, height: 800 } },
-    },
+    { name: 'mobile-light', use: { ...mobile, colorScheme: 'light' } },
+    { name: 'mobile-dark', use: { ...mobile, colorScheme: 'dark' } },
+    { name: 'tablet-light', use: { ...tablet, colorScheme: 'light' } },
+    { name: 'tablet-dark', use: { ...tablet, colorScheme: 'dark' } },
+    { name: 'desktop-light', use: { ...desktop, colorScheme: 'light' } },
+    { name: 'desktop-dark', use: { ...desktop, colorScheme: 'dark' } },
   ],
   webServer: {
     command: `pnpm exec next dev --port ${PORT}`,

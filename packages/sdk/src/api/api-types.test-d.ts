@@ -100,8 +100,14 @@ expectTypeOf<JsonResponseBody<'listPayments', 200>>().toEqualTypeOf<
   components['schemas']['PaymentsResponse']
 >();
 
-/** A response that documents no body resolves to `undefined`, not `never`. */
-expectTypeOf<JsonResponseBody<'listPayments', 401>>().toBeUndefined();
+/**
+ * Every response the spec documents carries a JSON body, the non-2xx ones
+ * included, so a documented status resolves to that body. The "no body
+ * resolves to `undefined`, not `never`" rule that `JsonContentOf` implements
+ * is exercised by the request-body assertions below, where the spec's GETs
+ * genuinely declare none.
+ */
+expectTypeOf<JsonResponseBody<'listPayments', 401>>().toEqualTypeOf<ApiSchemas['ErrorResponse']>();
 
 /** Every GET in the spec takes no request body. */
 expectTypeOf<JsonRequestBody<'listPayments'>>().toBeUndefined();
@@ -109,7 +115,7 @@ expectTypeOf<JsonRequestBody<'runManualSync'>>().toBeUndefined();
 
 /** The status codes the spec documents for one operation. */
 expectTypeOf<ResponseStatus<'reportSettlement'>>().toEqualTypeOf<200 | 400 | 401 | 503>();
-expectTypeOf<ResponseStatus<'listRouteRevenue'>>().toEqualTypeOf<200 | 401>();
+expectTypeOf<ResponseStatus<'listRouteRevenue'>>().toEqualTypeOf<200 | 401 | 500>();
 
 /** Parameters: `/api/hook/settle` is header-authenticated, `/api/payments` filtered. */
 expectTypeOf<HeaderParams<'reportSettlement'>>().toHaveProperty('X-Signature');
