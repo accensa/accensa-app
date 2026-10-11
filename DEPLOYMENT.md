@@ -269,17 +269,17 @@ fine-grained checks. Middleware now forwards the signed-in Stellar address as
 `x-accensa-sub` for the subject. `GET/POST /api/roles` list and grant/revoke a
 merchant's role tuples (`view_dashboard` to read, `manage_team` to write).
 
-**Cut-over.** Enforcement on the data routes is feature-flagged behind
-`ACCENSA_ENFORCE_RBAC=1`. Backfill tuples (or seed the SpiceDB cluster from
-`role_tuples`), then set the flag to require `view_payments` on payment reads.
+**Cut-over.** `authorize()` (`lib/zanzibar/permissions.ts:30`) guards
+`/api/roles` with `view_dashboard` and `manage_team`; the data routes are not
+enforced yet. Backfill tuples (or seed the SpiceDB cluster from `role_tuples`)
+before adding `authorize('view_payments', …)` to the payment reads.
 
 ### Env vars
 
-| Variable               | Purpose                                               |
-| ---------------------- | ----------------------------------------------------- |
-| `SPICEDB_API_URL`      | (optional) SpiceDB REST base URL; unset = local store |
-| `SPICEDB_API_TOKEN`    | (optional) SpiceDB API token / preshared key          |
-| `ACCENSA_ENFORCE_RBAC` | `1` to enforce `view_payments` on payment reads       |
+| Variable            | Purpose                                               |
+| ------------------- | ----------------------------------------------------- |
+| `SPICEDB_API_URL`   | (optional) SpiceDB REST base URL; unset = local store |
+| `SPICEDB_API_TOKEN` | (optional) SpiceDB API token / preshared key          |
 
 ### Provisioning the cluster
 
