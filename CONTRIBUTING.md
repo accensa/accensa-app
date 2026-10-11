@@ -36,7 +36,7 @@ CI will reject unformatted code via `pnpm format:check`.
 - Ensure your code follows the existing style conventions.
 - Run `pnpm format` to format your code.
 - Run `pnpm lint` and `pnpm typecheck` from the workspace root to check for issues.
-- Run `pnpm test` and `pnpm format:check` before submitting.
+- Run `pnpm test`, `pnpm format:check` and the per-package test suites (`pnpm --filter web test`, `pnpm --filter @accensa/sdk test`) before submitting.
 - Provide a clear and descriptive PR title and description.
 - Link to any relevant open issues in your PR description (e.g. `Closes #123`).
 - Wait for a maintainer to review your PR. Address any feedback as needed.
