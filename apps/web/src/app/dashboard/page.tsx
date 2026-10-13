@@ -757,14 +757,19 @@ function PaymentsTable({
         {payments.map((payment) => (
           <tr
             key={payment.tx_hash}
-            role="button"
-            tabIndex={0}
-            aria-label={paymentLabel(payment)}
-            onClick={() => onSelect(payment)}
-            onKeyDown={(e) => handleActivationKeyDown(e, () => onSelect(payment))}
-            className="hover:bg-slate-50 dark:hover:bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600 dark:focus-visible:outline-emerald-400 transition-colors cursor-pointer group"
+            className="hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors group"
           >
-            <td className="px-8 py-5 font-mono text-emerald-700 dark:text-emerald-400 text-sm group-hover:text-emerald-800 dark:group-hover:text-emerald-300 transition-colors">
+            <th
+              scope="row"
+              className="px-8 py-5 font-mono text-emerald-700 dark:text-emerald-400 text-sm group-hover:text-emerald-800 dark:group-hover:text-emerald-300 transition-colors text-left font-normal"
+            >
+              <button
+                type="button"
+                aria-label={paymentLabel(payment)}
+                onClick={() => onSelect(payment)}
+                onKeyDown={(e) => handleActivationKeyDown(e, () => onSelect(payment))}
+                className="text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 dark:focus-visible:outline-emerald-400"
+              >
               {truncate(payment.tx_hash)}
               {refunded.has(payment.tx_hash) && (
                 <span
@@ -774,7 +779,8 @@ function PaymentsTable({
                   Refunded
                 </span>
               )}
-            </td>
+              </button>
+            </th>
             <td className="px-8 py-5">
               <span className="font-black text-lg tracking-tight text-slate-900 dark:text-white transition-colors duration-300">
                 {formatAmount(payment.amount)}
