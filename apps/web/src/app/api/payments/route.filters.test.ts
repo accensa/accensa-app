@@ -104,8 +104,15 @@ function makeFakeDb(table: FakeRow[], filters: { route?: string }) {
         const all = filterRows(table, filters, null);
         const total = all.length;
         const sum = all.reduce((acc, r) => acc + Number(r.amount), 0);
+        const assets = new Set(all.map((r) => r.asset));
         return Promise.resolve({
-          rows: [{ total_count: String(total), total_amount: moneyString(sum) }],
+          rows: [
+            {
+              total_count: String(total),
+              total_amount: moneyString(sum),
+              total_asset: assets.size === 1 ? [...assets][0] : null,
+            },
+          ],
         });
       }
       const predicateIdx = sql.indexOf('AND (ts < $');
@@ -123,6 +130,16 @@ function makeFakeDb(table: FakeRow[], filters: { route?: string }) {
     }),
     paramsSeen,
   };
+}
+
+interface PageResponse {
+  payments: { tx_hash: string }[];
+  next_cursor: string | null;
+  total: number;
+  total_count: number;
+  total_amount: string;
+  total_asset: string | null;
+  total_pages: number;
 }
 
 function moneyString(n: number): string {
@@ -147,7 +164,8 @@ describe('/api/payments cursor-correctness under filters', () => {
     const collected: string[] = [];
     let cursor: string | null = null;
     let page = 0;
-    let response: { payments: { tx_hash: string }[]; next_cursor: string | null } | null = null;
+    let response: PageResponse | null = null;
+    const totalsPerPage: Omit<PageResponse, 'payments' | 'next_cursor'>[] = [];
 
     do {
       const url = new URL('http://localhost/api/payments');
@@ -157,10 +175,9 @@ describe('/api/payments cursor-correctness under filters', () => {
 
       const res = await GET(new Request(url));
       expect(res.status).toBe(200);
-      response = (await res.json()) as {
-        payments: { tx_hash: string }[];
-        next_cursor: string | null;
-      };
+      response = (await res.json()) as PageResponse;
+      const { total, total_count, total_amount, total_asset, total_pages } = response;
+      totalsPerPage.push({ total, total_count, total_amount, total_asset, total_pages });
       collected.push(...response.payments.map((p) => p.tx_hash));
       cursor = response.next_cursor;
       page++;
@@ -171,5 +188,29 @@ describe('/api/payments cursor-correctness under filters', () => {
     expect(collected).toEqual(expected);
     expect(new Set(collected).size).toBe(collected.length);
     expect(collected.length).toBe(25);
+
+    // Every page - including cursor pages, whose rows exclude everything
+    // before the cursor, and the short last page - reports the totals of the
+    // whole filtered set, not of the rows it happens to carry.
+    expect(totalsPerPage).toHaveLength(3);
+    for (const totals of totalsPerPage) {
+      expect(totals).toEqual({
+        total: 25,
+        total_count: 25,
+        total_amount: '262.50',
+        total_asset: 'XLM',
+        total_pages: 3,
+      });
+    }
+
+    // The aggregate never receives the cursor or the limit, only the tenant
+    // scope and the filter.
+    const aggregateParams = db.query.mock.calls
+      .filter(([sql]) => sql.includes('count(*)'))
+      .map(([, params]) => params);
+    expect(aggregateParams).toHaveLength(3);
+    for (const params of aggregateParams) {
+      expect(params).toEqual([MERCHANT.id, '/api/v1/pay']);
+    }
   });
 });

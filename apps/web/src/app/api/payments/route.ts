@@ -148,7 +148,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { rows, sync, totalCount, totalAmount } = await withMerchantClient(
+    const { rows, sync, total, totalAmount, totalAsset } = await withMerchantClient(
       merchant.id,
       async (client) => {
         await ensureSchema(client);
@@ -179,16 +179,11 @@ export async function GET(request: Request) {
         }
         const filterSql = predicates.length ? ` AND ${predicates.join(' AND ')}` : '';
 
-        // Window functions evaluate over the full filtered row set before LIMIT
-        // and OFFSET are applied, so one query returns both the page and the
-        // aggregates the dashboard header needs (total count, sum, single-asset
-        // detection via min = max).
-        let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method,
-                           COUNT(*) OVER() AS total,
-                           COALESCE(SUM(amount) OVER(), 0) AS total_amount,
-                           CASE WHEN MIN(COALESCE(asset, 'native')) OVER() =
-                                     MAX(COALESCE(asset, 'native')) OVER()
-                                THEN MIN(COALESCE(asset, 'native')) OVER() END AS total_asset
+        // The page query returns rows only. Totals come from the aggregate
+        // query below, never from the page: a page past the end has no rows to
+        // read them off, and a cursor page's rows exclude everything before
+        // the cursor.
+        let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method
                     FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL${filterSql}`;
 
         if (parsedCursor) {
@@ -205,34 +200,38 @@ export async function GET(request: Request) {
 
         const result = await client.query(query, params);
 
-        // Aggregate query covers the same filtered set; only the tenant-scope
-        // and filter prefix of params belongs here.
-        const countParams = params.slice(0, predicates.length + 1);
-        const countRes = await client.query<{ total_count: string; total_amount: string | null }>(
-          `SELECT count(*)::text AS total_count, coalesce(sum(amount), 0)::text AS total_amount FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL${filterSql}`,
-          countParams,
+        // The single source of every reported total. It covers the same
+        // filtered set as the page but takes only the tenant-scope and filter
+        // prefix of params, so neither the cursor nor LIMIT/OFFSET narrows it.
+        // Single-asset detection is min = max over the set. The sum is cast
+        // to text so the amount stays a decimal string end to end.
+        const aggregateParams = params.slice(0, predicates.length + 1);
+        const aggregate = await client.query<{
+          total_count: string;
+          total_amount: string;
+          total_asset: string | null;
+        }>(
+          `SELECT count(*)::text AS total_count,
+                  coalesce(sum(amount), 0)::text AS total_amount,
+                  CASE WHEN min(coalesce(asset, 'native')) = max(coalesce(asset, 'native'))
+                       THEN min(coalesce(asset, 'native')) END AS total_asset
+           FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL${filterSql}`,
+          aggregateParams,
         );
-        const totalCount = countRes.rows.length
-          ? Number(countRes.rows[0].total_count ?? countRes.rows.length)
-          : 0;
-        const totalAmount =
-          countRes.rows.length &&
-          countRes.rows[0].total_amount !== undefined &&
-          countRes.rows[0].total_amount !== null
-            ? String(countRes.rows[0].total_amount)
-            : '0';
+        // An aggregate without GROUP BY always yields one row; the fallback
+        // only guards a driver that returns none.
+        const totals = aggregate.rows[0];
 
         return {
           rows: result.rows,
           sync: await getSyncState(client, merchant.id),
-          totalCount,
-          totalAmount,
+          total: totals ? Number(totals.total_count) : 0,
+          totalAmount: totals?.total_amount ?? '0',
+          totalAsset: totals?.total_asset ?? null,
         };
       },
     );
 
-    const total = rows.length > 0 ? Number(rows[0].total ?? 0) : 0;
-    const totalAsset = rows.length > 0 ? (rows[0].total_asset ?? null) : null;
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
 
     const next_cursor =
@@ -259,7 +258,7 @@ export async function GET(request: Request) {
       total_amount: totalAmount,
       total_asset: totalAsset,
       total_pages: totalPages,
-      total_count: totalCount,
+      total_count: total,
       ...(filterRoute || filterPayer || filterAsset || filterDateFrom || filterDateTo
         ? {
             filter_info: {

@@ -227,8 +227,10 @@ describe('/api/payments GET', () => {
 
       // Only newest 100 returned in the payments array
       expect(data.payments).toHaveLength(100);
-      // Total count reflects all 150 payments
+      // Total count reflects all 150 payments, in both fields
       expect(data.total_count).toBe(150);
+      expect(data.total).toBe(150);
+      expect(data.total_pages).toBe(2);
       // Total amount reflects full sum
       expect(data.total_amount).toBe('1575.00');
       // next_cursor is present because rows.length === limit
@@ -246,12 +248,20 @@ describe('/api/payments GET', () => {
       ts: new Date('2026-08-20T07:22:16Z'),
       route: '/api/hello',
       method: 'GET',
-      total: 120,
-      total_amount: '120000',
-      total_asset: 'XLM',
     };
 
     const queryFor = (rows: unknown[]) => vi.fn().mockResolvedValue({ rows });
+
+    /** Answers the aggregate query with `totals` and the page query with `pageRows`. */
+    const queryWithTotals = (
+      pageRows: unknown[],
+      totals: { total_count: string; total_amount: string; total_asset: string | null },
+    ) =>
+      vi
+        .fn()
+        .mockImplementation((sql: string) =>
+          Promise.resolve({ rows: sql.includes('count(*)') ? [totals] : pageRows }),
+        );
 
     test('page=2&limit=50 translates to LIMIT 50 OFFSET 50', async () => {
       const query = queryFor([row]);
@@ -292,8 +302,12 @@ describe('/api/payments GET', () => {
       expect(params).toEqual([MERCHANT.id, 50, 100]);
     });
 
-    test('returns aggregates from the window columns', async () => {
-      const query = queryFor([row]);
+    test('returns aggregates from the aggregate query', async () => {
+      const query = queryWithTotals([row], {
+        total_count: '120',
+        total_amount: '120000',
+        total_asset: 'XLM',
+      });
       mockWithMerchantClient.mockImplementationOnce(
         async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) => fn({ query }),
       );
@@ -302,20 +316,70 @@ describe('/api/payments GET', () => {
       expect(res.status).toBe(200);
       const data = await res.json();
       expect(data.total).toBe(120);
+      expect(data.total_count).toBe(120);
       expect(data.total_amount).toBe('120000');
       expect(data.total_asset).toBe('XLM');
       expect(data.total_pages).toBe(3);
     });
 
+    test('the page query computes no aggregates of its own', async () => {
+      const query = queryWithTotals([row], {
+        total_count: '120',
+        total_amount: '120000',
+        total_asset: 'XLM',
+      });
+      mockWithMerchantClient.mockImplementationOnce(
+        async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) => fn({ query }),
+      );
+
+      await GET(mockRequest('http://localhost/api/payments?page=1&limit=50'));
+      const pageSql = query.mock.calls
+        .map(([sql]) => String(sql))
+        .filter((sql) => !sql.includes('count(*)'));
+      expect(pageSql).toHaveLength(1);
+      expect(pageSql[0]).not.toMatch(/OVER\s*\(/i);
+      expect(pageSql[0]).not.toMatch(/\b(count|sum)\s*\(/i);
+    });
+
+    test('a page past the last page reports the real totals with no payments', async () => {
+      // 120 payments at limit 50 is three pages; page 5 is past the end, so
+      // the page query returns nothing while the merchant still has 120.
+      const query = queryWithTotals([], {
+        total_count: '120',
+        total_amount: '120000.5000000',
+        total_asset: 'XLM',
+      });
+      mockWithMerchantClient.mockImplementationOnce(
+        async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) => fn({ query }),
+      );
+
+      const res = await GET(mockRequest('http://localhost/api/payments?page=5&limit=50'));
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.payments).toEqual([]);
+      expect(data.total).toBe(120);
+      expect(data.total_count).toBe(data.total);
+      expect(data.total_amount).toBe('120000.5000000');
+      expect(data.total_asset).toBe('XLM');
+      expect(data.total_pages).toBe(3);
+      expect(data.next_cursor).toBeNull();
+    });
+
     test('reports zero totals on an empty result', async () => {
-      const query = queryFor([]);
+      const query = queryWithTotals([], {
+        total_count: '0',
+        total_amount: '0',
+        total_asset: null,
+      });
       mockWithMerchantClient.mockImplementationOnce(
         async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) => fn({ query }),
       );
 
       const res = await GET(mockRequest('http://localhost/api/payments?page=1&limit=50'));
       const data = await res.json();
+      expect(data.payments).toEqual([]);
       expect(data.total).toBe(0);
+      expect(data.total_count).toBe(0);
       expect(data.total_amount).toBe('0');
       expect(data.total_asset).toBeNull();
       expect(data.total_pages).toBe(0);
@@ -409,6 +473,11 @@ describe('/api/payments GET', () => {
 
       const res = await GET(mockRequest('http://localhost/api/payments?payer=GPAYER&limit=2'));
       expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.total).toBe(1);
+      expect(data.total_count).toBe(1);
+      expect(data.total_amount).toBe('10');
+      expect(data.total_pages).toBe(1);
       expect(countSql).toHaveLength(1);
       expect(pageSql).toHaveLength(1);
       expect(countSql[0]).toContain('payer = $2');
