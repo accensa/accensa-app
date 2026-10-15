@@ -125,10 +125,42 @@ export async function getBatch(batchId: number): Promise<BatchRecord> {
   return a.decodeBatch(raw);
 }
 
-/** Reads the max batch size configured on the contract. */
+/**
+ * Staleness bound for the cached max batch size: a change to the contract's
+ * ceiling reaches every process within ten minutes. The ceiling is an admin
+ * setting that rarely moves, while /api/payments validates `limit` against it
+ * on every dashboard poll (every 15 seconds), so a fresh read per request
+ * would cost a simulation round trip for a number that did not change.
+ */
+export const MAX_BATCH_SIZE_TTL_MS = 10 * 60 * 1000;
+
+let maxBatchSizeCache: { value: number; expiresAt: number } | null = null;
+let maxBatchSizeInFlight: Promise<number> | null = null;
+
+/**
+ * Reads the max batch size configured on the contract.
+ *
+ * Cached per process for {@link MAX_BATCH_SIZE_TTL_MS}; concurrent callers on
+ * a cold cache share one simulation. A failed read is not cached - it rejects
+ * as before, and the next call asks the contract again.
+ */
 export async function getMaxBatchSize(): Promise<number> {
-  const result = await simulate('max_batch_size', []);
-  return Number(result);
+  if (maxBatchSizeCache && Date.now() < maxBatchSizeCache.expiresAt) {
+    return maxBatchSizeCache.value;
+  }
+  maxBatchSizeInFlight ??= simulate('max_batch_size', [])
+    .then((result) => {
+      const value = Number(result);
+      if (!Number.isSafeInteger(value) || value < 1) {
+        throw new Error(`max_batch_size returned ${String(result)}`);
+      }
+      maxBatchSizeCache = { value, expiresAt: Date.now() + MAX_BATCH_SIZE_TTL_MS };
+      return value;
+    })
+    .finally(() => {
+      maxBatchSizeInFlight = null;
+    });
+  return maxBatchSizeInFlight;
 }
 
 export { Address };

@@ -54,10 +54,13 @@ export async function GET(request: Request) {
   let limit = 100;
   if (limitParam !== null) {
     const parsed = Number.parseFloat(limitParam);
+    // The contract's max_batch_size, served from getMaxBatchSize's per-process
+    // cache: at most ten minutes stale (MAX_BATCH_SIZE_TTL_MS), and no Soroban
+    // simulation while the cache is warm. An RPC failure falls back to 1000.
     const maxLimit = await getMaxBatchSize().catch(() => 1000);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > maxLimit) {
       return NextResponse.json(
-        { error: 'limit must be an integer between 1 and 1000' },
+        { error: `limit must be an integer between 1 and ${maxLimit}` },
         { status: 400 },
       );
     }

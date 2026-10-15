@@ -1,7 +1,25 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { nativeToScVal } from '@stellar/stellar-sdk';
 import { isHash32 } from './receipt-anchor';
 import { verifyReceipt } from '@accensa/sdk/merkle';
 import vectors from '../../../../packages/sdk/merkle-vectors.json';
+
+const { simulateTransaction } = vi.hoisted(() => ({ simulateTransaction: vi.fn() }));
+
+// Only the network call is replaced: transactions are still built by the real
+// SDK, but simulateTransaction answers from the test instead of an RPC node.
+vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@stellar/stellar-sdk')>();
+  class Server extends mod.rpc.Server {
+    simulateTransaction = simulateTransaction;
+  }
+  return { ...mod, rpc: { ...mod.rpc, Server } };
+});
+
+/** A successful simulation whose return value is `value` as a u32. */
+function simulated(value: number) {
+  return { result: { retval: nativeToScVal(value, { type: 'u32' }) } };
+}
 
 describe('isHash32', () => {
   it('accepts a 64-character hex string', () => {
@@ -63,5 +81,72 @@ describe('verifier sample data', () => {
     expect(vectors.onchain.contract).toBe(
       'CBHRJU7CF4XIFRNDITFHNQHABKBMFM2FYFHLGWN3JGSFYYCDSMDAWPRV',
     );
+  });
+});
+
+describe('getMaxBatchSize', () => {
+  // The cache is module state, so each test loads a fresh copy of the module.
+  async function load() {
+    vi.resetModules();
+    return import('./receipt-anchor');
+  }
+
+  beforeEach(() => {
+    simulateTransaction.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('serves the second call from the cache without simulating again', async () => {
+    simulateTransaction.mockResolvedValue(simulated(500));
+    const { getMaxBatchSize } = await load();
+
+    expect(await getMaxBatchSize()).toBe(500);
+    expect(await getMaxBatchSize()).toBe(500);
+    expect(simulateTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one simulation between concurrent callers on a cold cache', async () => {
+    simulateTransaction.mockResolvedValue(simulated(500));
+    const { getMaxBatchSize } = await load();
+
+    expect(await Promise.all([getMaxBatchSize(), getMaxBatchSize(), getMaxBatchSize()])).toEqual([
+      500, 500, 500,
+    ]);
+    expect(simulateTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks the contract again once the staleness bound has passed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    simulateTransaction.mockResolvedValueOnce(simulated(500)).mockResolvedValueOnce(simulated(750));
+    const { getMaxBatchSize, MAX_BATCH_SIZE_TTL_MS } = await load();
+
+    expect(await getMaxBatchSize()).toBe(500);
+    vi.advanceTimersByTime(MAX_BATCH_SIZE_TTL_MS - 1);
+    expect(await getMaxBatchSize()).toBe(500);
+    vi.advanceTimersByTime(1);
+    expect(await getMaxBatchSize()).toBe(750);
+    expect(simulateTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache a failed read', async () => {
+    simulateTransaction
+      .mockRejectedValueOnce(new Error('rpc down'))
+      .mockResolvedValueOnce(simulated(500));
+    const { getMaxBatchSize } = await load();
+
+    await expect(getMaxBatchSize()).rejects.toThrow('rpc down');
+    expect(await getMaxBatchSize()).toBe(500);
+    expect(simulateTransaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects, without caching, a ceiling that is not a positive integer', async () => {
+    simulateTransaction.mockResolvedValueOnce(simulated(0)).mockResolvedValueOnce(simulated(500));
+    const { getMaxBatchSize } = await load();
+
+    await expect(getMaxBatchSize()).rejects.toThrow('max_batch_size returned 0');
+    expect(await getMaxBatchSize()).toBe(500);
   });
 });
