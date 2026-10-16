@@ -2,7 +2,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { PaymentsTable, PaymentsCardList, paymentLabel } from './page';
+import { PaymentsTable, PaymentsCardList, paymentLabel } from './payment-rows';
 import type { Payment } from './payments-merge';
 
 const mockPayment1: Payment = {
