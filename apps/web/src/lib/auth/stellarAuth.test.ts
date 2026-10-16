@@ -81,4 +81,16 @@ describe('stellar auth primitives', () => {
       StellarNetworkConfigurationError,
     );
   });
+
+  it('rejects inherited object prototype properties like constructor or toString', () => {
+    expect(() => resolveStellarNetwork({ network: 'constructor' })).toThrow(
+      StellarNetworkConfigurationError,
+    );
+    expect(() => resolveStellarNetwork({ network: 'toString' })).toThrow(
+      StellarNetworkConfigurationError,
+    );
+    expect(() => resolveStellarNetwork({ passphrase: 'constructor' })).toThrow(
+      StellarNetworkConfigurationError,
+    );
+  });
 });
