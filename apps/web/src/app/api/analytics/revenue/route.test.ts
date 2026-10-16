@@ -118,4 +118,85 @@ describe('/api/analytics/revenue GET', () => {
     const data = await (await GET(req())).json();
     expect(data).toEqual({ assets: [], days: {}, routes: {} });
   });
+
+  test('serializes null method and route as JSON null, never as "null" or empty string', async () => {
+    mockAggregates({
+      routes: [
+        {
+          asset_key: 'native',
+          method: null,
+          route: null,
+          total: '5.0000000',
+          calls: 1,
+          priced: 1,
+        },
+      ],
+      assets: [{ asset_key: 'native', calls: 1 }],
+    });
+
+    const res = await GET(req());
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    const row = data.routes.native[0];
+    expect(row.method).toBeNull();
+    expect(row.route).toBeNull();
+    expect(row.method).not.toBe('null');
+    expect(row.method).not.toBe('');
+    expect(row.route).not.toBe('null');
+    expect(row.route).not.toBe('');
+  });
+
+  test('converts unpriced_calls string to numeric unpricedCalls alongside attributed and unattributed counts', async () => {
+    mockAggregates({
+      days: [
+        {
+          day: '2026-03-12T00:00:00.000000Z',
+          asset_key: 'native',
+          attributed: '10.0000000',
+          unattributed: '4.0000000',
+          attributed_calls: '7',
+          unattributed_calls: '3',
+          unpriced_calls: '3',
+        },
+      ],
+      assets: [{ asset_key: 'native', calls: 10 }],
+    });
+
+    const res = await GET(req());
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    const bucket = data.days.native[0];
+    expect(bucket.unpricedCalls).toBe(3);
+    expect(bucket.attributedCalls).toBe(7);
+    expect(bucket.unattributedCalls).toBe(3);
+    expect(bucket.attributed).toBe('10.0000000');
+    expect(bucket.unattributed).toBe('4.0000000');
+  });
+
+  test('binds authenticated merchant id as the first parameter across all three queries', async () => {
+    mockAggregates({});
+    await GET(req());
+
+    expect(mockQuery).toHaveBeenCalledTimes(3);
+    for (const call of mockQuery.mock.calls) {
+      const boundParams = call[1];
+      expect(Array.isArray(boundParams)).toBe(true);
+      expect(boundParams[0]).toBe(MERCHANT.id);
+    }
+  });
+
+  test('returns 500 without leaking error details when a database query rejects', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockQuery.mockRejectedValueOnce(new Error('FATAL: connection terminated unexpectedly'));
+      const res = await GET(req());
+      expect(res.status).toBe(500);
+      const body = await res.json();
+      expect(body).toEqual({ error: 'Internal Server Error' });
+      expect(JSON.stringify(body)).not.toContain('FATAL');
+      expect(JSON.stringify(body)).not.toContain('connection terminated');
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });
