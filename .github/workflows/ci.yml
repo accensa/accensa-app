@@ -166,3 +166,7 @@ jobs:
         env:
           JWT_SECRET_KEY: playwright-e2e-secret-key
         run: pnpm e2e
+
+      - name: Test demo-merchant
+        working-directory: ./apps/demo-merchant
+        run: pnpm test

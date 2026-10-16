@@ -73,7 +73,7 @@ function truncate(value: string, head = 8, tail = 6) {
 }
 
 /** Shared handler for Enter/Space activation on a payment row or card. */
-function handleActivationKeyDown(e: React.KeyboardEvent, onSelect: () => void) {
+export function handleActivationKeyDown(e: React.KeyboardEvent, onSelect: () => void) {
   if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault();
     onSelect();
@@ -81,7 +81,7 @@ function handleActivationKeyDown(e: React.KeyboardEvent, onSelect: () => void) {
 }
 
 /** Accessible label identifying a payment by its truncated tx hash and amount. */
-function paymentLabel(p: Payment) {
+export function paymentLabel(p: Payment) {
   return `Payment ${formatAmount(p.amount)} ${assetLabel(p.asset)} (${truncate(p.tx_hash)}), view details`;
 }
 
@@ -630,7 +630,7 @@ function PaymentModal({
   );
 }
 
-function PaymentsCardList({
+export function PaymentsCardList({
   payments,
   onSelect,
   manualReviewAbove = 75,
@@ -717,7 +717,7 @@ function PaymentsCardList({
   );
 }
 
-function PaymentsTable({
+export function PaymentsTable({
   payments,
   refunded,
   onSelect,
@@ -757,15 +757,22 @@ function PaymentsTable({
         {payments.map((payment) => (
           <tr
             key={payment.tx_hash}
-            role="button"
-            tabIndex={0}
-            aria-label={paymentLabel(payment)}
             onClick={() => onSelect(payment)}
-            onKeyDown={(e) => handleActivationKeyDown(e, () => onSelect(payment))}
-            className="hover:bg-slate-50 dark:hover:bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600 dark:focus-visible:outline-emerald-400 transition-colors cursor-pointer group"
+            className="hover:bg-slate-50 dark:hover:bg-white/[0.04] transition-colors cursor-pointer group"
           >
             <td className="px-8 py-5 font-mono text-emerald-700 dark:text-emerald-400 text-sm group-hover:text-emerald-800 dark:group-hover:text-emerald-300 transition-colors">
-              {truncate(payment.tx_hash)}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelect(payment);
+                }}
+                onKeyDown={(e) => handleActivationKeyDown(e, () => onSelect(payment))}
+                aria-label={paymentLabel(payment)}
+                className="font-mono text-emerald-700 dark:text-emerald-400 group-hover:text-emerald-800 dark:group-hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 dark:focus-visible:outline-emerald-400 transition-colors cursor-pointer text-left bg-transparent p-0 border-0 inline-flex items-center"
+              >
+                {truncate(payment.tx_hash)}
+              </button>
               {refunded.has(payment.tx_hash) && (
                 <span
                   className="ml-2 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest border border-amber-400 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 align-middle"
