@@ -10,6 +10,7 @@ const {
   mockUpdateMerchantProfile,
   mockGetCachedMerchantFromRequest,
   mockRevalidateTag,
+  mockRecordMerchantConfigChange,
 } = vi.hoisted(() => {
   const merchant = { id: 1, address: 'GABC' };
   // A minimal postgres client: PATCH also records the config change, whose
@@ -26,6 +27,7 @@ const {
     mockUpdateMerchantProfile: vi.fn(),
     mockGetCachedMerchantFromRequest: vi.fn(),
     mockRevalidateTag: vi.fn(),
+    mockRecordMerchantConfigChange: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -53,6 +55,10 @@ vi.mock('next/cache', () => ({
   revalidateTag: mockRevalidateTag,
 }));
 
+vi.mock('@/lib/merchant-config', () => ({
+  recordMerchantConfigChange: mockRecordMerchantConfigChange,
+}));
+
 describe('/api/merchant/profile GET', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -77,9 +83,13 @@ describe('/api/merchant/profile GET', () => {
 });
 
 describe('/api/merchant/profile PATCH', () => {
-  const patchRequest = (body: unknown) =>
+  const patchRequest = (body: unknown, role?: 'admin' | 'viewer') =>
     new Request('http://localhost/api/merchant/profile', {
       method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(role ? { 'x-accensa-role': role } : {}),
+      },
       body: JSON.stringify(body),
     });
 
@@ -138,5 +148,68 @@ describe('/api/merchant/profile PATCH', () => {
     const [tag] = mockRevalidateTag.mock.calls[0];
     expect(tag).toBe(`merchant-profile-${MERCHANT.address}`);
     expect(tag).not.toBe('merchant-profile-someone-else');
+  });
+
+  test('rejects a viewer-role PATCH with 403 without modifying the profile or recording history', async () => {
+    const res = await PATCH(
+      patchRequest({ webhookUrl: 'https://merchant.example/hook' }, 'viewer'),
+    );
+
+    expect(res.status).toBe(403);
+    const data = await res.json();
+    expect(data.error).toBe(
+      'Forbidden: viewer sessions cannot modify merchant settings',
+    );
+    expect(mockUpdateMerchantProfile).not.toHaveBeenCalled();
+    expect(mockRecordMerchantConfigChange).not.toHaveBeenCalled();
+  });
+
+  test('validates the request body before evaluating the role guard', async () => {
+    const res = await PATCH(patchRequest({ webhookUrl: 'not a url' }, 'viewer'));
+
+    expect(res.status).toBe(400);
+    expect(mockUpdateMerchantProfile).not.toHaveBeenCalled();
+    expect(mockRecordMerchantConfigChange).not.toHaveBeenCalled();
+  });
+
+  test('records an audit history event for each changed profile field when patched by admin', async () => {
+    const contractA = `C${'A'.repeat(55)}`;
+    const contractB = `C${'B'.repeat(55)}`;
+    const updateBody = {
+      webhookUrl: 'https://merchant.example/hook',
+      refundVaultId: contractA,
+      assetContractIds: [contractA, contractB],
+    };
+
+    mockUpdateMerchantProfile.mockResolvedValue({
+      ...MERCHANT,
+      ...updateBody,
+    });
+
+    const res = await PATCH(patchRequest(updateBody, 'admin'));
+
+    expect(res.status).toBe(200);
+    expect(mockRecordMerchantConfigChange).toHaveBeenCalledTimes(3);
+    expect(mockRecordMerchantConfigChange).toHaveBeenCalledWith(clientStub, {
+      merchantId: MERCHANT.id,
+      field: 'webhookUrl',
+      before: null,
+      after: 'https://merchant.example/hook',
+      source: 'profile_patch',
+    });
+    expect(mockRecordMerchantConfigChange).toHaveBeenCalledWith(clientStub, {
+      merchantId: MERCHANT.id,
+      field: 'refundVaultId',
+      before: null,
+      after: contractA,
+      source: 'profile_patch',
+    });
+    expect(mockRecordMerchantConfigChange).toHaveBeenCalledWith(clientStub, {
+      merchantId: MERCHANT.id,
+      field: 'assetContractIds',
+      before: null,
+      after: `${contractA},${contractB}`,
+      source: 'profile_patch',
+    });
   });
 });
