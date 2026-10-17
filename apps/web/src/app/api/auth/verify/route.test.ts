@@ -216,4 +216,28 @@ describe('/api/auth/verify POST', () => {
     const data = await res.json();
     expect(data.success).toBe(true);
   });
+
+  test('rejects a structurally valid challenge signed by an unrelated keypair', async () => {
+    const unrelatedKeypair = Keypair.random();
+    const nonce = 'h'.repeat(64);
+    const tx = buildChallenge(nonce);
+    tx.sign(unrelatedKeypair);
+
+    const res = await POST(makeRequest({ xdr: tx.toXDR() }));
+
+    expect(res.status).toBe(401);
+    const data = await res.json();
+    expect(data.error).toBe('Invalid signature');
+    expect(mockCreateSession).not.toHaveBeenCalled();
+    expect(res.headers.get('set-cookie')).toBeNull();
+    expect(mockConsumeNonce).not.toHaveBeenCalled();
+  });
+
+  test('returns 400 when xdr is present but not a parsable transaction', async () => {
+    const res = await POST(makeRequest({ xdr: 'not-a-valid-transaction-xdr' }));
+
+    expect(res.status).toBe(400);
+    expect(res.status).not.toBe(500);
+  });
 });
+
