@@ -22,6 +22,7 @@ const {
   port: PORT,
   accensaUrl: ACCENSA_URL,
   privateKeyHex: PRIVATE_KEY_HEX,
+  keyId: KEY_ID,
   webhookSecret: WEBHOOK_SECRET,
   // Native XLM Stellar Asset Contract on testnet unless overridden. Priced as
   // an explicit AssetAmount rather than a bare number: the default money
