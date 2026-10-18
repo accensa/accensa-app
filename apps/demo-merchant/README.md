@@ -82,7 +82,7 @@ MERCHANT_ADDRESS=G... node server.js
 
 The server listens on port 3001 (override with `PORT`). Point `ACCENSA_URL` at
 your Accensa deployment if you want the merchant to report route attribution;
-`HOOK_API_KEY` and `WEBHOOK_SECRET` are required for the dashboard to accept
+`ACCENSA_PRIVATE_KEY_HEX` and `WEBHOOK_SECRET` are required for the dashboard to accept
 reports and for the merchant to accept indexer webhooks (see the root README).
 
 ## Paying as the agent (buyer side)
@@ -149,7 +149,7 @@ A reviewer evaluating the SCF RFP §5 adoption-strategy criterion should see:
 - Webhook signature verification (`WEBHOOK_SECRET`) is optional for local
   development. When unset, all signatures are accepted. In production, set
   this to match the Accensa deployment's `WEBHOOK_SECRET`.
-- The `HOOK_API_KEY` is required for route attribution to be reported to
+- The `ACCENSA_PRIVATE_KEY_HEX` is required for route attribution to be reported to
   Accensa. Without it, settlements succeed but attribution is not recorded.
 
 ## Notes
