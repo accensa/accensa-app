@@ -70,6 +70,7 @@ function clientApiTargets(): Array<{ file: string; target: string }> {
         ...source.matchAll(/(?:fetch|EventSource)\s*\(\s*'([^']*\/api\/[^']*)'/g),
         ...source.matchAll(/(?:fetch|EventSource)\s*\(\s*"([^"]*\/api\/[^"]*)"/g),
         ...source.matchAll(/(?:fetch|EventSource)\s*\(\s*`([^`]*\/api\/[^`]*)`/g),
+        ...source.matchAll(/useSWR(?:<[^()]*>)?\s*\(\s*['"`]([^'"`]*\/api\/[^'"`]*)['"`]/g),
       ].map((match) => match[1]);
       return targets.map((target) => ({ file: relative(webRoot, file), target }));
     });
