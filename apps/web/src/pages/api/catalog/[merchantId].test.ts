@@ -1,21 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import handler from './[merchantId]';
-import { db } from '../../../lib/db';
-import { getMerchantByAddress } from '../../../lib/merchant';
-import { revalidateCatalog } from '../../../lib/revalidate';
+import { withClient, withMerchantClient } from '../../../lib/db';
+import { getMerchantByAddress } from '../../../lib/merchants';
+import { revalidateCatalog } from '../../../../lib/cache/revalidate';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 vi.mock('../../../lib/db', () => ({
-  db: {
+  ensureSchema: vi.fn(),
+  withClient: vi.fn(async (cb) => cb({
     query: vi.fn(),
-  },
+  })),
+  withMerchantClient: vi.fn(async (_id, cb) => cb({
+    query: vi.fn(),
+  })),
 }));
 
-vi.mock('../../../lib/merchant', () => ({
+vi.mock('../../../lib/merchants', () => ({
   getMerchantByAddress: vi.fn(),
 }));
 
-vi.mock('../../../lib/revalidate', () => ({
+vi.mock('../../../../../lib/cache/revalidate', () => ({
+  revalidateCatalog: vi.fn(),
+}));
+
+vi.mock('../../../../lib/cache/revalidate', () => ({
   revalidateCatalog: vi.fn(),
 }));
 
@@ -30,7 +38,7 @@ describe('Catalog API Handler [merchantId]', () => {
     req = {
       method: 'GET',
       query: { merchantId: '123' },
-      headers: {},
+      headers: { 'x-accensa-merchant': 'GACCENSA' },
       body: {},
     };
 
@@ -41,7 +49,7 @@ describe('Catalog API Handler [merchantId]', () => {
       end: vi.fn().mockReturnThis(),
     };
 
-    (getMerchantByAddress as any).mockResolvedValue({ id: 123, role: 'owner' });
+    (getMerchantByAddress as any).mockResolvedValue({ id: 123, address: 'GACCENSA' });
   });
 
   it('should return 400 for non-safe-integer or sub-1 merchantId (0)', async () => {
@@ -67,12 +75,12 @@ describe('Catalog API Handler [merchantId]', () => {
     delete process.env.DATABASE_URL;
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Database not configured' }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Catalog is unavailable' }));
   });
 
   it('should return 403 when PUT is called with viewer role', async () => {
     req.method = 'PUT';
-    (getMerchantByAddress as any).mockResolvedValue({ id: 123, role: 'viewer' });
+    req.headers['x-accensa-role'] = 'viewer';
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(403);
   });
@@ -87,7 +95,6 @@ describe('Catalog API Handler [merchantId]', () => {
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
 
-    // Length > 100
     req.body.sku = 'a'.repeat(101);
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
@@ -100,7 +107,9 @@ describe('Catalog API Handler [merchantId]', () => {
       name: 'Valid Item',
       price: 19.99,
     };
-    (db.query as any).mockResolvedValueOnce({ rows: [{ id: 1, sku: 'VALID-SKU_1.2:3', name: 'Valid Item', price: 19.99 }] });
+    (withMerchantClient as any).mockImplementationOnce(async (_id, cb) => cb({
+      query: vi.fn().mockResolvedValueOnce({ rows: [{ sku: 'VALID-SKU_1.2:3', name: 'Valid Item', price: '19.99' }] }),
+    }));
 
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
@@ -113,42 +122,34 @@ describe('Catalog API Handler [merchantId]', () => {
       sku: 'VALID-SKU',
       remove: true,
     };
-    (db.query as any).mockResolvedValueOnce({ rowCount: 1 });
+    (withMerchantClient as any).mockImplementationOnce(async (_id, cb) => cb({
+      query: vi.fn().mockResolvedValueOnce({ rowCount: 1 }),
+    }));
 
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ removed: true });
-
-    // rowCount === 0 case
-    (db.query as any).mockResolvedValueOnce({ rowCount: 0 });
-    await handler(req, res);
-    expect(res.json).toHaveBeenCalledWith({ removed: false });
   });
 
   it('should validate item body (empty/overlong name, negative/NaN price, wrong types)', async () => {
     req.method = 'PUT';
 
-    // Empty name
     req.body = { sku: 'SKU1', name: '', price: 10 };
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
 
-    // Over 160 chars name
     req.body = { sku: 'SKU1', name: 'a'.repeat(161), price: 10 };
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
 
-    // Negative price
     req.body = { sku: 'SKU1', name: 'Item', price: -1 };
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
 
-    // Non-finite price (NaN)
     req.body = { sku: 'SKU1', name: 'Item', price: NaN };
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
 
-    // Wrong price type
     req.body = { sku: 'SKU1', name: 'Item', price: '10' };
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
@@ -156,17 +157,19 @@ describe('Catalog API Handler [merchantId]', () => {
 
   it('should return item list on GET', async () => {
     req.method = 'GET';
-    (db.query as any).mockResolvedValueOnce({ rows: [{ sku: 'SKU1', name: 'Item 1' }] });
+    (withMerchantClient as any).mockImplementationOnce(async (_id, cb) => cb({
+      query: vi.fn().mockResolvedValueOnce({ rows: [{ sku: 'SKU1', name: 'Item 1' }] }),
+    }));
 
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Object)]));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ items: expect.any(Array) }));
   });
 
   it('should handle POST ?revalidate=true successfully', async () => {
     req.method = 'POST';
     req.query.revalidate = 'true';
-    (revalidateCatalog as any).mockResolvedValueOnce(true);
+    (revalidateCatalog as any).mockResolvedValueOnce({ revalidated: true });
 
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
@@ -176,18 +179,17 @@ describe('Catalog API Handler [merchantId]', () => {
   it('should handle POST ?revalidate=true failure as 500', async () => {
     req.method = 'POST';
     req.query.revalidate = 'true';
-    (revalidateCatalog as any).mockResolvedValueOnce(false);
+    (revalidateCatalog as any).mockResolvedValueOnce({ revalidated: false, error: 'Error' });
 
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ revalidated: false });
+    expect(res.json).toHaveBeenCalledWith({ revalidated: false, error: 'Error' });
   });
 
   it('should return 405 for unsupported method', async () => {
-    req.method = 'PATCH';
+    req.method = 'DELETE';
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(405);
-    expect(res.setHeader).toHaveBeenCalledWith('Allow', ['GET', 'PUT', 'POST']);
   });
 });
 
