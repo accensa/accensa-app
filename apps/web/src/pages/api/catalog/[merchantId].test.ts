@@ -180,6 +180,7 @@ describe('Catalog API Handler [merchantId]', () => {
 
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ revalidated: false });
   });
 
   it('should return 405 for unsupported method', async () => {
