@@ -67,5 +67,3 @@ describe('Webhook Verification', () => {
     expect(verifyOutboundWebhookDelivery(body, signature, secret)).toBe(true);
   });
 });
-
-
