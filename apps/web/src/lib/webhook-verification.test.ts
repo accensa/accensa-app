@@ -69,6 +69,3 @@ describe('Webhook Verification', () => {
 });
 
 
-const SECRET = 'test-secret';
-
-const BODY = JSON.stringify({ event: 'payment.settled', tx_hash: 'a'.repeat(64) });
