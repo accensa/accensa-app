@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   requestNotificationPermission,
@@ -110,7 +111,7 @@ describe('desktopPush notifications and audio', () => {
       const notificationCtor = vi.fn();
       Reflect.set(window, 'Notification', {
         permission: 'denied',
-        //@ts-ignore
+        // @ts-expect-error test mock
         constructor: notificationCtor,
       });
 
