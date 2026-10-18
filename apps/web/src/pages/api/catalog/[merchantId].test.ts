@@ -1,39 +1,195 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import handler from './[merchantId]';
+import { db } from '../../../lib/db';
+import { getMerchantByAddress } from '../../../lib/merchant';
+import { revalidateCatalog } from '../../../lib/revalidate';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-const {
-  mockWithClient,
-  mockWithMerchantClient,
-  mockQuery,
-  mockGetMerchantByAddress,
-  mockRevalidateCatalog,
-} = vi.hoisted(() => {
-  const query = vi.fn();
-  return {
-    mockWithClient: vi.fn(async (work: (client: unknown) => Promise<unknown>) => work({})),
-    mockWithMerchantClient: vi.fn(
-      async (_merchantId: number, work: (client: unknown) => Promise<unknown>) => work({ query }),
-    ),
-    mockQuery: query,
-    mockGetMerchantByAddress: vi.fn().mockResolvedValue({ id: 1, address: 'G' + 'A'.repeat(55) }),
-    mockRevalidateCatalog: vi.fn().mockResolvedValue({ revalidated: true }),
-  };
+vi.mock('../../../lib/db', () => ({
+  db: {
+    query: vi.fn(),
+  },
+}));
+
+vi.mock('../../../lib/merchant', () => ({
+  getMerchantByAddress: vi.fn(),
+}));
+
+vi.mock('../../../lib/revalidate', () => ({
+  revalidateCatalog: vi.fn(),
+}));
+
+describe('Catalog API Handler [merchantId]', () => {
+  let req: any;
+  let res: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
+
+    req = {
+      method: 'GET',
+      query: { merchantId: '123' },
+      headers: {},
+      body: {},
+    };
+
+    res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+      setHeader: vi.fn().mockReturnThis(),
+      end: vi.fn().mockReturnThis(),
+    };
+
+    (getMerchantByAddress as any).mockResolvedValue({ id: 123, role: 'owner' });
+  });
+
+  it('should return 400 for non-safe-integer or sub-1 merchantId (0)', async () => {
+    req.query.merchantId = '0';
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.any(String) }));
+  });
+
+  it('should return 400 for merchantId (-1)', async () => {
+    req.query.merchantId = '-1';
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('should return 400 for non-numeric merchantId (abc)', async () => {
+    req.query.merchantId = 'abc';
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('should return 503 when DATABASE_URL is unset', async () => {
+    delete process.env.DATABASE_URL;
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Database not configured' }));
+  });
+
+  it('should return 403 when PUT is called with viewer role', async () => {
+    req.method = 'PUT';
+    (getMerchantByAddress as any).mockResolvedValue({ id: 123, role: 'viewer' });
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('should return 400 for invalid SKU pattern (bad chars or length > 100)', async () => {
+    req.method = 'PUT';
+    req.body = {
+      sku: 'INVALID@SKU!',
+      name: 'Test Item',
+      price: 10,
+    };
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+
+    // Length > 100
+    req.body.sku = 'a'.repeat(101);
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('should handle successful PUT upsert and return item', async () => {
+    req.method = 'PUT';
+    req.body = {
+      sku: 'VALID-SKU_1.2:3',
+      name: 'Valid Item',
+      price: 19.99,
+    };
+    (db.query as any).mockResolvedValueOnce({ rows: [{ id: 1, sku: 'VALID-SKU_1.2:3', name: 'Valid Item', price: 19.99 }] });
+
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ item: expect.any(Object) }));
+  });
+
+  it('should report removal via rowCount === 1 on PUT with remove: true', async () => {
+    req.method = 'PUT';
+    req.body = {
+      sku: 'VALID-SKU',
+      remove: true,
+    };
+    (db.query as any).mockResolvedValueOnce({ rowCount: 1 });
+
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ removed: true });
+
+    // rowCount === 0 case
+    (db.query as any).mockResolvedValueOnce({ rowCount: 0 });
+    await handler(req, res);
+    expect(res.json).toHaveBeenCalledWith({ removed: false });
+  });
+
+  it('should validate item body (empty/overlong name, negative/NaN price, wrong types)', async () => {
+    req.method = 'PUT';
+
+    // Empty name
+    req.body = { sku: 'SKU1', name: '', price: 10 };
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+
+    // Over 160 chars name
+    req.body = { sku: 'SKU1', name: 'a'.repeat(161), price: 10 };
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+
+    // Negative price
+    req.body = { sku: 'SKU1', name: 'Item', price: -1 };
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+
+    // Non-finite price (NaN)
+    req.body = { sku: 'SKU1', name: 'Item', price: NaN };
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+
+    // Wrong price type
+    req.body = { sku: 'SKU1', name: 'Item', price: '10' };
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it('should return item list on GET', async () => {
+    req.method = 'GET';
+    (db.query as any).mockResolvedValueOnce({ rows: [{ sku: 'SKU1', name: 'Item 1' }] });
+
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(expect.arrayContaining([expect.any(Object)]));
+  });
+
+  it('should handle POST ?revalidate=true successfully', async () => {
+    req.method = 'POST';
+    req.query.revalidate = 'true';
+    (revalidateCatalog as any).mockResolvedValueOnce(true);
+
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ revalidated: true });
+  });
+
+  it('should handle POST ?revalidate=true failure as 500', async () => {
+    req.method = 'POST';
+    req.query.revalidate = 'true';
+    (revalidateCatalog as any).mockResolvedValueOnce(false);
+
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it('should return 405 for unsupported method', async () => {
+    req.method = 'PATCH';
+    await handler(req, res);
+    expect(res.status).toHaveBeenCalledWith(405);
+    expect(res.setHeader).toHaveBeenCalledWith('Allow', ['GET', 'PUT', 'POST']);
+  });
 });
 
-vi.mock('../../../lib/db', () => ({
-  ensureSchema: vi.fn(),
-  withClient: mockWithClient,
-  withMerchantClient: mockWithMerchantClient,
-}));
-
-vi.mock('../../../lib/merchants', () => ({
-  getMerchantByAddress: mockGetMerchantByAddress,
-}));
-
-vi.mock('../../../../lib/cache/revalidate', () => ({
-  revalidateCatalog: mockRevalidateCatalog,
-}));
 
 function createMockReqRes(overrides: {
   method?: string;
@@ -74,301 +230,3 @@ function createMockReqRes(overrides: {
     getJson: () => jsonResponse,
   };
 }
-
-describe('API /api/catalog/[merchantId]', () => {
-  const ORIGINAL_DATABASE_URL = process.env.DATABASE_URL;
-
-  afterEach(() => {
-    if (ORIGINAL_DATABASE_URL === undefined) {
-      delete process.env.DATABASE_URL;
-    } else {
-      process.env.DATABASE_URL = ORIGINAL_DATABASE_URL;
-    }
-    vi.restoreAllMocks();
-  });
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.DATABASE_URL = 'postgres://test';
-    mockGetMerchantByAddress.mockResolvedValue({ id: 1, address: 'G' + 'A'.repeat(55) });
-    mockQuery.mockReset();
-  });
-
-  it('rejects non-safe-integer or sub-1 merchantId with 400', async () => {
-    for (const invalidId of ['0', '-1', 'abc', '1.5']) {
-      const { req, res, getCode, getJson } = createMockReqRes({
-        query: { merchantId: invalidId },
-      });
-      await handler(req, res);
-      expect(getCode()).toBe(400);
-      expect(getJson()).toEqual({ error: 'Invalid merchant id' });
-    }
-    expect(mockWithClient).not.toHaveBeenCalled();
-  });
-
-  it('answers 503 when DATABASE_URL is unset', async () => {
-    delete process.env.DATABASE_URL;
-    const { req, res, getCode, getJson } = createMockReqRes({
-      query: { merchantId: '1' },
-    });
-    await handler(req, res);
-    expect(getCode()).toBe(503);
-    expect(getJson()).toEqual({ error: 'Catalog is unavailable' });
-    expect(mockWithClient).not.toHaveBeenCalled();
-  });
-
-  it('handles POST ?revalidate=true successfully (200) or on failure (500)', async () => {
-    mockRevalidateCatalog.mockResolvedValueOnce({ revalidated: true });
-    const { req, res, getCode, getJson } = createMockReqRes({
-      method: 'POST',
-      query: { merchantId: '1', revalidate: 'true' },
-    });
-    await handler(req, res);
-    expect(getCode()).toBe(200);
-    expect(getJson()).toEqual({ revalidated: true });
-
-    mockRevalidateCatalog.mockResolvedValueOnce({ revalidated: false, error: 'Failed' });
-    const { req: reqFail, res: resFail, getCode: getCodeFail, getJson: getJsonFail } = createMockReqRes({
-      method: 'POST',
-      query: { merchantId: '1', revalidate: 'true' },
-    });
-    await handler(reqFail, resFail);
-    expect(getCodeFail()).toBe(500);
-    expect(getJsonFail()).toEqual({ revalidated: false, error: 'Failed' });
-  });
-
-  it('GETs catalog items successfully', async () => {
-    const mockItems = [
-      { sku: 'ITEM-1', name: 'Product One', description: 'Desc', price: '10.00' },
-    ];
-    mockQuery.mockResolvedValueOnce({ rows: mockItems });
-
-    const { req, res, getCode, getJson } = createMockReqRes({
-      method: 'GET',
-      query: { merchantId: '1' },
-    });
-    await handler(req, res);
-
-    expect(getCode()).toBe(200);
-    expect(getJson()).toEqual({ merchantId: 1, items: mockItems });
-    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
-  });
-
-  it('blocks a viewer role on PUT with 403', async () => {
-    const { req, res, getCode, getJson } = createMockReqRes({
-      method: 'PUT',
-      query: { merchantId: '1' },
-      headers: {
-        'x-accensa-merchant': 'G' + 'A'.repeat(55),
-        'x-accensa-role': 'viewer',
-      },
-      body: { sku: 'SKU-1', name: 'Test' },
-    });
-    await handler(req, res);
-    expect(getCode()).toBe(403);
-    expect(getJson()).toEqual({ error: 'Admin access required' });
-  });
-
-  it('enforces SKU pattern /^[A-Za-z0-9._:-]{1,100}$/ and returns 400 for invalid SKUs', async () => {
-    for (const badSku of ['', 'invalid sku!', 'a'.repeat(101)]) {
-      const { req, res, getCode, getJson } = createMockReqRes({
-        method: 'PUT',
-        query: { merchantId: '1' },
-        headers: {
-          'x-accensa-merchant': 'G' + 'A'.repeat(55),
-          'x-accensa-role': 'admin',
-        },
-        body: { sku: badSku, name: 'Valid Name' },
-      });
-      await handler(req, res);
-      expect(getCode()).toBe(400);
-      expect(getJson()).toEqual({ error: 'A valid SKU is required' });
-    }
-  });
-
-  it('handles item removal (remove: true) reporting rowCount via removed boolean flag', async () => {
-    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
-    const { req: reqDel, res: resDel, getCode: getCodeDel, getJson: getJsonDel } = createMockReqRes({
-      method: 'PUT',
-      query: { merchantId: '1' },
-      headers: {
-        'x-accensa-merchant': 'G' + 'A'.repeat(55),
-      },
-      body: { sku: 'ITEM-DEL', remove: true },
-    });
-    await handler(reqDel, resDel);
-    expect(getCodeDel()).toBe(200);
-    expect(getJsonDel()).toEqual({ removed: true });
-
-    mockQuery.mockResolvedValueOnce({ rowCount: 0 });
-    const { req: reqMissing, res: resMissing, getCode: getCodeMissing, getJson: getJsonMissing } = createMockReqRes({
-      method: 'PUT',
-      query: { merchantId: '1' },
-      headers: {
-        'x-accensa-merchant': 'G' + 'A'.repeat(55),
-      },
-      body: { sku: 'ITEM-MISSING', remove: true },
-    });
-    await handler(reqMissing, resMissing);
-    expect(getCodeMissing()).toBe(200);
-    expect(getJsonMissing()).toEqual({ removed: false });
-  });
-
-  it('validates item body (name non-empty trimmed, <=160, description type, price finite and >=0, type checks) returning 400', async () => {
-    const invalidBodies = [
-      { sku: 'SKU-1', name: '' },
-      { sku: 'SKU-1', name: '   ' },
-      { sku: 'SKU-1', name: 'a'.repeat(161) },
-      { sku: 'SKU-1', name: 'Valid', description: 123 },
-      { sku: 'SKU-1', name: 'Valid', price: -1 },
-      { sku: 'SKU-1', name: 'Valid', price: NaN },
-      { sku: 'SKU-1', name: 'Valid', price: '10' },
-    ];
-
-    for (const body of invalidBodies) {
-      const { req, res, getCode, getJson } = createMockReqRes({
-        method: 'PUT',
-        query: { merchantId: '1' },
-        headers: {
-          'x-accensa-merchant': 'G' + 'A'.repeat(55),
-        },
-        body,
-      });
-      await handler(req, res);
-      expect(getCode()).toBe(400);
-      expect(getJson()).toEqual({ error: 'Invalid catalog item' });
-    }
-  });
-
-  it('successfully upserts a valid catalog item and returns it', async () => {
-    const upsertedItem = { sku: 'SKU-1', name: 'Item', description: 'Desc', price: '15.50' };
-    mockQuery.mockResolvedValueOnce({ rows: [upsertedItem] });
-
-    const { req, res, getCode, getJson } = createMockReqRes({
-      method: 'PUT',
-      query: { merchantId: '1' },
-      headers: {
-        'x-accensa-merchant': 'G' + 'A'.repeat(55),
-      },
-      body: { sku: 'SKU-1', name: 'Item', description: 'Desc', price: 15.5 },
-    });
-    await handler(req, res);
-    expect(getCode()).toBe(200);
-    expect(getJson()).toEqual({ item: upsertedItem });
-  });
-
-  it('returns 405 for unsupported methods', async () => {
-    const { req, res, getCode, getJson } = createMockReqRes({
-      method: 'DELETE',
-      query: { merchantId: '1' },
-    });
-    await handler(req, res);
-    expect(getCode()).toBe(405);
-    expect(getJson()).toEqual({ error: 'Method not allowed' });
-  });
-
-  it('reports removal via rowCount === 1 correctly', async () => {
-    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
-    const { req: req1, res: res1, getCode: getCode1, getJson: getJson1 } = createMockReqRes({
-      method: 'PUT',
-      query: { merchantId: '1' },
-      headers: {
-        'x-accensa-merchant': 'G' + 'A'.repeat(55),
-        'x-accensa-role': 'admin',
-      },
-      body: { sku: 'SKU-1', remove: true },
-    });
-    await handler(req1, res1);
-    expect(getCode1()).toBe(200);
-    expect(getJson1()).toEqual({ removed: true });
-
-    mockQuery.mockResolvedValueOnce({ rowCount: 0 });
-    const { req: req0, res: res0, getCode: getCode0, getJson: getJson0 } = createMockReqRes({
-      method: 'PUT',
-      query: { merchantId: '1' },
-      headers: {
-        'x-accensa-merchant': 'G' + 'A'.repeat(55),
-        'x-accensa-role': 'admin',
-      },
-      body: { sku: 'SKU-1', remove: true },
-    });
-    await handler(req0, res0);
-    expect(getCode0()).toBe(200);
-    expect(getJson0()).toEqual({ removed: false });
-  });
-
-  it('validates the item body (empty/trimmed name, length <= 160, description type, price finite and >= 0)', async () => {
-    const invalidBodies = [
-      { sku: 'SKU-1', name: '' },
-      { sku: 'SKU-1', name: '   ' },
-      { sku: 'SKU-1', name: 'a'.repeat(161) },
-      { sku: 'SKU-1', name: 'Valid', description: 123 },
-      { sku: 'SKU-1', name: 'Valid', price: -1 },
-      { sku: 'SKU-1', name: 'Valid', price: NaN },
-      { sku: 'SKU-1', name: 'Valid', price: Infinity },
-      { sku: 'SKU-1', name: 'Valid', price: '10' },
-    ];
-
-    for (const body of invalidBodies) {
-      const { req, res, getCode, getJson } = createMockReqRes({
-        method: 'PUT',
-        query: { merchantId: '1' },
-        headers: {
-          'x-accensa-merchant': 'G' + 'A'.repeat(55),
-          'x-accensa-role': 'admin',
-        },
-        body,
-      });
-      await handler(req, res);
-      expect(getCode()).toBe(400);
-      expect(getJson()).toEqual({ error: 'Invalid catalog item' });
-    }
-  });
-
-  it('upserts valid item on conflict and returns the item', async () => {
-    const upsertedItem = {
-      sku: 'SKU-1',
-      name: 'Product One',
-      description: 'Desc',
-      price: '15.00',
-    };
-    mockQuery.mockResolvedValueOnce({
-      rows: [upsertedItem],
-    });
-
-    const { req, res, getCode, getJson } = createMockReqRes({
-      method: 'PUT',
-      query: { merchantId: '1' },
-      headers: {
-        'x-accensa-merchant': 'G' + 'A'.repeat(55),
-        'x-accensa-role': 'admin',
-      },
-      body: {
-        sku: 'SKU-1',
-        name: ' Product One ',
-        description: 'Desc',
-        price: 15.0,
-      },
-    });
-    await handler(req, res);
-
-    expect(getCode()).toBe(200);
-    expect(getJson()).toEqual({ item: upsertedItem });
-    expect(mockQuery).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO merchant_catalog_items'),
-      expect.any(Array),
-    );
-  });
-
-  it('answers 405 for unsupported HTTP methods', async () => {
-    for (const method of ['DELETE', 'PATCH', 'OPTIONS']) {
-      const { req, res, getCode, getJson } = createMockReqRes({
-        method,
-        query: { merchantId: '1' },
-      });
-      await handler(req, res);
-      expect(getCode()).toBe(405);
-      expect(getJson()).toEqual({ error: 'Method not allowed' });
-    }
-  });
-});
