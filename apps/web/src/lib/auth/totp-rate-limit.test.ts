@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  checkTotpRateLimit,
   resetTotpRateLimitForTests,
   TOTP_MAX_ATTEMPTS,
   TOTP_WINDOW_SECONDS,
