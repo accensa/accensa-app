@@ -22,9 +22,12 @@ export function verifyWebhookSignature(
 ): boolean | Promise<boolean> {
   if (bodyOrRequest instanceof Request) {
     const request = bodyOrRequest;
-    const secret = signatureOrSecret as string;
+    const secret = signatureOrSecret;
+    if (!secret || typeof secret !== 'string') {
+      return Promise.resolve(false);
+    }
     const signature = request.headers.get(WEBHOOK_SIGNATURE_HEADER);
-    
+
     // Async handling for Request objects
     return (async () => {
       if (!signature) return false;
@@ -42,7 +45,8 @@ export function verifyWebhookSignature(
   const secret = secretParam;
 
   if (!signature || typeof signature !== 'string') return false;
-  return verifySignatureInternal(body, signature, secret || '');
+  if (!secret || typeof secret !== 'string') return false;
+  return verifySignatureInternal(body, signature, secret);
 }
 
 function verifySignatureInternal(body: string | Buffer, signature: string, secret: string): boolean {
@@ -75,16 +79,4 @@ export function signWebhookSignature(body: string | Buffer, secret: string): str
  */
 export function generateWebhookSecret(): string {
   return randomBytes(32).toString('hex');
-}
-
-/**
- * Constant-time string comparison to prevent timing attacks.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
 }
