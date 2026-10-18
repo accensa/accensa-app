@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  checkTotpRateLimit,
   resetTotpRateLimitForTests,
   TOTP_MAX_ATTEMPTS,
   TOTP_WINDOW_SECONDS,
@@ -85,16 +84,16 @@ describe('TOTP Rate Limit (In-Memory Fallback)', () => {
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
     try {
+      vi.resetModules();
+      const { checkTotpRateLimit: checkFallbackLimit } = await import('./totp-rate-limit');
       const merchantId = 301;
-      const res = await checkTotpRateLimit(merchantId);
+      const res = await checkFallbackLimit(merchantId);
       expect(res.success).toBe(true);
       expect(res.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
     } finally {
       if (originalUrl) process.env.UPSTASH_REDIS_REST_URL = originalUrl;
       if (originalToken) process.env.UPSTASH_REDIS_REST_TOKEN = originalToken;
+      vi.resetModules();
     }
   });
 });
-
-
-
