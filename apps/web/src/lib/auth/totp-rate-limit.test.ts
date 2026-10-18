@@ -13,6 +13,7 @@ describe('TOTP Rate Limit (In-Memory Fallback)', () => {
   });
 
   afterEach(() => {
+    vi.clearAllTimers();
     vi.useRealTimers();
     resetTotpRateLimitForTests();
   });
