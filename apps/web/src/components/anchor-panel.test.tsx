@@ -36,7 +36,13 @@ describe('AnchorPanel', () => {
       startLedger: 10,
       endLedger: 20,
       payments: [
-        { tx_hash: '1'.repeat(64), leaf: 'c'.repeat(64), ledger: 10, ts: '2026-08-01T00:00:00.000Z', amount: '100' },
+        {
+          tx_hash: '1'.repeat(64),
+          leaf: 'c'.repeat(64),
+          ledger: 10,
+          ts: '2026-08-01T00:00:00.000Z',
+          amount: '100',
+        },
       ],
       existing: null,
     };
@@ -46,7 +52,7 @@ describe('AnchorPanel', () => {
       vi.fn().mockResolvedValue({
         ok: true,
         json: async () => previewData,
-      })
+      }),
     );
 
     render(<AnchorPanel />);
@@ -67,7 +73,7 @@ describe('AnchorPanel', () => {
         ok: false,
         status: 500,
         json: async () => ({ error: 'Database offline' }),
-      })
+      }),
     );
 
     render(<AnchorPanel />);
