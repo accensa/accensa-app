@@ -22,7 +22,7 @@ export function verifyWebhookSignature(
 ): boolean | Promise<boolean> {
   if (bodyOrRequest instanceof Request) {
     const request = bodyOrRequest;
-    const secret = signatureOrSecret;
+    const secret = signatureOrSecret as string;
     if (!secret || typeof secret !== 'string' || secret.trim() === '') {
       return Promise.resolve(false);
     }
@@ -41,7 +41,7 @@ export function verifyWebhookSignature(
   }
 
   const body = bodyOrRequest;
-  const signature = signatureOrSecret;
+  const signature = signatureOrSecret as string;
   const secret = secretParam;
 
   if (!signature || typeof signature !== 'string' || signature.trim() === '') return false;
