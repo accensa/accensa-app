@@ -39,7 +39,8 @@ export async function GET(request: Request) {
     const rows = await withMerchantClient(merchant.id, async (client) => {
       await ensureSchema(client);
       let query = `
- SELECT COALESCE(route, '(unattributed)') as route, method, SUM(amount) as total_revenue, COUNT(*) as calls
+ SELECT COALESCE(route, '(unattributed)') as route, method,
+   COALESCE(asset, 'native') as asset, SUM(amount) as total_revenue, COUNT(*) as calls
  FROM payments
  WHERE merchant_id = $1 AND ts IS NOT NULL
  `;
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
         query += ` AND ts <= $${params.length}`;
       }
 
-      query += ` GROUP BY route, method ORDER BY total_revenue DESC`;
+      query += ` GROUP BY route, method, COALESCE(asset, 'native') ORDER BY total_revenue DESC`;
 
       // Fetch one extra row to detect whether there are more groups than the
       // limit. If there are, the extra row is rolled into an aggregated
@@ -77,6 +78,7 @@ export async function GET(request: Request) {
     interface RouteRow {
       route: string;
       method: string | null;
+      asset: string;
       total_revenue: string;
       calls: number;
     }
@@ -84,6 +86,7 @@ export async function GET(request: Request) {
     let routes: RouteRow[] = rows.map((r) => ({
       route: String(r.route),
       method: String(r.method),
+      asset: String(r.asset),
       total_revenue: String(r.total_revenue),
       calls: Number(r.calls),
     }));
@@ -93,19 +96,21 @@ export async function GET(request: Request) {
       truncated = true;
       const kept = routes.slice(0, limit);
       const tail = routes.slice(limit);
-      const otherRevenue = tail.reduce(
-        (sum, r) =>
-          sum + (typeof r.total_revenue === 'string' ? BigInt(r.total_revenue) : BigInt(0)),
-        0n,
-      );
-      const otherCalls = tail.reduce((sum, r) => sum + r.calls, 0);
-      const otherRow = {
+      const otherByAsset = new Map<string, { totalRevenue: bigint; calls: number }>();
+      for (const row of tail) {
+        const aggregate = otherByAsset.get(row.asset) ?? { totalRevenue: 0n, calls: 0 };
+        aggregate.totalRevenue += BigInt(row.total_revenue);
+        aggregate.calls += row.calls;
+        otherByAsset.set(row.asset, aggregate);
+      }
+      const otherRows = [...otherByAsset].map(([asset, aggregate]) => ({
         route: '(other)',
-        method: null as string | null,
-        total_revenue: String(otherRevenue),
-        calls: otherCalls,
-      };
-      routes = [...kept, otherRow];
+        method: null,
+        asset,
+        total_revenue: String(aggregate.totalRevenue),
+        calls: aggregate.calls,
+      }));
+      routes = [...kept, ...otherRows];
     }
 
     return NextResponse.json({

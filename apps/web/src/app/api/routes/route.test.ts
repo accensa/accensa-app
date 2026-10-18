@@ -36,6 +36,7 @@ describe('/api/routes GET', () => {
     const rows = Array.from({ length: 30 }, (_, i) => ({
       route: `/api/v1/resource/${i}`,
       method: 'GET',
+      asset: 'native',
       total_revenue: String(BigInt(i * 1000)),
       calls: i + 1,
     }));
@@ -53,6 +54,7 @@ describe('/api/routes GET', () => {
     const rows = Array.from({ length: 60 }, (_, i) => ({
       route: `/api/v1/resource/${i}`,
       method: 'GET',
+      asset: 'native',
       total_revenue: String(BigInt((60 - i) * 1000)),
       calls: i + 1,
     }));
@@ -67,6 +69,7 @@ describe('/api/routes GET', () => {
     const otherRow = data.routes[data.routes.length - 1];
     expect(otherRow.route).toBe('(other)');
     expect(otherRow.method).toBeNull();
+    expect(otherRow.asset).toBe('native');
     expect(otherRow.calls).toBeGreaterThan(0);
   });
 
@@ -93,6 +96,7 @@ describe('/api/routes GET', () => {
     const rows = Array.from({ length: 5 }, (_, i) => ({
       route: `/api/v1/resource/${i}`,
       method: 'GET',
+      asset: 'native',
       total_revenue: String(BigInt(i * 1000)),
       calls: i + 1,
     }));
@@ -116,6 +120,74 @@ describe('/api/routes GET', () => {
     expect(query).toContain('ts >= $2');
     expect(params).toHaveLength(3); // merchant_id + from + limit
     expect(params[0]).toBe(MERCHANT.id);
+  });
+
+  test('returns distinct totals for mixed assets and groups null assets as native', async () => {
+    mockQuery.mockResolvedValue({
+      rows: [
+        { route: '/checkout', method: 'POST', asset: 'native', total_revenue: '100', calls: 2 },
+        {
+          route: '/checkout',
+          method: 'POST',
+          asset: 'USDC:GISSUER',
+          total_revenue: '75',
+          calls: 1,
+        },
+      ],
+    });
+
+    const res = await GET(mockRequest('http://localhost/api/routes'));
+    const data = await res.json();
+    const query = mockQuery.mock.calls[0][0] as string;
+
+    expect(query).toContain("COALESCE(asset, 'native') as asset");
+    expect(query).toContain("GROUP BY route, method, COALESCE(asset, 'native')");
+    expect(data.routes).toEqual([
+      {
+        route: '/checkout',
+        method: 'POST',
+        asset: 'native',
+        total_revenue: '100',
+        calls: 2,
+      },
+      {
+        route: '/checkout',
+        method: 'POST',
+        asset: 'USDC:GISSUER',
+        total_revenue: '75',
+        calls: 1,
+      },
+    ]);
+  });
+
+  test('keeps truncated other totals separate by asset', async () => {
+    mockQuery.mockResolvedValue({
+      rows: [
+        { route: '/top', method: 'GET', asset: 'native', total_revenue: '100', calls: 1 },
+        { route: '/a', method: 'GET', asset: 'native', total_revenue: '10', calls: 1 },
+        { route: '/b', method: 'GET', asset: 'USDC:GISSUER', total_revenue: '9', calls: 1 },
+      ],
+    });
+
+    const res = await GET(mockRequest('http://localhost/api/routes?limit=1'));
+    const data = await res.json();
+
+    expect(data.routes.slice(1)).toEqual([
+      {
+        route: '(other)',
+        method: null,
+        asset: 'native',
+        total_revenue: '10',
+        calls: 1,
+      },
+      {
+        route: '(other)',
+        method: null,
+        asset: 'USDC:GISSUER',
+        total_revenue: '9',
+        calls: 1,
+      },
+    ]);
   });
 
   test('respects custom from/to parameters', async () => {

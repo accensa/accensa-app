@@ -222,6 +222,59 @@ describe('Database Integration', () => {
     expect(rowsSeenByB).toHaveLength(1);
   });
 
+  it('a forced-RLS payment update is hidden through an unscoped client and succeeds when merchant-scoped', async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('Skipping integration test as DATABASE_URL is missing');
+      return;
+    }
+
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      const address = 'GANCHORRLSMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+      await client.query(`INSERT INTO merchants (address) VALUES ($1) ON CONFLICT DO NOTHING`, [
+        address,
+      ]);
+      return getMerchantByAddress(client, address);
+    });
+    expect(merchant).not.toBeNull();
+    const txHash = 'e'.repeat(64);
+
+    await withMerchantClient(merchant!.id, async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO payments (merchant_id, tx_hash) VALUES ($1, $2)
+         ON CONFLICT (merchant_id, tx_hash) DO NOTHING`,
+        [merchant!.id, txHash],
+      );
+    });
+
+    const unscopedUpdate = await withClient(async (client) => {
+      await client.query('SET SESSION AUTHORIZATION test_app_user');
+      return client.query(
+        `UPDATE payments SET batch_id = $1 WHERE merchant_id = $2 AND tx_hash = $3`,
+        [23, merchant!.id, txHash],
+      );
+    });
+    expect(unscopedUpdate.rowCount).toBe(0);
+
+    const scopedUpdate = await withMerchantClient(merchant!.id, (client) =>
+      client.query(`UPDATE payments SET batch_id = $1 WHERE merchant_id = $2 AND tx_hash = $3`, [
+        23,
+        merchant!.id,
+        txHash,
+      ]),
+    );
+    expect(scopedUpdate.rowCount).toBe(1);
+
+    const savedBatchId = await withMerchantClient(merchant!.id, async (client) => {
+      const result = await client.query(`SELECT batch_id FROM payments WHERE tx_hash = $1`, [
+        txHash,
+      ]);
+      return Number(result.rows[0].batch_id);
+    });
+    expect(savedBatchId).toBe(23);
+  });
+
   it('batched inserts write many rows in one statement and commit the cursor atomically', async () => {
     if (!process.env.DATABASE_URL) {
       console.warn('Skipping integration test as DATABASE_URL is missing');
