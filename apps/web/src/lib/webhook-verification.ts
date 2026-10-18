@@ -23,7 +23,7 @@ export function verifyWebhookSignature(
   if (bodyOrRequest instanceof Request) {
     const request = bodyOrRequest;
     const secret = signatureOrSecret;
-    if (!secret || typeof secret !== 'string') {
+    if (!secret || typeof secret !== 'string' || secret.trim() === '') {
       return Promise.resolve(false);
     }
     const signature = request.headers.get(WEBHOOK_SIGNATURE_HEADER);
@@ -44,8 +44,8 @@ export function verifyWebhookSignature(
   const signature = signatureOrSecret;
   const secret = secretParam;
 
-  if (!signature || typeof signature !== 'string') return false;
-  if (!secret || typeof secret !== 'string') return false;
+  if (!signature || typeof signature !== 'string' || signature.trim() === '') return false;
+  if (!secret || typeof secret !== 'string' || secret.trim() === '') return false;
   return verifySignatureInternal(body, signature, secret);
 }
 
