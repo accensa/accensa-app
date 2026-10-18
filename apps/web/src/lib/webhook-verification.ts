@@ -1,108 +1,82 @@
-/**
- * SDK Webhook Verification Integration (#149).
- *
- * Provides webhook signature verification for the Demo-merchant integration.
- * Validates that incoming webhook requests are authentic and haven't been
- * tampered with, using HMAC-SHA256 signatures.
- *
- * Usage:
- *   import { verifyWebhookSignature, WEBHOOK_SECRET_HEADER } from '@/lib/webhook-verification';
- *
- *   // In your webhook route handler:
- *   const isValid = verifyWebhookSignature(request, webhookSecret);
- *   if (!isValid) return new Response('Invalid signature', { status: 401 });
- */
-
-export const WEBHOOK_SIGNATURE_HEADER = 'x-accensa-signature';
-export const WEBHOOK_TIMESTAMP_HEADER = 'x-accensa-timestamp';
-const TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
+import { createHmac, randomBytes, timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto';
 
 /**
- * Verify the HMAC-SHA256 signature of an incoming webhook request.
- *
- * Signature format: `t=<timestamp>,v1=<signature>`
- * The signature is computed over: `${timestamp}.${body}`
- *
- * @param request   The incoming HTTP request
- * @param secret    The webhook signing secret
- * @returns         true if the signature is valid
+ * Header name used for outbound webhook signatures.
  */
-export async function verifyWebhookSignature(request: Request, secret: string): Promise<boolean> {
-  try {
-    const signatureHeader = request.headers.get(WEBHOOK_SIGNATURE_HEADER);
-    if (!signatureHeader) return false;
+export const WEBHOOK_SIGNATURE_HEADER = 'x-webhook-signature';
 
-    // Parse signature components
-    const parts = Object.fromEntries(
-      signatureHeader.split(',').map((part) => {
-        const [key, ...value] = part.split('=');
-        return [key, value.join('=')];
-      }),
-    );
+/**
+ * Consumer wiring reference for outbound webhooks delivery.
+ */
+export function verifyOutboundWebhookDelivery(body: string | Buffer, signature: string, secret: string): boolean {
+  return verifyWebhookSignature(body, signature, secret);
+}
 
-    const timestamp = parts.t;
-    const signature = parts.v1;
-
-    if (!timestamp || !signature) return false;
-
-    // Check timestamp freshness
-    const timestampMs = parseInt(timestamp, 10) * 1000;
-    const age = Math.abs(Date.now() - timestampMs);
-    if (age > TIMESTAMP_TOLERANCE_MS) {
-      return false;
+/**
+ * Verify the HMAC-SHA256 signature of an incoming webhook request or body/signature pair.
+ */
+export function verifyWebhookSignature(
+  bodyOrRequest: string | Buffer | Request,
+  signatureOrSecret?: string | undefined | null,
+  secretParam?: string
+): boolean | Promise<boolean> {
+  if (bodyOrRequest instanceof Request) {
+    const request = bodyOrRequest;
+    const secret = signatureOrSecret as string;
+    if (!secret || typeof secret !== 'string' || secret.trim() === '') {
+      return Promise.resolve(false);
     }
+    const signature = request.headers.get(WEBHOOK_SIGNATURE_HEADER);
 
-    // Read the request body
-    const body = await request.text();
+    // Async handling for Request objects
+    return (async () => {
+      if (!signature) return false;
+      try {
+        const body = await request.text();
+        return verifySignatureInternal(body, signature, secret);
+      } catch {
+        return false;
+      }
+    })();
+  }
 
-    // Compute expected signature
-    const payload = `${timestamp}.${body}`;
-    const expectedSignature = await computeHMAC(payload, secret);
+  const body = bodyOrRequest;
+  const signature = signatureOrSecret as string;
+  const secret = secretParam;
 
-    // Constant-time comparison to prevent timing attacks
-    return timingSafeEqual(signature, expectedSignature);
+  if (!signature || typeof signature !== 'string' || signature.trim() === '') return false;
+  if (!secret || typeof secret !== 'string' || secret.trim() === '') return false;
+  return verifySignatureInternal(body, signature, secret);
+}
+
+function verifySignatureInternal(body: string | Buffer, signature: string, secret: string): boolean {
+  const trimmed = signature.trim();
+  if (!trimmed || !/^[0-9a-f]{64}$/i.test(trimmed)) return false;
+
+  try {
+    const payloadBuffer = typeof body === 'string' ? Buffer.from(body, 'utf8') : body;
+    const expected = createHmac('sha256', secret).update(payloadBuffer).digest('hex');
+
+    const sigBuf = Buffer.from(trimmed, 'hex');
+    const expBuf = Buffer.from(expected, 'hex');
+
+    if (sigBuf.length !== expBuf.length) return false;
+    return cryptoTimingSafeEqual(sigBuf, expBuf);
   } catch {
     return false;
   }
 }
 
 /**
- * Compute HMAC-SHA256 signature.
+ * Sign a webhook body with HMAC-SHA256.
  */
-async function computeHMAC(payload: string, secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
-  return Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/**
- * Constant-time string comparison to prevent timing attacks.
- */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
+export function signWebhookSignature(body: string | Buffer, secret: string): string {
+  return createHmac('sha256', secret).update(body).digest('hex');
 }
 
 /**
  * Generate a webhook signing secret.
  */
 export function generateWebhookSecret(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  return randomBytes(32).toString('hex');
 }
