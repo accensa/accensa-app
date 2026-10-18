@@ -180,6 +180,87 @@ describe('API /api/catalog/[merchantId]', () => {
     }
   });
 
+  it('handles item removal (remove: true) reporting rowCount via removed boolean flag', async () => {
+    mockQuery.mockResolvedValueOnce({ rowCount: 1 });
+    const { req: reqDel, res: resDel, getCode: getCodeDel, getJson: getJsonDel } = createMockReqRes({
+      method: 'PUT',
+      query: { merchantId: '1' },
+      headers: {
+        'x-accensa-merchant': 'G' + 'A'.repeat(55),
+      },
+      body: { sku: 'ITEM-DEL', remove: true },
+    });
+    await handler(reqDel, resDel);
+    expect(getCodeDel()).toBe(200);
+    expect(getJsonDel()).toEqual({ removed: true });
+
+    mockQuery.mockResolvedValueOnce({ rowCount: 0 });
+    const { req: reqMissing, res: resMissing, getCode: getCodeMissing, getJson: getJsonMissing } = createMockReqRes({
+      method: 'PUT',
+      query: { merchantId: '1' },
+      headers: {
+        'x-accensa-merchant': 'G' + 'A'.repeat(55),
+      },
+      body: { sku: 'ITEM-MISSING', remove: true },
+    });
+    await handler(reqMissing, resMissing);
+    expect(getCodeMissing()).toBe(200);
+    expect(getJsonMissing()).toEqual({ removed: false });
+  });
+
+  it('validates item body (name non-empty trimmed, <=160, description type, price finite and >=0, type checks) returning 400', async () => {
+    const invalidBodies = [
+      { sku: 'SKU-1', name: '' },
+      { sku: 'SKU-1', name: '   ' },
+      { sku: 'SKU-1', name: 'a'.repeat(161) },
+      { sku: 'SKU-1', name: 'Valid', description: 123 },
+      { sku: 'SKU-1', name: 'Valid', price: -1 },
+      { sku: 'SKU-1', name: 'Valid', price: NaN },
+      { sku: 'SKU-1', name: 'Valid', price: '10' },
+    ];
+
+    for (const body of invalidBodies) {
+      const { req, res, getCode, getJson } = createMockReqRes({
+        method: 'PUT',
+        query: { merchantId: '1' },
+        headers: {
+          'x-accensa-merchant': 'G' + 'A'.repeat(55),
+        },
+        body,
+      });
+      await handler(req, res);
+      expect(getCode()).toBe(400);
+      expect(getJson()).toEqual({ error: 'Invalid catalog item' });
+    }
+  });
+
+  it('successfully upserts a valid catalog item and returns it', async () => {
+    const upsertedItem = { sku: 'SKU-1', name: 'Item', description: 'Desc', price: '15.50' };
+    mockQuery.mockResolvedValueOnce({ rows: [upsertedItem] });
+
+    const { req, res, getCode, getJson } = createMockReqRes({
+      method: 'PUT',
+      query: { merchantId: '1' },
+      headers: {
+        'x-accensa-merchant': 'G' + 'A'.repeat(55),
+      },
+      body: { sku: 'SKU-1', name: 'Item', description: 'Desc', price: 15.5 },
+    });
+    await handler(req, res);
+    expect(getCode()).toBe(200);
+    expect(getJson()).toEqual({ item: upsertedItem });
+  });
+
+  it('returns 405 for unsupported methods', async () => {
+    const { req, res, getCode, getJson } = createMockReqRes({
+      method: 'DELETE',
+      query: { merchantId: '1' },
+    });
+    await handler(req, res);
+    expect(getCode()).toBe(405);
+    expect(getJson()).toEqual({ error: 'Method not allowed' });
+  });
+
   it('reports removal via rowCount === 1 correctly', async () => {
     mockQuery.mockResolvedValueOnce({ rowCount: 1 });
     const { req: req1, res: res1, getCode: getCode1, getJson: getJson1 } = createMockReqRes({
