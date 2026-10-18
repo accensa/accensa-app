@@ -6,6 +6,13 @@ import { createHmac, timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypt
 export const WEBHOOK_SIGNATURE_HEADER = 'x-webhook-signature';
 
 /**
+ * Consumer wiring reference for outbound webhooks delivery.
+ */
+export function verifyOutboundWebhookDelivery(body: string | Buffer, signature: string, secret: string): boolean {
+  return verifyWebhookSignature(body, signature, secret);
+}
+
+/**
  * Verify the HMAC-SHA256 signature of an incoming webhook request or body/signature pair.
  */
 export function verifyWebhookSignature(
