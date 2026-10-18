@@ -1,3 +1,15 @@
+/**
+ * Structured logger with environment-variable-based log level filtering
+ * and sensitive data redaction.
+ *
+ * Environment variable:
+ * - LOG_LEVEL: The minimum log level to emit.
+ *   Accepted values: 'debug', 'info', 'warn', 'error' (case-insensitive).
+ *   Default: 'info'.
+ *   An empty string or unset variable defaults to 'info' without a warning.
+ *   Unrecognised values trigger a one-time console.warn warning and default to 'info'.
+ */
+
 const SENSITIVE_KEYS = new Set([
   'database_url',
   'cron_secret',
@@ -6,16 +18,40 @@ const SENSITIVE_KEYS = new Set([
   'x-signature',
 ]);
 
-const LOG_LEVELS: Record<string, number> = {
+export const LOG_LEVELS = Object.freeze({
   debug: 10,
   info: 20,
   warn: 30,
   error: 40,
-};
+} as const);
 
-function getLogLevel(): number {
-  const level = (process.env.LOG_LEVEL || 'info').toLowerCase();
-  return LOG_LEVELS[level] || LOG_LEVELS.info;
+export type LogLevel = keyof typeof LOG_LEVELS;
+
+export const ACCEPTED_LOG_LEVELS: readonly LogLevel[] = Object.freeze(
+  Object.keys(LOG_LEVELS) as LogLevel[],
+);
+
+let hasWarnedInvalidLogLevel = false;
+
+export function getLogLevel(): number {
+  const raw = process.env.LOG_LEVEL;
+  if (raw === undefined || raw === '') {
+    return LOG_LEVELS.info;
+  }
+
+  const level = raw.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(LOG_LEVELS, level)) {
+    return LOG_LEVELS[level as LogLevel];
+  }
+
+  if (!hasWarnedInvalidLogLevel) {
+    hasWarnedInvalidLogLevel = true;
+    console.warn(
+      `Unrecognised LOG_LEVEL ${JSON.stringify(raw)}; accepted levels are ${ACCEPTED_LOG_LEVELS.join(', ')}; defaulting to info`,
+    );
+  }
+
+  return LOG_LEVELS.info;
 }
 
 export function redact(obj: unknown): unknown {
@@ -57,7 +93,7 @@ export function redact(obj: unknown): unknown {
 }
 
 function logMessage(level: string, message: string, meta?: Record<string, unknown>) {
-  if (LOG_LEVELS[level] < getLogLevel()) return;
+  if (LOG_LEVELS[level as LogLevel] < getLogLevel()) return;
 
   const entry = {
     level,
