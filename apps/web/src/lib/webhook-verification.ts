@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual as cryptoTimingSafeEqual } from 'node:crypto';
 
 /**
  * Header name used for outbound webhook signatures.
@@ -74,7 +74,6 @@ export function signWebhookSignature(body: string | Buffer, secret: string): str
  * Generate a webhook signing secret.
  */
 export function generateWebhookSecret(): string {
-  const { randomBytes } = require('node:crypto');
   return randomBytes(32).toString('hex');
 }
 
