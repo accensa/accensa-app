@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import handler from './[merchantId]';
 import type { NextApiRequest, NextApiResponse } from 'next';
 
-const { mockWithClient, mockWithMerchantClient, mockQuery, mockGetMerchantByAddress, mockRevalidateCatalog } = vi.hoisted(() => {
+const {
+  mockWithClient,
+  mockWithMerchantClient,
+  mockQuery,
+  mockGetMerchantByAddress,
+  mockRevalidateCatalog,
+} = vi.hoisted(() => {
   const query = vi.fn();
   return {
     mockWithClient: vi.fn(async (work: (client: unknown) => Promise<unknown>) => work({})),
