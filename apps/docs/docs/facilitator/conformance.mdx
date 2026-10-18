@@ -137,13 +137,10 @@ git clone https://github.com/accensa/x402-facilitator-stellar.git
 cd x402-facilitator-stellar
 
 # Install dependencies
-pnpm install
+npm install
 
-# Run conformance tests
-pnpm test:conformance
-
-# View results
-cat test-results/conformance-report.json
+# Run the test suite (covers unit and conformance tests; results stream directly to stdout)
+npm test
 ```
 
 ## Contact
