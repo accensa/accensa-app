@@ -42,7 +42,7 @@ Create `apps/web/.env.local` with the following contents:
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 MERCHANT_ADDRESS=GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6
 STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-HOOK_API_KEY=any-shared-secret
+ACCENSA_PRIVATE_KEY_HEX=replace-with-32-byte-ed25519-private-key-hex
 ```
 
 `DATABASE_URL` is a standard `libpq` connection string. The format is:
