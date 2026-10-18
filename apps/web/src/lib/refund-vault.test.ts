@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   REFUND_ERRORS,
   describeRefundError,
@@ -71,5 +71,44 @@ describe('describeRefundError', () => {
 
   it('falls back without pretending to know an unmapped code', () => {
     expect(describeRefundError(99)).toContain('99');
+  });
+});
+
+describe('Refund vault contract ID resolver (#625)', () => {
+  const originalEnv = process.env.NEXT_PUBLIC_REFUND_VAULT_ID;
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.NEXT_PUBLIC_REFUND_VAULT_ID;
+    } else {
+      process.env.NEXT_PUBLIC_REFUND_VAULT_ID = originalEnv;
+    }
+  });
+
+  it('returns undefined when NEXT_PUBLIC_REFUND_VAULT_ID is unset', async () => {
+    delete process.env.NEXT_PUBLIC_REFUND_VAULT_ID;
+    const { getConfiguredRefundVaultId, REFUND_VAULT_ID, DEFAULT_REFUND_VAULT_ID } =
+      await import('./refund-vault');
+
+    expect(getConfiguredRefundVaultId()).toBeUndefined();
+    expect(REFUND_VAULT_ID).toBe(DEFAULT_REFUND_VAULT_ID);
+  });
+
+  it('returns undefined when NEXT_PUBLIC_REFUND_VAULT_ID is empty string or whitespace', async () => {
+    process.env.NEXT_PUBLIC_REFUND_VAULT_ID = '   ';
+    const { getConfiguredRefundVaultId, REFUND_VAULT_ID, DEFAULT_REFUND_VAULT_ID } =
+      await import('./refund-vault');
+
+    expect(getConfiguredRefundVaultId()).toBeUndefined();
+    expect(REFUND_VAULT_ID).toBe(DEFAULT_REFUND_VAULT_ID);
+  });
+
+  it('returns configured ID when NEXT_PUBLIC_REFUND_VAULT_ID is set', async () => {
+    const customVault = 'CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR';
+    process.env.NEXT_PUBLIC_REFUND_VAULT_ID = customVault;
+    const { getConfiguredRefundVaultId, REFUND_VAULT_ID } = await import('./refund-vault');
+
+    expect(getConfiguredRefundVaultId()).toBe(customVault);
+    expect(REFUND_VAULT_ID).toBe(customVault);
   });
 });

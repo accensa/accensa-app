@@ -4,14 +4,11 @@ import { FaqAccordion } from '@/components/faq-accordion';
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { RECEIPT_ANCHOR_ID } from '@/lib/receipt-anchor';
+import { getConfiguredRefundVaultId } from '@/lib/refund-vault';
 import { explorerContractUrl } from '@/lib/explorer';
 import { PageContainer } from '@/components/page-container';
 import { SectionHeading } from '@/components/section-heading';
 import { CtaButton } from '@accensa/shared';
-
-const REFUND_VAULT_ID =
-  process.env.NEXT_PUBLIC_REFUND_VAULT_ID ??
-  'CCMBM44EJUGD52G4LSMGHSXMAH2KSAQZX7VOYY4TTBF5BK4D7M4IHRQA';
 
 const faqItems = [
   {
@@ -42,6 +39,8 @@ const faqItems = [
 ];
 
 export default function Landing() {
+  const refundVaultId = getConfiguredRefundVaultId();
+
   return (
     <main className="min-h-screen text-slate-600 dark:text-slate-200 font-sans selection:bg-slate-200 dark:selection:bg-white/10 transition-colors duration-300 bg-grid">
       {/* Hero Section */}
@@ -172,7 +171,7 @@ export default function Landing() {
           </div>
           <div className="grid sm:grid-cols-2 gap-6">
             <ContractCard name="ReceiptAnchor" id={RECEIPT_ANCHOR_ID} />
-            <ContractCard name="RefundVault" id={REFUND_VAULT_ID} />
+            <ContractCard name="RefundVault" id={refundVaultId} />
           </div>
         </PageContainer>
       </ScrollReveal>
@@ -296,26 +295,51 @@ function FeatureCard({ title, desc }: { title: string; desc: string }) {
   );
 }
 
-function ContractCard({ name, id }: { name: string; id: string }) {
-  return (
-    <a
-      href={explorerContractUrl(id)}
-      target="_blank"
-      rel="noreferrer"
-      className="relative overflow-hidden group block bg-white/40 dark:bg-white/5 backdrop-blur-2xl border border-slate-200/60 dark:border-white/5 p-8 hover:border-emerald-400 dark:hover:border-emerald-500/40 hover:shadow-2xl dark:hover:shadow-[0_0_30px_rgba(255,255,255,0.02)] transition-all duration-500 shadow-sm dark:shadow-none"
-    >
+function ContractCard({ name, id }: { name: string; id?: string }) {
+  const content = (
+    <>
       <div className="absolute inset-0 bg-grid opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
       <div className="relative z-10">
         <div className="flex justify-between items-center mb-4">
           <p className="text-xl font-black tracking-tighter text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
             {name}
           </p>
-          <ArrowUpRight className="w-5 h-5 text-emerald-600 dark:text-emerald-500 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+          {id ? (
+            <ArrowUpRight className="w-5 h-5 text-emerald-600 dark:text-emerald-500 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+          ) : null}
         </div>
-        <div className="inline-block bg-slate-50 dark:bg-black/50 border border-slate-200 dark:border-white/5 px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400 break-all transition-colors duration-300 group-hover:dark:bg-black/70">
-          {id}
-        </div>
+        {id ? (
+          <div className="inline-block bg-slate-50 dark:bg-black/50 border border-slate-200 dark:border-white/5 px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400 break-all transition-colors duration-300 group-hover:dark:bg-black/70">
+            {id}
+          </div>
+        ) : null}
       </div>
+    </>
+  );
+
+  const baseClassName =
+    'relative overflow-hidden group block bg-white/40 dark:bg-white/5 backdrop-blur-2xl border border-slate-200/60 dark:border-white/5 p-8 transition-all duration-500 shadow-sm dark:shadow-none';
+
+  if (!id) {
+    return (
+      <div
+        data-testid={`contract-card-${name.toLowerCase()}`}
+        className={baseClassName}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={explorerContractUrl(id)}
+      target="_blank"
+      rel="noreferrer"
+      data-testid={`contract-card-${name.toLowerCase()}`}
+      className={`${baseClassName} hover:border-emerald-400 dark:hover:border-emerald-500/40 hover:shadow-2xl dark:hover:shadow-[0_0_30px_rgba(255,255,255,0.02)]`}
+    >
+      {content}
     </a>
   );
 }

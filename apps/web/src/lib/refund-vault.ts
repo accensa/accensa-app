@@ -22,9 +22,25 @@ import {
  * it. Nothing is signed and no fee is paid to find out.
  */
 
-export const REFUND_VAULT_ID =
-  process.env.NEXT_PUBLIC_REFUND_VAULT_ID ??
+export const DEFAULT_REFUND_VAULT_ID =
   'CCMBM44EJUGD52G4LSMGHSXMAH2KSAQZX7VOYY4TTBF5BK4D7M4IHRQA';
+
+/**
+ * Returns the explicitly configured RefundVault contract ID from the environment,
+ * or undefined if the variable is unset or empty.
+ * Accessed literally as process.env.NEXT_PUBLIC_REFUND_VAULT_ID so Next.js client
+ * bundles inline the value at build time.
+ */
+export function getConfiguredRefundVaultId(): string | undefined {
+  const id = process.env.NEXT_PUBLIC_REFUND_VAULT_ID;
+  if (!id || id.trim().length === 0) {
+    return undefined;
+  }
+  return id.trim();
+}
+
+export const REFUND_VAULT_ID =
+  getConfiguredRefundVaultId() ?? DEFAULT_REFUND_VAULT_ID;
 
 const RPC_URL = process.env.STELLAR_RPC_URL ?? 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET;
