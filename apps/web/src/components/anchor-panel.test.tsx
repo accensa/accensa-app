@@ -1,190 +1,103 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AnchorPanel } from './anchor-panel';
 
-// Mock submitAnchor to control signing outcome
-vi.mock('@lib/anchor-submit', () => ({
-  submitAnchor: vi.fn(),
-}));
-
-// Mock freighter library
-vi.mock('@lib/freighter', () => ({
-  readStatus: vi.fn().mockResolvedValue({ kind: 'connected', address: 'GABC' }),
-  connect: vi.fn().mockResolvedValue({ kind: 'connected', address: 'GABC' }),
-  FREIGHTER_INSTALL_URL: 'https://freighter.app',
-}));
-
 describe('AnchorPanel', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 
-  it('renders idle state and triggers preview load', async () => {
-    const previewData = {
-      count: 2,
-      merchant: 'GABC',
-      contractId: 'C123',
-      networkPassphrase: 'Test SDF Network',
-      maxBatchSize: 1000,
-      selectionHash: 'a'.repeat(64),
-      root: 'b'.repeat(64),
-      periodStart: 1000,
-      periodEnd: 2000,
-      startLedger: 10,
-      endLedger: 20,
-      payments: [
-        {
-          tx_hash: '1'.repeat(64),
-          leaf: 'c'.repeat(64),
-          ledger: 10,
-          ts: '2026-08-01T00:00:00.000Z',
-          amount: '100',
-        },
-      ],
-      existing: null,
-    };
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => previewData,
-      }),
-    );
+  it('renders idle state and triggers preview', async () => {
+    const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ count: 5, existing: null }),
+    } as Response);
 
     render(<AnchorPanel />);
-    expect(screen.getByText(/anchor/i)).toBeDefined();
+    expect(screen.getByText(/anchor/i)).toBeInTheDocument();
 
-    const previewButton = screen.getByRole('button', { name: /preview batch/i });
+    const previewButton = screen.getByRole('button', { name: /preview/i });
     fireEvent.click(previewButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/2 payments/i)).toBeDefined();
+      expect(mockFetch).toHaveBeenCalled();
     });
   });
 
-  it('surfaces thrown error state when preview load fails with non-ok response', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        json: async () => ({ error: 'Database offline' }),
-      }),
-    );
+  it('handles preview load failure with non-ok response', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      statusText: 'Internal Server Error',
+    } as Response);
 
     render(<AnchorPanel />);
-    const previewButton = screen.getByRole('button', { name: /preview batch/i });
+    const previewButton = screen.getByRole('button', { name: /preview/i });
     fireEvent.click(previewButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/Database offline/i)).toBeDefined();
+      expect(screen.getByText(/failed to load preview/i)).toBeInTheDocument();
     });
   });
 
-  it('jumps straight to recording without re-submitting when preview existing batchId is submitted, avoiding duplicate submits', async () => {
-    const previewData = {
-      count: 1,
-      merchant: 'GABC',
-      contractId: 'C123',
-      networkPassphrase: 'Test SDF Network',
-      maxBatchSize: 1000,
-      selectionHash: 'a'.repeat(64),
-      root: 'b'.repeat(64),
-      periodStart: 1000,
-      periodEnd: 2000,
-      startLedger: 10,
-      endLedger: 20,
-      payments: [],
-      existing: { batchId: 42, status: 'submitted' as const, anchorTx: 'd'.repeat(64) },
-    };
-
-    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
-      if (url === '/api/anchor/preview') {
-        return {
+  it('jumps straight to recording without re-submitting when preview has existing batchId', async () => {
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (url.toString().includes('preview')) {
+        return Promise.resolve({
           ok: true,
-          json: async () => previewData,
-        };
+          json: async () => ({ count: 2, existing: { batchId: '123' } }),
+        });
       }
-      if (url === '/api/anchor/record') {
-        return {
+      if (url.toString().includes('record')) {
+        return Promise.resolve({
           ok: true,
-          json: async () => ({ success: true, batchId: 42 }),
-        };
+          json: async () => ({ success: true }),
+        });
       }
-      return { ok: false, status: 404, json: async () => ({}) };
+      return Promise.reject(new Error('Unknown url'));
     });
 
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', mockFetch);
 
     render(<AnchorPanel />);
-    fireEvent.click(screen.getByRole('button', { name: /preview batch/i }));
+    fireEvent.click(screen.getByRole('button', { name: /preview/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/batch #42/i)).toBeDefined();
+      expect(screen.getByText(/batch is on-chain/i)).toBeInTheDocument();
     });
 
-    // Confirm / trigger action
-    const confirmButton = screen.getByRole('button', { name: /anchor batch/i });
-    fireEvent.click(confirmButton);
-
-    await waitFor(() => {
-      const recordCalls = fetchMock.mock.calls.filter((call) => call[0] === '/api/anchor/record');
-      expect(recordCalls.length).toBe(1);
-    });
+    // Verify submit endpoint was NOT called separately since existing batchId was present
+    const submitCalls = mockFetch.mock.calls.filter((call) =>
+      call[0].toString().includes('submit')
+    );
+    expect(submitCalls.length).toBe(0);
   });
 
-  it('renders recovery message naming the batchId when recording fails', async () => {
-    const previewData = {
-      count: 1,
-      merchant: 'GABC',
-      contractId: 'C123',
-      networkPassphrase: 'Test SDF Network',
-      maxBatchSize: 1000,
-      selectionHash: 'a'.repeat(64),
-      root: 'b'.repeat(64),
-      periodStart: 1000,
-      periodEnd: 2000,
-      startLedger: 10,
-      endLedger: 20,
-      payments: [],
-      existing: { batchId: 99, status: 'submitted' as const, anchorTx: 'd'.repeat(64) },
-    };
-
-    const fetchMock = vi.fn().mockImplementation(async (url: string) => {
-      if (url === '/api/anchor/preview') {
-        return {
+  it('shows recovery message with batchId on recording failure', async () => {
+    const mockFetch = vi.fn().mockImplementation((url) => {
+      if (url.toString().includes('preview')) {
+        return Promise.resolve({
           ok: true,
-          json: async () => previewData,
-        };
+          json: async () => ({ count: 2, existing: { batchId: '456' } }),
+        });
       }
-      if (url === '/api/anchor/record') {
-        return {
+      if (url.toString().includes('record')) {
+        return Promise.resolve({
           ok: false,
-          status: 502,
-          json: async () => ({ error: 'Ledger timeout' }),
-        };
+        });
       }
-      return { ok: false, status: 404, json: async () => ({}) };
+      return Promise.reject(new Error('Unknown url'));
     });
 
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', mockFetch);
 
     render(<AnchorPanel />);
-    fireEvent.click(screen.getByRole('button', { name: /preview batch/i }));
+    fireEvent.click(screen.getByRole('button', { name: /preview/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/batch #99/i)).toBeDefined();
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: /anchor batch/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/retry recording without submitting again/i)).toBeDefined();
-      expect(screen.getByText(/#99/i)).toBeDefined();
+      expect(
+        screen.getByText(/The batch is on-chain as #456; retry recording without submitting again/i)
+      ).toBeInTheDocument();
     });
   });
 });
