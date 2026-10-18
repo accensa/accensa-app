@@ -158,3 +158,4 @@ A reviewer evaluating the SCF RFP §5 adoption-strategy criterion should see:
   exercise x402 route attribution, not to become a store.
 - There is **no mock or simulated login** anywhere in this app — real SEP-10
   wallet authentication guards the dashboard, and nothing here touches it.
+
