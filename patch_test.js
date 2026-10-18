@@ -44,3 +44,5 @@ content = content.replace(/(import .*;\n)+/, (match) => {
 });
 
 fs.writeFileSync(path, content);
+
+
