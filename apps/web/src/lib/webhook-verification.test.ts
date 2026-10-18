@@ -5,8 +5,6 @@ import { signWebhookSignature, verifyWebhookSignature, WEBHOOK_SIGNATURE_HEADER,
 const SECRET = 'test-secret';
 const BODY = JSON.stringify({ event: 'payment.settled', tx_hash: 'a'.repeat(64) });
 
-signWebhookSignature;
-
 describe('webhook-verification', () => {
   it('accepts a valid signed body', () => {
     const sig = signWebhookSignature(BODY, SECRET);
