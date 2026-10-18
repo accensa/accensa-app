@@ -127,7 +127,7 @@ what changed, read the corresponding migration file for the full rationale.
 | `DATABASE_URL`     | Yes      | PostgreSQL connection string (see format above)                                 |
 | `MERCHANT_ADDRESS` | Yes      | Stellar public key of the merchant to index payments for                        |
 | `STELLAR_RPC_URL`  | Yes      | Soroban RPC endpoint (testnet: `https://soroban-testnet.stellar.org`)           |
-| `HOOK_API_KEY`     | No*      | Shared secret for `POST /api/hook/settle`. Required for route-level attribution |
+| `ACCENSA_PRIVATE_KEY_HEX`     | No*      | Shared secret for `POST /api/hook/settle`. Required for route-level attribution |
 | `CRON_SECRET`      | No       | Bearer token protecting the cron-triggered `GET /api/sync` endpoint             |
 
 All variables go in `apps/web/.env.local`.
