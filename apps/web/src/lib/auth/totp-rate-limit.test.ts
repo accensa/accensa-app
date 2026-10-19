@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  checkTotpRateLimit,
+  resetTotpRateLimitForTests,
+  TOTP_MAX_ATTEMPTS,
+  TOTP_WINDOW_SECONDS,
+} from './totp-rate-limit';
 
 describe('totp-rate-limit memory and fallback behavior', () => {
   const originalEnv = {
@@ -10,7 +16,7 @@ describe('totp-rate-limit memory and fallback behavior', () => {
     vi.useFakeTimers();
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    vi.resetModules();
+    resetTotpRateLimitForTests();
   });
 
   afterEach(() => {
@@ -29,12 +35,6 @@ describe('totp-rate-limit memory and fallback behavior', () => {
   });
 
   it('succeeds up to TOTP_MAX_ATTEMPTS and decreases remaining, then blocks on cap', async () => {
-    const {
-      checkTotpRateLimit,
-      resetTotpRateLimitForTests,
-      TOTP_MAX_ATTEMPTS,
-    } = await import('./totp-rate-limit');
-
     resetTotpRateLimitForTests();
 
     const merchantId = 301;
@@ -51,13 +51,6 @@ describe('totp-rate-limit memory and fallback behavior', () => {
   });
 
   it('resets counter after advancing fake time past the rate limit window', async () => {
-    const {
-      checkTotpRateLimit,
-      resetTotpRateLimitForTests,
-      TOTP_MAX_ATTEMPTS,
-      TOTP_WINDOW_SECONDS,
-    } = await import('./totp-rate-limit');
-
     resetTotpRateLimitForTests();
 
     const merchantId = 302;
@@ -77,12 +70,6 @@ describe('totp-rate-limit memory and fallback behavior', () => {
   });
 
   it('maintains independent windows for different merchant ids', async () => {
-    const {
-      checkTotpRateLimit,
-      resetTotpRateLimitForTests,
-      TOTP_MAX_ATTEMPTS,
-    } = await import('./totp-rate-limit');
-
     resetTotpRateLimitForTests();
 
     const merchantA = 303;
