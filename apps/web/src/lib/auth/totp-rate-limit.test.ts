@@ -7,10 +7,12 @@ import {
 } from './totp-rate-limit';
 
 describe('TOTP Rate Limiter', () => {
-  const merchantId = 'merchant-test-1';
-  const otherMerchantId = 'merchant-test-2';
+  const merchantId = 301;
+  const otherMerchantId = 302;
 
   beforeEach(() => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
     resetTotpRateLimitForTests();
     vi.useFakeTimers();
     vi.setSystemTime(1000000);
@@ -44,8 +46,8 @@ describe('TOTP Rate Limiter', () => {
     }
     expect((await checkTotpRateLimit(merchantId)).success).toBe(false);
 
-    // Advance past the window
-    vi.advanceTimersByTime((TOTP_WINDOW_SECONDS + 1) * 1000);
+    // Advance time just past the rate limit window
+    vi.advanceTimersByTime(TOTP_WINDOW_SECONDS * 1000 + 1000);
 
     const afterWindow = await checkTotpRateLimit(merchantId);
     expect(afterWindow.success).toBe(true);
@@ -73,7 +75,7 @@ describe('TOTP Rate Limiter', () => {
       const rateLimitModule = await import('./totp-rate-limit');
       rateLimitModule.resetTotpRateLimitForTests();
 
-      const result = await rateLimitModule.checkTotpRateLimit('fallback-merchant');
+      const result = await rateLimitModule.checkTotpRateLimit(303);
       expect(result.success).toBe(true);
       expect(result.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
     } finally {
