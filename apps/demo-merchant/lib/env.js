@@ -153,7 +153,9 @@ export function boot(loader) {
 export function loadServerEnv() {
   const privateKeyHex = readEnv('ACCENSA_PRIVATE_KEY_HEX');
   if (privateKeyHex === undefined) {
-    console.warn('⚠️  ACCENSA_PRIVATE_KEY_HEX is not set; settlement attribution reports will be skipped.');
+    console.warn(
+      '⚠️  ACCENSA_PRIVATE_KEY_HEX is not set; settlement attribution reports will be skipped.',
+    );
   }
   const webhookSecret = readEnv('WEBHOOK_SECRET');
   console.log(
