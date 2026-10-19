@@ -1,26 +1,33 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  checkTotpRateLimit,
-  resetTotpRateLimitForTests,
-  TOTP_MAX_ATTEMPTS,
-  TOTP_WINDOW_SECONDS,
-} from './totp-rate-limit';
 
 describe('TOTP Rate Limiter', () => {
   const merchantId = 301;
   const otherMerchantId = 302;
 
-  beforeEach(() => {
+  let checkTotpRateLimit: typeof import('./totp-rate-limit').checkTotpRateLimit;
+  let resetTotpRateLimitForTests: typeof import('./totp-rate-limit').resetTotpRateLimitForTests;
+  let TOTP_MAX_ATTEMPTS: typeof import('./totp-rate-limit').TOTP_MAX_ATTEMPTS;
+  let TOTP_WINDOW_SECONDS: typeof import('./totp-rate-limit').TOTP_WINDOW_SECONDS;
+
+  beforeEach(async () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    resetTotpRateLimitForTests();
+    vi.resetModules();
     vi.useFakeTimers();
     vi.setSystemTime(1000000);
+
+    const mod = await import('./totp-rate-limit');
+    checkTotpRateLimit = mod.checkTotpRateLimit;
+    resetTotpRateLimitForTests = mod.resetTotpRateLimitForTests;
+    TOTP_MAX_ATTEMPTS = mod.TOTP_MAX_ATTEMPTS;
+    TOTP_WINDOW_SECONDS = mod.TOTP_WINDOW_SECONDS;
+    resetTotpRateLimitForTests();
   });
 
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   it('allows up to TOTP_MAX_ATTEMPTS and decrements remaining', async () => {
