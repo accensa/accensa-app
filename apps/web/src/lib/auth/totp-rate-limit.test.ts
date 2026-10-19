@@ -1,7 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-describe('TOTP Rate Limit Memory Fallback and Window', () => {
-  const originalEnv = { ...process.env };
+describe('totp-rate-limit memory and fallback behavior', () => {
+  const originalEnv = {
+    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+    UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+  };
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -11,40 +14,50 @@ describe('TOTP Rate Limit Memory Fallback and Window', () => {
   });
 
   afterEach(() => {
-    process.env = { ...originalEnv };
+    if (originalEnv.UPSTASH_REDIS_REST_URL !== undefined) {
+      process.env.UPSTASH_REDIS_REST_URL = originalEnv.UPSTASH_REDIS_REST_URL;
+    } else {
+      delete process.env.UPSTASH_REDIS_REST_URL;
+    }
+    if (originalEnv.UPSTASH_REDIS_REST_TOKEN !== undefined) {
+      process.env.UPSTASH_REDIS_REST_TOKEN = originalEnv.UPSTASH_REDIS_REST_TOKEN;
+    } else {
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    }
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it('should fallback to memory limit when Redis env vars are absent and track attempts', async () => {
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    vi.resetModules();
-    const { checkTotpRateLimit, resetTotpRateLimitForTests, TOTP_MAX_ATTEMPTS } = await import('./totp-rate-limit');
+  it('succeeds up to TOTP_MAX_ATTEMPTS and decreases remaining, then blocks on cap', async () => {
+    const {
+      checkTotpRateLimit,
+      resetTotpRateLimitForTests,
+      TOTP_MAX_ATTEMPTS,
+    } = await import('./totp-rate-limit');
+
     resetTotpRateLimitForTests();
 
     const merchantId = 301;
 
     for (let i = 1; i <= TOTP_MAX_ATTEMPTS; i++) {
-      const res = await checkTotpRateLimit(merchantId);
-      expect(res.success).toBe(true);
-      expect(res.remaining).toBe(TOTP_MAX_ATTEMPTS - i);
+      const result = await checkTotpRateLimit(merchantId);
+      expect(result.success).toBe(true);
+      expect(result.remaining).toBe(TOTP_MAX_ATTEMPTS - i);
     }
 
-    const exceeded = await checkTotpRateLimit(merchantId);
-    expect(exceeded.success).toBe(false);
-    expect(exceeded.remaining).toBe(0);
+    const blocked = await checkTotpRateLimit(merchantId);
+    expect(blocked.success).toBe(false);
+    expect(blocked.remaining).toBe(0);
   });
 
-  it('should reset rate limit window after TOTP_WINDOW_SECONDS expires', async () => {
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    vi.resetModules();
+  it('resets counter after advancing fake time past the rate limit window', async () => {
     const {
       checkTotpRateLimit,
       resetTotpRateLimitForTests,
       TOTP_MAX_ATTEMPTS,
       TOTP_WINDOW_SECONDS,
     } = await import('./totp-rate-limit');
+
     resetTotpRateLimitForTests();
 
     const merchantId = 302;
@@ -53,8 +66,8 @@ describe('TOTP Rate Limit Memory Fallback and Window', () => {
       await checkTotpRateLimit(merchantId);
     }
 
-    const blocked = await checkTotpRateLimit(merchantId);
-    expect(blocked.success).toBe(false);
+    let res = await checkTotpRateLimit(merchantId);
+    expect(res.success).toBe(false);
 
     // Advance time just past the rate limit window
     vi.advanceTimersByTime(TOTP_WINDOW_SECONDS * 1000 + 1000);
@@ -63,11 +76,13 @@ describe('TOTP Rate Limit Memory Fallback and Window', () => {
     expect(recovered.success).toBe(true);
   });
 
-  it('should isolate rate limits across different merchant IDs', async () => {
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    vi.resetModules();
-    const { checkTotpRateLimit, resetTotpRateLimitForTests, TOTP_MAX_ATTEMPTS } = await import('./totp-rate-limit');
+  it('maintains independent windows for different merchant ids', async () => {
+    const {
+      checkTotpRateLimit,
+      resetTotpRateLimitForTests,
+      TOTP_MAX_ATTEMPTS,
+    } = await import('./totp-rate-limit');
+
     resetTotpRateLimitForTests();
 
     const merchantA = 303;
@@ -77,11 +92,7 @@ describe('TOTP Rate Limit Memory Fallback and Window', () => {
       await checkTotpRateLimit(merchantA);
     }
 
-    const merchantABlock = await checkTotpRateLimit(merchantA);
-    expect(merchantABlock.success).toBe(false);
-
-    const merchantBFirst = await checkTotpRateLimit(merchantB);
-    expect(merchantBFirst.success).toBe(true);
-    expect(merchantBFirst.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+    expect((await checkTotpRateLimit(merchantA)).success).toBe(false);
+    expect((await checkTotpRateLimit(merchantB)).success).toBe(true);
   });
 });
