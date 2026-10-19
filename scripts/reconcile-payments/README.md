@@ -48,12 +48,12 @@ The CLI resolves its inputs as flag-then-environment: command-line flags take
 precedence over environment variables, which in turn take precedence over
 built-in defaults.
 
-| Environment variable     | Flag                   | Default                                                                 | Missing behavior                          |
-| ------------------------ | ---------------------- | ----------------------------------------------------------------------- | ----------------------------------------- |
-| `MERCHANT_ADDRESS`       | `--merchant`           | _(none)_                                                                | Required — exits with code 2 if absent    |
-| `STELLAR_RPC_URL`        | `--rpc-url`            | `https://soroban-testnet.stellar.org`                                   | Falls back to default testnet RPC         |
-| `ASSET_CONTRACT_IDS`     | `--asset-contract-ids` | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`              | Falls back to default asset contract ID   |
-| `DATABASE_URL`           | `--database-url`       | _(none)_                                                                | Optional — runs in rebuild-only mode      |
+| Environment variable | Flag                   | Default                                                    | Missing behavior                        |
+| -------------------- | ---------------------- | ---------------------------------------------------------- | --------------------------------------- |
+| `MERCHANT_ADDRESS`   | `--merchant`           | _(none)_                                                   | Required — exits with code 2 if absent  |
+| `STELLAR_RPC_URL`    | `--rpc-url`            | `https://soroban-testnet.stellar.org`                      | Falls back to default testnet RPC       |
+| `ASSET_CONTRACT_IDS` | `--asset-contract-ids` | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` | Falls back to default asset contract ID |
+| `DATABASE_URL`       | `--database-url`       | _(none)_                                                   | Optional — runs in rebuild-only mode    |
 
 > **Note on `ASSET_CONTRACT_IDS`**: the default value matches the web app's
 > default asset contract. If you are reconciling payments for a different asset
