@@ -23,7 +23,7 @@ describe('TOTP Rate Limit In-Memory Fallback (#536)', () => {
   });
 
   it('succeeds up to TOTP_MAX_ATTEMPTS and decrements remaining, then fails past the cap', async () => {
-    const merchantId = 'merchant-test-1';
+    const merchantId = 123;
 
     for (let i = 1; i <= TOTP_MAX_ATTEMPTS; i++) {
       const result = await checkTotpRateLimit(merchantId);
@@ -37,7 +37,7 @@ describe('TOTP Rate Limit In-Memory Fallback (#536)', () => {
   });
 
   it('resets the counter and succeeds again once the clock passes the window', async () => {
-    const merchantId = 'merchant-test-2';
+    const merchantId = 456;
 
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       const res = await checkTotpRateLimit(merchantId);
@@ -47,8 +47,7 @@ describe('TOTP Rate Limit In-Memory Fallback (#536)', () => {
     const blocked = await checkTotpRateLimit(merchantId);
     expect(blocked.success).toBe(false);
 
-    // Advance time past the 60s rate limit window
-    vi.advanceTimersByTime(61000);
+    vi.advanceTimersByTime(301000);
 
     const recovered = await checkTotpRateLimit(merchantId);
     expect(recovered.success).toBe(true);
@@ -56,10 +55,9 @@ describe('TOTP Rate Limit In-Memory Fallback (#536)', () => {
   });
 
   it('keeps independent windows for different merchant ids', async () => {
-    const merchantA = 'merchant-a';
-    const merchantB = 'merchant-b';
+    const merchantA = 789;
+    const merchantB = 999;
 
-    // Exhaust attempts for merchantA
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       await checkTotpRateLimit(merchantA);
     }
@@ -67,7 +65,6 @@ describe('TOTP Rate Limit In-Memory Fallback (#536)', () => {
     const blockedA = await checkTotpRateLimit(merchantA);
     expect(blockedA.success).toBe(false);
 
-    // merchantB should still succeed independently
     const successB = await checkTotpRateLimit(merchantB);
     expect(successB.success).toBe(true);
     expect(successB.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
