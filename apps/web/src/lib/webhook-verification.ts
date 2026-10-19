@@ -8,7 +8,11 @@ export const WEBHOOK_SIGNATURE_HEADER = 'x-webhook-signature';
 /**
  * Consumer wiring reference for outbound webhooks delivery.
  */
-export function verifyOutboundWebhookDelivery(body: string | Buffer, signature: string, secret: string): boolean {
+export function verifyOutboundWebhookDelivery(
+  body: string | Buffer,
+  signature: string,
+  secret: string,
+): boolean {
   return verifyWebhookSignature(body, signature, secret);
 }
 
@@ -18,7 +22,7 @@ export function verifyOutboundWebhookDelivery(body: string | Buffer, signature: 
 export function verifyWebhookSignature(
   bodyOrRequest: string | Buffer | Request,
   signatureOrSecret?: string | undefined | null,
-  secretParam?: string
+  secretParam?: string,
 ): boolean | Promise<boolean> {
   if (bodyOrRequest instanceof Request) {
     const request = bodyOrRequest;
@@ -49,7 +53,11 @@ export function verifyWebhookSignature(
   return verifySignatureInternal(body, signature, secret);
 }
 
-function verifySignatureInternal(body: string | Buffer, signature: string, secret: string): boolean {
+function verifySignatureInternal(
+  body: string | Buffer,
+  signature: string,
+  secret: string,
+): boolean {
   const trimmed = signature.trim();
   if (!trimmed || !/^[0-9a-f]{64}$/i.test(trimmed)) return false;
 
