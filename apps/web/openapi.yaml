@@ -70,7 +70,7 @@ paths:
           description: Settlement reporting is not configured on this deployment.
           content:
             application/json:
-              schema: 
+              schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
   /api/payments:
