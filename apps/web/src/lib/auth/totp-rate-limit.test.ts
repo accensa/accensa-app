@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  checkTotpRateLimit,
-  resetTotpRateLimitForTests,
-  TOTP_MAX_ATTEMPTS,
-  TOTP_WINDOW_SECONDS,
+import type {
+  checkTotpRateLimit as CheckTotpRateLimitFn,
+  resetTotpRateLimitForTests as ResetTotpRateLimitForTestsFn,
 } from './totp-rate-limit';
+import { TOTP_MAX_ATTEMPTS, TOTP_WINDOW_SECONDS } from './totp-rate-limit';
 
 describe('totp-rate-limit memory and fallback behavior', () => {
   const originalEnv = {
@@ -12,10 +11,17 @@ describe('totp-rate-limit memory and fallback behavior', () => {
     UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
   };
 
-  beforeEach(() => {
+  let checkTotpRateLimit: typeof CheckTotpRateLimitFn;
+  let resetTotpRateLimitForTests: typeof ResetTotpRateLimitForTestsFn;
+
+  beforeEach(async () => {
     vi.useFakeTimers();
+    vi.resetModules();
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    const mod = await import('./totp-rate-limit');
+    checkTotpRateLimit = mod.checkTotpRateLimit;
+    resetTotpRateLimitForTests = mod.resetTotpRateLimitForTests;
     resetTotpRateLimitForTests();
   });
 
