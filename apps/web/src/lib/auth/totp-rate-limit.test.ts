@@ -31,7 +31,7 @@ describe('TOTP Rate Limit (in-memory)', () => {
   });
 
   it('succeeds up to TOTP_MAX_ATTEMPTS and decrements remaining', async () => {
-    const merchantId = 'merchant-alpha';
+    const merchantId = 301;
     for (let i = 1; i <= TOTP_MAX_ATTEMPTS; i++) {
       const result = await checkTotpRateLimit(merchantId);
       expect(result.success).toBe(true);
@@ -40,7 +40,7 @@ describe('TOTP Rate Limit (in-memory)', () => {
   });
 
   it('returns success: false on the attempt past the cap without decrementing further', async () => {
-    const merchantId = 'merchant-beta';
+    const merchantId = 302;
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       await checkTotpRateLimit(merchantId);
     }
@@ -51,7 +51,7 @@ describe('TOTP Rate Limit (in-memory)', () => {
   });
 
   it('resets the counter once the clock passes the window duration', async () => {
-    const merchantId = 'merchant-gamma';
+    const merchantId = 305;
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       await checkTotpRateLimit(merchantId);
     }
@@ -59,7 +59,8 @@ describe('TOTP Rate Limit (in-memory)', () => {
     let blocked = await checkTotpRateLimit(merchantId);
     expect(blocked.success).toBe(false);
 
-    vi.advanceTimersByTime((TOTP_WINDOW_SECONDS + 1) * 1000);
+    // Advance time just past the rate limit window
+    vi.advanceTimersByTime(TOTP_WINDOW_SECONDS * 1000 + 1000);
 
     const recovered = await checkTotpRateLimit(merchantId);
     expect(recovered.success).toBe(true);
@@ -67,17 +68,17 @@ describe('TOTP Rate Limit (in-memory)', () => {
   });
 
   it('keeps independent windows for different merchant IDs', async () => {
-    const merchantOne = 'merchant-one';
-    const merchantTwo = 'merchant-two';
+    const merchantA = 303;
+    const merchantB = 304;
 
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
-      await checkTotpRateLimit(merchantOne);
+      await checkTotpRateLimit(merchantA);
     }
 
-    const resOne = await checkTotpRateLimit(merchantOne);
+    const resOne = await checkTotpRateLimit(merchantA);
     expect(resOne.success).toBe(false);
 
-    const resTwo = await checkTotpRateLimit(merchantTwo);
+    const resTwo = await checkTotpRateLimit(merchantB);
     expect(resTwo.success).toBe(true);
     expect(resTwo.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
   });
@@ -92,7 +93,7 @@ describe('TOTP Rate Limit (in-memory)', () => {
     );
     freshReset();
 
-    const merchantId = 'merchant-fallback';
+    const merchantId = 306;
     const result = await freshCheck(merchantId);
     expect(result.success).toBe(true);
     expect(result.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
