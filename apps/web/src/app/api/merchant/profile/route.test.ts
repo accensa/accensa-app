@@ -157,9 +157,7 @@ describe('/api/merchant/profile PATCH', () => {
 
     expect(res.status).toBe(403);
     const data = await res.json();
-    expect(data.error).toBe(
-      'Forbidden: viewer sessions cannot modify merchant settings',
-    );
+    expect(data.error).toBe('Forbidden: viewer sessions cannot modify merchant settings');
     expect(mockUpdateMerchantProfile).not.toHaveBeenCalled();
     expect(mockRecordMerchantConfigChange).not.toHaveBeenCalled();
   });

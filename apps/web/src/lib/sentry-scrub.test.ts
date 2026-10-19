@@ -133,9 +133,7 @@ describe('sentry-scrub Stellar PII scrubber (#623)', () => {
     // Longer base32 run: G followed by 56 characters. Pattern matches first 56 chars (G + 55).
     const longerAddress = 'G' + 'B'.repeat(56);
     const eventLonger = { message: longerAddress } as unknown as ErrorEvent;
-    expect(scrubStellarPii(eventLonger).message).toBe(
-      `${REDACTED_ADDRESS_MARKER}B`,
-    );
+    expect(scrubStellarPii(eventLonger).message).toBe(`${REDACTED_ADDRESS_MARKER}B`);
   });
 
   it('preserves the exact marker text [REDACTED-ADDRESS]', () => {
@@ -229,28 +227,16 @@ describe('sentry-scrub Stellar PII scrubber (#623)', () => {
     const serverScrubbed = serverOptions.beforeSend(createDirtyEvent());
     const edgeScrubbed = edgeOptions.beforeSend(createDirtyEvent());
 
-    expect(clientScrubbed.request?.url).toBe(
-      `https://test.local/${REDACTED_ADDRESS_MARKER}`,
-    );
-    expect(serverScrubbed.request?.url).toBe(
-      `https://test.local/${REDACTED_ADDRESS_MARKER}`,
-    );
-    expect(edgeScrubbed.request?.url).toBe(
-      `https://test.local/${REDACTED_ADDRESS_MARKER}`,
-    );
+    expect(clientScrubbed.request?.url).toBe(`https://test.local/${REDACTED_ADDRESS_MARKER}`);
+    expect(serverScrubbed.request?.url).toBe(`https://test.local/${REDACTED_ADDRESS_MARKER}`);
+    expect(edgeScrubbed.request?.url).toBe(`https://test.local/${REDACTED_ADDRESS_MARKER}`);
 
     expect(clientScrubbed.message).toBe(`Error from ${REDACTED_ADDRESS_MARKER}`);
     expect(serverScrubbed.message).toBe(`Error from ${REDACTED_ADDRESS_MARKER}`);
     expect(edgeScrubbed.message).toBe(`Error from ${REDACTED_ADDRESS_MARKER}`);
 
-    expect(clientScrubbed.breadcrumbs?.[0]?.message).toBe(
-      `Breadcrumb ${REDACTED_ADDRESS_MARKER}`,
-    );
-    expect(serverScrubbed.breadcrumbs?.[0]?.message).toBe(
-      `Breadcrumb ${REDACTED_ADDRESS_MARKER}`,
-    );
-    expect(edgeScrubbed.breadcrumbs?.[0]?.message).toBe(
-      `Breadcrumb ${REDACTED_ADDRESS_MARKER}`,
-    );
+    expect(clientScrubbed.breadcrumbs?.[0]?.message).toBe(`Breadcrumb ${REDACTED_ADDRESS_MARKER}`);
+    expect(serverScrubbed.breadcrumbs?.[0]?.message).toBe(`Breadcrumb ${REDACTED_ADDRESS_MARKER}`);
+    expect(edgeScrubbed.breadcrumbs?.[0]?.message).toBe(`Breadcrumb ${REDACTED_ADDRESS_MARKER}`);
   });
 });

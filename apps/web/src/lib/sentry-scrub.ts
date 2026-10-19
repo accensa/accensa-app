@@ -117,10 +117,7 @@ export function scrubStellarPii(event: ErrorEvent): ErrorEvent {
 
     // 2. Scrub event message
     if (typeof event.message === 'string') {
-      event.message = event.message.replace(
-        STELLAR_ADDRESS_PATTERN,
-        REDACTED_ADDRESS_MARKER,
-      );
+      event.message = event.message.replace(STELLAR_ADDRESS_PATTERN, REDACTED_ADDRESS_MARKER);
     } else if (
       event.message &&
       typeof (event.message as { message?: unknown }).message === 'string'
@@ -134,10 +131,7 @@ export function scrubStellarPii(event: ErrorEvent): ErrorEvent {
     if (event.exception && Array.isArray(event.exception.values)) {
       for (const val of event.exception.values) {
         if (val && typeof val.value === 'string') {
-          val.value = val.value.replace(
-            STELLAR_ADDRESS_PATTERN,
-            REDACTED_ADDRESS_MARKER,
-          );
+          val.value = val.value.replace(STELLAR_ADDRESS_PATTERN, REDACTED_ADDRESS_MARKER);
         }
       }
     }

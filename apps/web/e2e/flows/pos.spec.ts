@@ -46,7 +46,9 @@ test.describe('POS terminal', () => {
     await expect(page.getByRole('button', { name: 'Pay' })).toBeVisible();
   });
 
-  test('enters an amount, submits it for payment, and resets for the next sale', async ({ page }) => {
+  test('enters an amount, submits it for payment, and resets for the next sale', async ({
+    page,
+  }) => {
     await openTerminal(page);
     await page.goto('/merchant/pos');
     await expect(page.getByText('Total Amount')).toBeVisible();
