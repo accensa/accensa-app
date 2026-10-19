@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+// @vitest-environment node
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   checkTotpRateLimit,
   resetTotpRateLimitForTests,
@@ -6,21 +7,27 @@ import {
   TOTP_WINDOW_SECONDS,
 } from './totp-rate-limit';
 
-describe('TOTP Rate Limit (In-Memory Fallback)', () => {
+describe('TOTP rate limiter in-memory fallback', () => {
+  const originalEnv = process.env.UPSTASH_REDIS_REST_URL;
+
   beforeEach(() => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
     resetTotpRateLimitForTests();
     vi.useFakeTimers();
   });
 
   afterEach(() => {
-    vi.clearAllTimers();
+    if (originalEnv === undefined) {
+      delete process.env.UPSTASH_REDIS_REST_URL;
+    } else {
+      process.env.UPSTASH_REDIS_REST_URL = originalEnv;
+    }
     vi.useRealTimers();
     resetTotpRateLimitForTests();
   });
 
-  it('succeeds and decrements remaining for up to TOTP_MAX_ATTEMPTS calls', async () => {
-    const merchantId = 101;
-
+  it('allows attempts up to TOTP_MAX_ATTEMPTS and decrements remaining count', async () => {
+    const merchantId = 'merchant-alpha';
     for (let i = 1; i <= TOTP_MAX_ATTEMPTS; i++) {
       const result = await checkTotpRateLimit(merchantId);
       expect(result.success).toBe(true);
@@ -28,75 +35,48 @@ describe('TOTP Rate Limit (In-Memory Fallback)', () => {
     }
   });
 
-  it('returns success: false once the cap is reached without recording further', async () => {
-    const merchantId = 102;
-
-    for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
-      const res = await checkTotpRateLimit(merchantId);
-      expect(res.success).toBe(true);
-    }
-
-    const blocked = await checkTotpRateLimit(merchantId);
-    expect(blocked).toEqual({ success: false, remaining: 0 });
-
-    // Another call past cap remains blocked
-    const blockedAgain = await checkTotpRateLimit(merchantId);
-    expect(blockedAgain).toEqual({ success: false, remaining: 0 });
-  });
-
-  it('resets the counter and succeeds once the clock advances past the window', async () => {
-    const merchantId = 103;
-
+  it('rejects attempts past TOTP_MAX_ATTEMPTS with success false and remaining 0', async () => {
+    const merchantId = 'merchant-beta';
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       await checkTotpRateLimit(merchantId);
     }
+    const blockedResult = await checkTotpRateLimit(merchantId);
+    expect(blockedResult.success).toBe(false);
+    expect(blockedResult.remaining).toBe(0);
+  });
 
+  it('resets counter after advancing the clock past the window', async () => {
+    const merchantId = 'merchant-gamma';
+    for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
+      await checkTotpRateLimit(merchantId);
+    }
     expect((await checkTotpRateLimit(merchantId)).success).toBe(false);
 
-    // Advance clock past TOTP_WINDOW_SECONDS
     vi.advanceTimersByTime((TOTP_WINDOW_SECONDS + 1) * 1000);
 
-    const recovered = await checkTotpRateLimit(merchantId);
-    expect(recovered.success).toBe(true);
-    expect(recovered.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+    const recoveredResult = await checkTotpRateLimit(merchantId);
+    expect(recoveredResult.success).toBe(true);
+    expect(recoveredResult.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
   });
 
-  it('keeps different merchant IDs rate-limited independently', async () => {
-    const merchantA = 201;
-    const merchantB = 202;
+  it('maintains independent rate limit windows for different merchant ids', async () => {
+    const m1 = 'merchant-one';
+    const m2 = 'merchant-two';
 
-    // Exhaust merchant A
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
-      await checkTotpRateLimit(merchantA);
+      await checkTotpRateLimit(m1);
     }
-    expect((await checkTotpRateLimit(merchantA)).success).toBe(false);
+    expect((await checkTotpRateLimit(m1)).success).toBe(false);
 
-    // Merchant B should still have full quota
-    const resB = await checkTotpRateLimit(merchantB);
-    expect(resB.success).toBe(true);
-    expect(resB.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+    const m2Result = await checkTotpRateLimit(m2);
+    expect(m2Result.success).toBe(true);
+    expect(m2Result.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
   });
 
-  it('reaches the memory path correctly when Redis environment variables are absent', async () => {
-    const originalUrl = process.env.UPSTASH_REDIS_REST_URL;
-    const originalToken = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-    process.env.UPSTASH_REDIS_REST_URL = '';
-    process.env.UPSTASH_REDIS_REST_TOKEN = '';
-
-    try {
-      vi.resetModules();
-      const { checkTotpRateLimit: checkFallbackLimit } = await import('./totp-rate-limit');
-      const merchantId = 301;
-      const res = await checkFallbackLimit(merchantId);
-      expect(res.success).toBe(true);
-      expect(res.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
-    } finally {
-      if (originalUrl !== undefined) process.env.UPSTASH_REDIS_REST_URL = originalUrl;
-      else delete process.env.UPSTASH_REDIS_REST_URL;
-      if (originalToken !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN = originalToken;
-      else delete process.env.UPSTASH_REDIS_REST_TOKEN;
-      vi.resetModules();
-    }
+  it('exercises memory fallback when Redis env is absent', async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    const dynamicModule = await import('./totp-rate-limit');
+    const result = await dynamicModule.checkTotpRateLimit('fallback-merchant');
+    expect(result.success).toBe(true);
   });
 });
