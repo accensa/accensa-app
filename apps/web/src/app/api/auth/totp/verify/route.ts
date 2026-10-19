@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { withClient } from '@/lib/db';
-import { getMerchantFromRequest } from '@/lib/merchants';
+import { getMerchantByAddress } from '@/lib/merchants';
+import { sessionFromRequest } from '@/lib/auth/request-session';
 import {
   activateTotp,
   redeemBackupCode,
@@ -38,8 +39,20 @@ const CHALLENGE_TTL_MS = 2 * 60 * 1000;
  * valid. Backup codes are redeemed (single-use) inside the same call; a
  * `codeUsed: 'backup'` response tells the client that one recovery code is
  * now spent.
+ *
+ * `/api/auth` is in the proxy's public-path list (`src/proxy.ts`), so this
+ * route is never session-verified there and `x-accensa-merchant` /
+ * `x-accensa-role` are not overwritten — a caller can send anything. The
+ * merchant is therefore resolved from the verified `accensa_session` cookie
+ * itself; a request with no valid session is a 401 before any code is
+ * evaluated or any rate-limit state is touched.
  */
 export async function POST(request: Request) {
+  const session = await sessionFromRequest(request);
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   let body: { token?: unknown; activate?: unknown; disable?: unknown };
   try {
     body = await request.json();
@@ -55,7 +68,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const merchant = await withClient((client) => getMerchantFromRequest(client, request));
+  const merchant = await withClient((client) => getMerchantByAddress(client, session.publicKey));
   if (!merchant) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
