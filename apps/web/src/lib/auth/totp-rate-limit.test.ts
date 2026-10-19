@@ -92,8 +92,10 @@ describe('TOTP Rate Limit (In-Memory Fallback)', () => {
       expect(res.success).toBe(true);
       expect(res.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
     } finally {
-      if (originalUrl) process.env.UPSTASH_REDIS_REST_URL = originalUrl;
-      if (originalToken) process.env.UPSTASH_REDIS_REST_TOKEN = originalToken;
+      if (originalUrl !== undefined) process.env.UPSTASH_REDIS_REST_URL = originalUrl;
+      else delete process.env.UPSTASH_REDIS_REST_URL;
+      if (originalToken !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN = originalToken;
+      else delete process.env.UPSTASH_REDIS_REST_TOKEN;
       vi.resetModules();
     }
   });
