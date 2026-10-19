@@ -61,9 +61,7 @@ describe('desktopPush notifications and audio', () => {
       Reflect.deleteProperty(window, 'AudioContext');
       Reflect.deleteProperty(window, 'webkitAudioContext');
 
-      expect(() => playAudioAlert(440)).toThrow(
-        'Web Audio API is not supported in this browser',
-      );
+      expect(() => playAudioAlert(440)).toThrow('Web Audio API is not supported in this browser');
     });
 
     it('uses webkitAudioContext when AudioContext is absent', () => {
@@ -115,10 +113,7 @@ describe('desktopPush notifications and audio', () => {
         constructor: notificationCtor,
       });
 
-      triggerPaymentNotification(
-        { amount: '10.00 USDC', transactionId: 'tx-123' },
-        true,
-      );
+      triggerPaymentNotification({ amount: '10.00 USDC', transactionId: 'tx-123' }, true);
 
       expect(notificationCtor).not.toHaveBeenCalled();
     });
