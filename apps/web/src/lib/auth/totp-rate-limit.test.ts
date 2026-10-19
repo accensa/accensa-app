@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  checkTotpRateLimit,
   resetTotpRateLimitForTests,
   TOTP_MAX_ATTEMPTS,
   TOTP_WINDOW_SECONDS,
@@ -34,6 +33,9 @@ describe('TOTP Rate Limit (in-memory)', () => {
   });
 
   it('succeeds up to TOTP_MAX_ATTEMPTS and decrements remaining', async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    vi.resetModules();
     const { checkTotpRateLimit: check } = await import('./totp-rate-limit');
     const merchantId = 301;
     for (let i = 1; i <= TOTP_MAX_ATTEMPTS; i++) {
@@ -44,6 +46,9 @@ describe('TOTP Rate Limit (in-memory)', () => {
   });
 
   it('returns success: false on the attempt past the cap without decrementing further', async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    vi.resetModules();
     const { checkTotpRateLimit: check } = await import('./totp-rate-limit');
     const merchantId = 302;
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
@@ -56,13 +61,16 @@ describe('TOTP Rate Limit (in-memory)', () => {
   });
 
   it('resets the counter once the clock passes the window duration', async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    vi.resetModules();
     const { checkTotpRateLimit: check } = await import('./totp-rate-limit');
     const merchantId = 305;
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       await check(merchantId);
     }
 
-    let blocked = await check(merchantId);
+    const blocked = await check(merchantId);
     expect(blocked.success).toBe(false);
 
     // Advance time just past the rate limit window
@@ -74,6 +82,9 @@ describe('TOTP Rate Limit (in-memory)', () => {
   });
 
   it('keeps independent windows for different merchant IDs', async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    vi.resetModules();
     const { checkTotpRateLimit: check } = await import('./totp-rate-limit');
     const merchantA = 303;
     const merchantB = 304;
