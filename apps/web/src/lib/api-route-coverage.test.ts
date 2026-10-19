@@ -9,7 +9,7 @@ function filesBelow(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
     const path = resolve(directory, name);
     if (statSync(path).isDirectory()) {
-      if (['.git', '.next', 'coverage', 'node_modules'].includes(name)) return [];
+      if (['.git', '.next', 'coverage', 'node_modules', 'storybook-static', 'playwright-report', 'test-results', '.turbo'].includes(name)) return [];
       return filesBelow(path);
     }
     return [path];
@@ -29,16 +29,19 @@ function registeredRoutes(): string[] {
   const routes: string[] = [];
   const appApiRoot = resolve(sourceRoot, 'app/api');
   for (const file of filesBelow(appApiRoot)) {
-    if (!/\/route\.(ts|tsx)$/.test(file)) continue;
+    if (!/[\\/]route\.(ts|tsx)$/.test(file)) continue;
     const route = relative(appApiRoot, file)
       .replaceAll(sep, '/')
-      .replace(/\/route\.(ts|tsx)$/, '')
+      .replace(/[\\/]route\.(ts|tsx)$/, '')
       .split('/')
-      .map((segment) =>
-        segment.replace(/^\[\.\.\.([^\]]+)\]$/, ':$1*').replace(/^\[([^\]]+)\]$/, ':$1'),
+      .filter((segment) => !/^\(.*\)$/.test(segment))
+      .map(
+        (segment) =>
+          segment
+            .replace(/^\{^\.\.\.([^\]]+)\]$/, ':$1*')
+            .replace(/^\[([^\]]+)\]$/, ':$1'),
       )
       .join('/');
-    routes.push(normalizeRoute(`/api/${route}`));
   }
 
   const pagesApiRoot = resolve(sourceRoot, 'pages/api');
@@ -47,18 +50,21 @@ function registeredRoutes(): string[] {
     const route = relative(pagesApiRoot, file)
       .replaceAll(sep, '/')
       .replace(/\.(ts|tsx|js|jsx)$/, '')
+      .replace(/\/index$/, '')
       .split('/')
-      .map((segment) =>
-        segment.replace(/^\[\.\.\.([^\]]+)\]$/, ':$1*').replace(/^\[([^\]]+)\]$/, ':$1'),
+      .map(
+        (segment) =>
+          segment
+            .replace(/^\{^\.\.\.([^\]]+)\]$/, ':$1*')
+            .replace(/^\[([^\]]+)\]$/, ':$1'),
       )
       .join('/');
-    routes.push(normalizeRoute(`/api/${route}`));
   }
   return routes;
 }
 
 function clientApiTargets(): Array<{ file: string; target: string }> {
-  return filesBelow(webRoot)
+  return filesBelow(sourceRoot)
     .filter((file) => /\.(ts|tsx|js|jsx)$/.test(file))
     .filter((file) => !file.includes(`${sep}src${sep}app${sep}api${sep}`))
     .filter((file) => !file.includes(`${sep}src${sep}pages${sep}api${sep}`))
