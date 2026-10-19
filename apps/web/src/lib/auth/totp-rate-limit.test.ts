@@ -27,7 +27,7 @@ describe('TOTP rate limiter in-memory fallback', () => {
   });
 
   it('allows attempts up to TOTP_MAX_ATTEMPTS and decrements remaining count', async () => {
-    const merchantId = 'merchant-alpha';
+    const merchantId = 123;
     for (let i = 1; i <= TOTP_MAX_ATTEMPTS; i++) {
       const result = await checkTotpRateLimit(merchantId);
       expect(result.success).toBe(true);
@@ -36,7 +36,7 @@ describe('TOTP rate limiter in-memory fallback', () => {
   });
 
   it('rejects attempts past TOTP_MAX_ATTEMPTS with success false and remaining 0', async () => {
-    const merchantId = 'merchant-beta';
+    const merchantId = 456;
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       await checkTotpRateLimit(merchantId);
     }
@@ -46,7 +46,7 @@ describe('TOTP rate limiter in-memory fallback', () => {
   });
 
   it('resets counter after advancing the clock past the window', async () => {
-    const merchantId = 'merchant-gamma';
+    const merchantId = 789;
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       await checkTotpRateLimit(merchantId);
     }
@@ -60,8 +60,8 @@ describe('TOTP rate limiter in-memory fallback', () => {
   });
 
   it('maintains independent rate limit windows for different merchant ids', async () => {
-    const m1 = 'merchant-one';
-    const m2 = 'merchant-two';
+    const m1 = 111;
+    const m2 = 222;
 
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       await checkTotpRateLimit(m1);
@@ -75,8 +75,7 @@ describe('TOTP rate limiter in-memory fallback', () => {
 
   it('exercises memory fallback when Redis env is absent', async () => {
     delete process.env.UPSTASH_REDIS_REST_URL;
-    const dynamicModule = await import('./totp-rate-limit');
-    const result = await dynamicModule.checkTotpRateLimit('fallback-merchant');
+    const result = await checkTotpRateLimit(999);
     expect(result.success).toBe(true);
   });
 });
