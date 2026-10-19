@@ -6,43 +6,33 @@ import {
   TOTP_WINDOW_SECONDS,
 } from './totp-rate-limit';
 
-describe('TOTP Rate Limit (in-memory)', () => {
-  const originalUpstashUrl = process.env.UPSTASH_REDIS_REST_URL;
-  const originalUpstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+describe('TOTP Rate Limit In-Memory & Fallback', () => {
+  const originalEnv = process.env.UPSTASH_REDIS_REST_URL;
 
   beforeEach(() => {
     vi.useFakeTimers();
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
     resetTotpRateLimitForTests();
   });
 
   afterEach(() => {
-    vi.useRealTimers();
-    resetTotpRateLimitForTests();
-    if (originalUpstashUrl === undefined) {
+    if (originalEnv !== undefined) {
+      process.env.UPSTASH_REDIS_REST_URL = originalEnv;
+    } else {
       delete process.env.UPSTASH_REDIS_REST_URL;
-    } else {
-      process.env.UPSTASH_REDIS_REST_URL = originalUpstashUrl;
     }
-    if (originalUpstashToken === undefined) {
-      delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    } else {
-      process.env.UPSTASH_REDIS_REST_TOKEN = originalUpstashToken;
-    }
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('succeeds up to TOTP_MAX_ATTEMPTS and decrements remaining', async () => {
     const merchantId = 301;
+
     for (let i = 1; i <= TOTP_MAX_ATTEMPTS; i++) {
       const result = await checkTotpRateLimit(merchantId);
       expect(result.success).toBe(true);
       expect(result.remaining).toBe(TOTP_MAX_ATTEMPTS - i);
-    }
-  });
-
-  it('returns success: false on the attempt past the cap without decrementing further', async () => {
-    const merchantId = 302;
-    for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
-      await checkTotpRateLimit(merchantId);
     }
 
     const blocked = await checkTotpRateLimit(merchantId);
@@ -50,13 +40,14 @@ describe('TOTP Rate Limit (in-memory)', () => {
     expect(blocked.remaining).toBe(0);
   });
 
-  it('resets the counter once the clock passes the window duration', async () => {
-    const merchantId = 305;
+  it('resets counter after advancing the clock past the window', async () => {
+    const merchantId = 302;
+
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
       await checkTotpRateLimit(merchantId);
     }
 
-    let blocked = await checkTotpRateLimit(merchantId);
+    const blocked = await checkTotpRateLimit(merchantId);
     expect(blocked.success).toBe(false);
 
     // Advance time just past the rate limit window
@@ -75,28 +66,27 @@ describe('TOTP Rate Limit (in-memory)', () => {
       await checkTotpRateLimit(merchantA);
     }
 
-    const resOne = await checkTotpRateLimit(merchantA);
-    expect(resOne.success).toBe(false);
+    const blockedA = await checkTotpRateLimit(merchantA);
+    expect(blockedA.success).toBe(false);
 
-    const resTwo = await checkTotpRateLimit(merchantB);
-    expect(resTwo.success).toBe(true);
-    expect(resTwo.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+    const successB = await checkTotpRateLimit(merchantB);
+    expect(successB.success).toBe(true);
+    expect(successB.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
   });
 
-  it('falls back to the memory path when Redis is not configured', async () => {
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  it('allows explicit reset via resetTotpRateLimitForTests', async () => {
+    const merchantId = 305;
 
-    vi.resetModules();
-    const {
-      checkTotpRateLimit: freshCheck,
-      resetTotpRateLimitForTests: freshReset,
-    } = await import('./totp-rate-limit');
-    freshReset();
+    for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
+      await checkTotpRateLimit(merchantId);
+    }
 
-    const merchantId = 306;
-    const result = await freshCheck(merchantId);
-    expect(result.success).toBe(true);
-    expect(result.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+    expect((await checkTotpRateLimit(merchantId)).success).toBe(false);
+
+    resetTotpRateLimitForTests();
+
+    const afterReset = await checkTotpRateLimit(merchantId);
+    expect(afterReset.success).toBe(true);
+    expect(afterReset.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
   });
 });
