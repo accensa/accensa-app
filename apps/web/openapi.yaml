@@ -61,7 +61,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Missing or invalid signature.
+          description: >-
+            Missing or invalid signature; a valid signature whose signed
+            `reported_at` falls outside the accepted five-minute window
+            (codes `report_too_old` / `report_future_dated`); or a signature
+            that has already been consumed (code `report_replayed`). Error
+            bodies for these carry a machine-readable `code` alongside
+            `error`.
           content:
             application/json:
               schema:

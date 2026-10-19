@@ -540,6 +540,25 @@ async function ensureMultiMerchantSchema(client: Client): Promise<void> {
     `ALTER TABLE challenge_nonces ADD COLUMN IF NOT EXISTS merchant_id INT REFERENCES merchants(id);`,
   );
 
+  // Single-use nonces for /api/hook/settle: one row per accepted signature,
+  // so a captured settlement report can be presented exactly once. The PK on
+  // `nonce` is the whole defence — `INSERT ... ON CONFLICT DO NOTHING` is the
+  // atomic "claim it or discover it was already claimed" step, backed by the
+  // database rather than process memory, so it survives restarts and holds
+  // across concurrent requests and parallel deployments. Created here rather
+  // than beside `challenge_nonces` in `ensureSchema` because the FK to
+  // `merchants` cannot be declared before that table exists.
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS settle_nonces (
+      nonce VARCHAR(128) PRIMARY KEY,
+      merchant_id INT NOT NULL REFERENCES merchants(id),
+      first_seen TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+  await client.query(
+    `CREATE INDEX IF NOT EXISTS idx_settle_nonces_first_seen ON settle_nonces(first_seen);`,
+  );
+
   // Defence in depth: even the role this app connects as (the table owner,
   // which Postgres RLS normally exempts) is bound by these policies because
   // they are FORCEd, not merely ENABLEd. A query that omits its own
@@ -766,4 +785,53 @@ export async function sweepExpiredNonces(
         OR issued_at < now() - interval '1 millisecond' * $1`,
     [maxAgeMs],
   );
+}
+
+/**
+ * How long a consumed settlement-report nonce is remembered before the
+ * opportunistic sweep in {@link consumeSettlementNonce} drops it.
+ *
+ * Must comfortably exceed the accepted report window (five minutes by
+ * default) — a nonce that expired while its signed body could still pass the
+ * window check would quietly re-open the replay it exists to close. 30 days
+ * also covers the pre-2027 transition, where a legacy report carries no
+ * `reported_at` at all and this nonce is the only thing making it single-use.
+ * Once `reported_at` becomes mandatory (2027-01-01, see
+ * settlement-report.ts) every accepted body is at most five minutes old and
+ * the window alone bounds replay eligibility.
+ */
+export const SETTLE_NONCE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Claims a settlement report's signature so the signed body is acceptable
+ * exactly once.
+ *
+ * The nonce is the signature itself: one Ed25519 signature verifies one exact
+ * byte sequence, so "signature seen before" and "body replayed" are the same
+ * event. Returns true when the claim was fresh and the caller may proceed to
+ * record attribution; false means this signature has already been consumed
+ * and the caller must reject without writing anything.
+ *
+ * Safe to call inside the caller's transaction: the `ON CONFLICT` insert is
+ * atomic, and a caller that rolls back its attribution write releases the
+ * claim with it, so an SDK retry of a report that hit a transient error is
+ * not mistaken for a replay. Rows older than {@link SETTLE_NONCE_RETENTION_MS}
+ * are swept opportunistically here, keeping the table bounded without a
+ * scheduled job.
+ */
+export async function consumeSettlementNonce(
+  client: Client,
+  nonce: string,
+  merchantId: number,
+): Promise<boolean> {
+  await client.query(
+    `DELETE FROM settle_nonces WHERE first_seen < now() - interval '1 millisecond' * $1`,
+    [SETTLE_NONCE_RETENTION_MS],
+  );
+  const result = await client.query(
+    `INSERT INTO settle_nonces (nonce, merchant_id) VALUES ($1, $2)
+     ON CONFLICT (nonce) DO NOTHING`,
+    [nonce, merchantId],
+  );
+  return (result.rowCount ?? 0) > 0;
 }
