@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   REFUND_ERRORS,
   describeRefundError,
@@ -76,6 +76,13 @@ describe('describeRefundError', () => {
 
 describe('Refund vault contract ID resolver (#625)', () => {
   const originalEnv = process.env.NEXT_PUBLIC_REFUND_VAULT_ID;
+
+  // REFUND_VAULT_ID is a module-level constant evaluated once per module
+  // instance, so each case must re-import a fresh copy after setting the env
+  // var — a cached import would keep the first evaluation's value.
+  beforeEach(() => {
+    vi.resetModules();
+  });
 
   afterEach(() => {
     if (originalEnv === undefined) {

@@ -45,7 +45,10 @@ const post = (opts: { cookie?: string; headers?: Record<string, string> } = {}) 
   POST(
     new Request('http://localhost/api/auth/totp/generate', {
       method: 'POST',
-      headers: { ...(opts.cookie ? { cookie: `accensa_session=${opts.cookie}` } : {}), ...opts.headers },
+      headers: {
+        ...(opts.cookie ? { cookie: `accensa_session=${opts.cookie}` } : {}),
+        ...opts.headers,
+      },
     }),
   );
 

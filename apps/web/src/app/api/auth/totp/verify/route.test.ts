@@ -55,7 +55,10 @@ const post = (body: unknown, opts: { cookie?: string; headers?: Record<string, s
   POST(
     new Request('http://localhost/api/auth/totp/verify', {
       method: 'POST',
-      headers: { ...(opts.cookie ? { cookie: `accensa_session=${opts.cookie}` } : {}), ...opts.headers },
+      headers: {
+        ...(opts.cookie ? { cookie: `accensa_session=${opts.cookie}` } : {}),
+        ...opts.headers,
+      },
       body: JSON.stringify(body),
     }),
   );

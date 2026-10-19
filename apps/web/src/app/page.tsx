@@ -322,10 +322,7 @@ function ContractCard({ name, id }: { name: string; id?: string }) {
 
   if (!id) {
     return (
-      <div
-        data-testid={`contract-card-${name.toLowerCase()}`}
-        className={baseClassName}
-      >
+      <div data-testid={`contract-card-${name.toLowerCase()}`} className={baseClassName}>
         {content}
       </div>
     );

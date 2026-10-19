@@ -45,17 +45,19 @@ class MockIntersectionObserver implements IntersectionObserver {
     return [];
   }
 
-  simulateEntry(entry: Partial<IntersectionObserverEntry> & { isIntersecting: boolean; target?: Element }) {
+  simulateEntry(
+    entry: Partial<IntersectionObserverEntry> & { isIntersecting: boolean; target?: Element },
+  ) {
     const target = entry.target ?? this.observeCalls[0];
     const constructedEntry = {
       time: Date.now(),
-      target,
-      isIntersecting: entry.isIntersecting,
-      intersectionRatio: entry.isIntersecting ? 1 : 0,
       boundingClientRect: {} as DOMRectReadOnly,
       intersectionRect: {} as DOMRectReadOnly,
       rootBounds: null,
       ...entry,
+      target,
+      isIntersecting: entry.isIntersecting,
+      intersectionRatio: entry.isIntersecting ? 1 : 0,
     } as IntersectionObserverEntry;
 
     act(() => {
@@ -70,9 +72,9 @@ describe('ScrollReveal', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     MockIntersectionObserver.instances = [];
-    originalIntersectionObserver = (globalThis as any).IntersectionObserver;
-    (globalThis as any).IntersectionObserver = MockIntersectionObserver;
-    (window as any).IntersectionObserver = MockIntersectionObserver;
+    originalIntersectionObserver = globalThis.IntersectionObserver;
+    globalThis.IntersectionObserver = MockIntersectionObserver;
+    window.IntersectionObserver = MockIntersectionObserver;
     delete document.documentElement.dataset.srReady;
   });
 
@@ -81,11 +83,11 @@ describe('ScrollReveal', () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     if (originalIntersectionObserver) {
-      (globalThis as any).IntersectionObserver = originalIntersectionObserver;
-      (window as any).IntersectionObserver = originalIntersectionObserver;
+      globalThis.IntersectionObserver = originalIntersectionObserver;
+      window.IntersectionObserver = originalIntersectionObserver;
     } else {
-      delete (globalThis as any).IntersectionObserver;
-      delete (window as any).IntersectionObserver;
+      Reflect.deleteProperty(globalThis, 'IntersectionObserver');
+      Reflect.deleteProperty(window, 'IntersectionObserver');
     }
     delete document.documentElement.dataset.srReady;
   });
@@ -248,8 +250,8 @@ describe('ScrollReveal', () => {
   });
 
   it('throws when IntersectionObserver is undefined in the environment, confirming lack of fallback handling', () => {
-    delete (globalThis as any).IntersectionObserver;
-    delete (window as any).IntersectionObserver;
+    Reflect.deleteProperty(globalThis, 'IntersectionObserver');
+    Reflect.deleteProperty(window, 'IntersectionObserver');
 
     expect(() => {
       render(

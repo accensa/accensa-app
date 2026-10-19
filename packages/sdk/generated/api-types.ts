@@ -73,7 +73,7 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Revenue grouped by attributed route and method.
+     * Revenue grouped by attributed route, method, and asset.
      * @description Session-authenticated; see apps/web/src/middleware.ts.
      */
     get: operations['listRouteRevenue'];
@@ -197,7 +197,9 @@ export interface components {
     };
     RouteRevenue: {
       route: string;
-      method: string;
+      method: string | null;
+      /** @description Canonical payment asset, with native used for legacy null assets. */
+      asset: string;
       total_revenue: string;
       calls: number;
     };
@@ -380,7 +382,11 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['RouteRevenue'][];
+          'application/json': {
+            routes: components['schemas']['RouteRevenue'][];
+            truncated: boolean;
+            default_window_days: number | null;
+          };
         };
       };
       /** @description Unauthorized. */

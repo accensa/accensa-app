@@ -81,7 +81,9 @@ test.describe('dispute flow', () => {
     await expect(page.getByText('No pending disputes in this window.')).toHaveCount(2);
   });
 
-  test('opens the dispute detail named by the route and shows that dispute id', async ({ page }) => {
+  test('opens the dispute detail named by the route and shows that dispute id', async ({
+    page,
+  }) => {
     await stubDisputeChat(page);
     await openDisputes(page);
 

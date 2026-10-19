@@ -31,9 +31,7 @@ describe('TotpSetupModal', () => {
     render(<TotpSetupModal isOpen={false} onClose={onClose} userEmail={defaultEmail} />);
 
     expect(screen.queryByRole('heading')).not.toBeInTheDocument();
-    expect(
-      screen.queryByText('Set up Two-Factor Authentication'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Set up Two-Factor Authentication')).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -95,18 +93,12 @@ describe('TotpSetupModal', () => {
     const verifyButton = screen.getByRole('button', { name: 'Verify' });
     fireEvent.click(verifyButton);
 
-    expect(
-      await screen.findByRole('heading', { name: 'Save Backup Codes' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Backup Codes' })).toBeInTheDocument();
     for (const code of generateData.backupCodes) {
       expect(screen.getByText(code)).toBeInTheDocument();
     }
-    expect(
-      screen.queryByText('Set up Two-Factor Authentication'),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'I have saved these codes' }),
-    ).toBeInTheDocument();
+    expect(screen.queryByText('Set up Two-Factor Authentication')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'I have saved these codes' })).toBeInTheDocument();
   });
 
   it('disables the verify button while verification is in flight (isVerifying)', async () => {
@@ -141,9 +133,7 @@ describe('TotpSetupModal', () => {
 
     // Resolve the in-flight request
     resolveVerify(new Response(JSON.stringify({ success: true }), { status: 200 }));
-    expect(
-      await screen.findByRole('heading', { name: 'Save Backup Codes' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Backup Codes' })).toBeInTheDocument();
   });
 
   it('dismisses the modal via Cancel button on step 1', async () => {

@@ -15,7 +15,7 @@ export const test = base.extend<WalletFixture>({
           getPublicKey: () =>
             Promise.resolve('GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF'),
           signTransaction: (xdr: string) => Promise.resolve('signed_' + xdr),
-          signAuthEntry: (_entry: string) => Promise.resolve(new Uint8Array([1, 2, 3])),
+          signAuthEntry: () => Promise.resolve(new Uint8Array([1, 2, 3])),
         };
       });
     });

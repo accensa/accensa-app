@@ -8,8 +8,7 @@ const { mockWithClient, mockWithMerchantClient, mockQuery, mockGetMerchantByAddr
     return {
       mockWithClient: vi.fn(async (work: (client: unknown) => Promise<unknown>) => work({})),
       mockWithMerchantClient: vi.fn(
-        async (_merchantId: number, work: (client: unknown) => Promise<unknown>) =>
-          work({ query }),
+        async (_merchantId: number, work: (client: unknown) => Promise<unknown>) => work({ query }),
       ),
       mockQuery: query,
       mockGetMerchantByAddress: vi.fn().mockResolvedValue({ id: 1, address: `G${'A'.repeat(55)}` }),
@@ -150,7 +149,12 @@ describe('GET /api/merchant/stores/consolidated', () => {
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      stores: Array<{ storeId: number; name: string; paymentCount: number; assets: Array<{ asset: string; volume: string }> }>;
+      stores: Array<{
+        storeId: number;
+        name: string;
+        paymentCount: number;
+        assets: Array<{ asset: string; volume: string }>;
+      }>;
       totals: { paymentCount: number; assets: Array<{ asset: string; volume: string }> };
     };
 
@@ -222,7 +226,12 @@ describe('GET /api/merchant/stores/consolidated', () => {
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      stores: Array<{ storeId: number; name: string; paymentCount: number; assets: Array<{ asset: string; volume: string }> }>;
+      stores: Array<{
+        storeId: number;
+        name: string;
+        paymentCount: number;
+        assets: Array<{ asset: string; volume: string }>;
+      }>;
       totals: { paymentCount: number; assets: Array<{ asset: string; volume: string }> };
     };
 
@@ -237,7 +246,9 @@ describe('GET /api/merchant/stores/consolidated', () => {
   });
 
   it('yields 500 with no leaked error message when a query rejects', async () => {
-    mockQuery.mockRejectedValueOnce(new Error('Internal database connection failed with secret_token_xyz'));
+    mockQuery.mockRejectedValueOnce(
+      new Error('Internal database connection failed with secret_token_xyz'),
+    );
 
     const response = await GET(
       new Request('https://accensa.test/api/merchant/stores/consolidated', {

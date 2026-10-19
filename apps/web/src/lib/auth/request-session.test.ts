@@ -4,10 +4,7 @@ import { sessionFromRequest } from './request-session';
 
 const TEST_SECRET = 'request-session-test-secret';
 
-async function mintCookie(
-  payload: Record<string, unknown>,
-  secret = TEST_SECRET,
-): Promise<string> {
+async function mintCookie(payload: Record<string, unknown>, secret = TEST_SECRET): Promise<string> {
   return await new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
