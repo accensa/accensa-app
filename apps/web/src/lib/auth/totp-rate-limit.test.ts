@@ -107,3 +107,4 @@ describe('TOTP Rate Limit (in-memory)', () => {
     expect(result.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
   });
 });
+
