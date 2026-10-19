@@ -81,8 +81,8 @@ describe('TOTP Rate Limit (In-Memory Fallback)', () => {
     const originalUrl = process.env.UPSTASH_REDIS_REST_URL;
     const originalToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    process.env.UPSTASH_REDIS_REST_URL = '';
+    process.env.UPSTASH_REDIS_REST_TOKEN = '';
 
     try {
       vi.resetModules();
