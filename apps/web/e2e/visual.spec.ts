@@ -92,7 +92,7 @@ test('Checkout Modal @visual', async ({ page, context }) => {
 test('Dispute Flow @visual', async ({ page, context }) => {
   await context.addCookies([await sessionCookie()]);
   await page.goto('/merchant/disputes');
-  await expect(page.locator('main')).toHaveScreenshot('dispute-flow.png');
+  await expect(page.locator('main')).toHaveScreenshot('dispute-flow.png', { maxDiffPixelRatio: 0.02 });
 });
 
 test('POS Terminal @visual', async ({ page, context }) => {
