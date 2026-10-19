@@ -34,9 +34,12 @@ describe('parseRetryAfter', () => {
     expect(parseRetryAfter(date, now)).toBe(Date.parse(date));
   });
 
-  it.each([null, undefined, '', '   ', 'not-a-date'])('returns null for an empty or invalid value (%s)', (header) => {
-    expect(parseRetryAfter(header, now)).toBeNull();
-  });
+  it.each([null, undefined, '', '   ', 'not-a-date'])(
+    'returns null for an empty or invalid value (%s)',
+    (header) => {
+      expect(parseRetryAfter(header, now)).toBeNull();
+    },
+  );
 
   it('returns null when reading the header throws', () => {
     const throwingHeader = {
