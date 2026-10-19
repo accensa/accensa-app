@@ -68,7 +68,7 @@ describe('AnchorPanel', () => {
 
     // Verify submit endpoint was NOT called separately since existing batchId was present
     const submitCalls = mockFetch.mock.calls.filter((call) =>
-      call[0].toString().includes('submit')
+      call[0].toString().includes('submit'),
     );
     expect(submitCalls.length).toBe(0);
   });
@@ -96,7 +96,9 @@ describe('AnchorPanel', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/The batch is on-chain as #456; retry recording without submitting again/i)
+        screen.getByText(
+          /The batch is on-chain as #456; retry recording without submitting again/i,
+        ),
       ).toBeInTheDocument();
     });
   });
