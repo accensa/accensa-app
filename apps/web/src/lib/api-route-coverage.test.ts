@@ -35,11 +35,10 @@ function registeredRoutes(): string[] {
       .replace(/[\\/]route\.(ts|tsx)$/, '')
       .split('/')
       .filter((segment) => !/^\(.*\)$/.test(segment))
-      .map(
-        (segment) =>
-          segment
-            .replace(/^\{^\.\.\.([^\]]+)\]$/, ':$1*')
-            .replace(/^\[([^\]]+)\]$/, ':$1'),
+      .map((segment) =>
+        segment
+          .replace(/^\{^\.\.\.([^\]]+)\]$/, ':$1*')
+          .replace(/^\[([^\]]+)\]$/, ':$1'),
       )
   }
 
@@ -51,11 +50,10 @@ function registeredRoutes(): string[] {
       .replace(/\.(ts|tsx|js|jsx)$/, '')
       .replace(/\/index$/, '')
       .split('/')
-      .map(
-        (segment) =>
-          segment
-            .replace(/^\{^\.\.\.([^\]]+)\]$/, ':$1*')
-            .replace(/^\[([^\]]+)\]$/, ':$1'),
+      .map((segment) =>
+        segment
+          .replace(/^\{^\.\.\.([^\]]+)\]$/, ':$1*')
+          .replace(/^\[([^\]]+)\]$/, ':$1'),
       )
   }
   return routes;
