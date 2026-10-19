@@ -32,14 +32,15 @@ function registeredRoutes(): string[] {
     if (!/[\\/]route\.(ts|tsx)$/.test(file)) continue;
     const route = relative(appApiRoot, file)
       .replaceAll(sep, '/')
-      .replace(/[\\/]route\.(ts|tsx)$/, '')
+      .replace(/[\/]route\.(ts|tsx)$/, '')
       .split('/')
-      .filter((segment) => !/^\(.*\)$/.test(segment))
-      .map(
-        (segment) => segment,
+      .filter(
+        (segment) => !/^\(.*\)$/.test(segment),
       )
+      .map((segment) => segment)
       .join('/');
     routes.push('/' + route);
+    routes.push(`/api/${route}`);
   }
 
   const pagesApiRoot = resolve(sourceRoot, 'pages/api');
@@ -55,6 +56,7 @@ function registeredRoutes(): string[] {
       )
       .join('/');
     routes.push('/' + route);
+    routes.push(`/api/${route}`);
   }
   return routes;
 }
