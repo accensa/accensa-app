@@ -88,9 +88,10 @@ describe('TOTP Rate Limit (in-memory)', () => {
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
 
     vi.resetModules();
-    const { checkTotpRateLimit: freshCheck, resetTotpRateLimitForTests: freshReset } = await import(
-      './totp-rate-limit'
-    );
+    const {
+      checkTotpRateLimit: freshCheck,
+      resetTotpRateLimitForTests: freshReset,
+    } = await import('./totp-rate-limit');
     freshReset();
 
     const merchantId = 306;
