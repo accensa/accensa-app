@@ -40,7 +40,6 @@ function registeredRoutes(): string[] {
           .replace(/^\{^\.\.\.([^\]]+)\]$/, ':$1*')
           .replace(/^\[([^\]]+)\]$/, ':$1'),
       )
-      .join('/');
   }
 
   const pagesApiRoot = resolve(sourceRoot, 'pages/api');
@@ -56,7 +55,6 @@ function registeredRoutes(): string[] {
           .replace(/^\{^\.\.\.([^\]]+)\]$/, ':$1*')
           .replace(/^\[([^\]]+)\]$/, ':$1'),
       )
-      .join('/');
   }
   return routes;
 }
