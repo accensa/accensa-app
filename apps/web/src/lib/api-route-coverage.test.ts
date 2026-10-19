@@ -35,7 +35,9 @@ function registeredRoutes(): string[] {
       .replace(/[\/]route\.(ts|tsx)$/, '')
       .split('/')
       .filter((segment) => !/^\(.*\)$/.test(segment))
-      .map((segment) => segment)
+      .map(
+        (segment) => segment,
+      )
       .join('/');
     routes.push('/' + route);
     routes.push(`/api/${route}`);
@@ -50,7 +52,9 @@ function registeredRoutes(): string[] {
       .replace(/\.(ts|tsx|js|jsx)$/, '')
       .replace(/\/index$/, '')
       .split('/')
-      .map((segment) => segment)
+      .map(
+        (segment) => segment,
+      )
       .join('/');
     routes.push('/' + route);
     routes.push(`/api/${route}`);
