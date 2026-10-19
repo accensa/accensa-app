@@ -51,7 +51,6 @@ function registeredRoutes(): string[] {
       .join('/');
     routes.push('/' + route);
     routes.push(`/api/${route}`);
-    routes.push(`/api/${route}`);
   }
 
   const pagesApiRoot = resolve(sourceRoot, 'pages/api');
@@ -61,11 +60,10 @@ function registeredRoutes(): string[] {
       .replaceAll(sep, '/')
       .replace(/\.(ts|tsx|js|jsx)$/, '')
       .replace(/\/index$/, '')
-      .split('/')
+      .filter((segment) => !/^\(.*\)$/.test(segment))
       .map((segment) => segment)
       .join('/');
     routes.push('/' + route);
-    routes.push(`/api/${route}`);
     routes.push(`/api/${route}`);
   }
   return routes;
