@@ -9,7 +9,19 @@ function filesBelow(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
     const path = resolve(directory, name);
     if (statSync(path).isDirectory()) {
-      if (['.git', '.next', 'coverage', 'node_modules', 'storybook-static', 'playwright-report', 'test-results', '.turbo'].includes(name)) return [];
+      if (
+        [
+          '.git',
+          '.next',
+          'coverage',
+          'node_modules',
+          'storybook-static',
+          'playwright-report',
+          'test-results',
+          '.turbo',
+        ].includes(name)
+      )
+        return [];
       return filesBelow(path);
     }
     return [path];
@@ -35,9 +47,7 @@ function registeredRoutes(): string[] {
       .replace(/[\/]route\.(ts|tsx)$/, '')
       .split('/')
       .filter((segment) => !/^\(.*\)$/.test(segment))
-      .map(
-        (segment) => segment,
-      )
+      .map((segment) => segment)
       .join('/');
     routes.push('/' + route);
     routes.push(`/api/${route}`);
@@ -52,9 +62,7 @@ function registeredRoutes(): string[] {
       .replace(/\.(ts|tsx|js|jsx)$/, '')
       .replace(/\/index$/, '')
       .split('/')
-      .map(
-        (segment) => segment,
-      )
+      .map((segment) => segment)
       .join('/');
     routes.push('/' + route);
     routes.push(`/api/${route}`);
