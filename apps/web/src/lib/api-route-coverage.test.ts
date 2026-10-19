@@ -41,6 +41,7 @@ function registeredRoutes(): string[] {
       .join('/');
     routes.push('/' + route);
     routes.push(`/api/${route}`);
+    routes.push(`/api/${route}`);
   }
 
   const pagesApiRoot = resolve(sourceRoot, 'pages/api');
@@ -56,6 +57,7 @@ function registeredRoutes(): string[] {
       )
       .join('/');
     routes.push('/' + route);
+    routes.push(`/api/${route}`);
     routes.push(`/api/${route}`);
   }
   return routes;
