@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 describe('TOTP Rate Limit Memory Fallback and Window', () => {
   const originalEnv = { ...process.env };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.useFakeTimers();
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -16,6 +16,9 @@ describe('TOTP Rate Limit Memory Fallback and Window', () => {
   });
 
   it('should fallback to memory limit when Redis env vars are absent and track attempts', async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    vi.resetModules();
     const { checkTotpRateLimit, resetTotpRateLimitForTests, TOTP_MAX_ATTEMPTS } = await import('./totp-rate-limit');
     resetTotpRateLimitForTests();
 
@@ -33,7 +36,15 @@ describe('TOTP Rate Limit Memory Fallback and Window', () => {
   });
 
   it('should reset rate limit window after TOTP_WINDOW_SECONDS expires', async () => {
-    const { checkTotpRateLimit, resetTotpRateLimitForTests, TOTP_MAX_ATTEMPTS, TOTP_WINDOW_SECONDS } = await import('./totp-rate-limit');
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    vi.resetModules();
+    const {
+      checkTotpRateLimit,
+      resetTotpRateLimitForTests,
+      TOTP_MAX_ATTEMPTS,
+      TOTP_WINDOW_SECONDS,
+    } = await import('./totp-rate-limit');
     resetTotpRateLimitForTests();
 
     const merchantId = 302;
@@ -45,7 +56,7 @@ describe('TOTP Rate Limit Memory Fallback and Window', () => {
     const blocked = await checkTotpRateLimit(merchantId);
     expect(blocked.success).toBe(false);
 
-    // Advance time past the rate limit window
+    // Advance time just past the rate limit window
     vi.advanceTimersByTime(TOTP_WINDOW_SECONDS * 1000 + 1000);
 
     const recovered = await checkTotpRateLimit(merchantId);
@@ -53,6 +64,9 @@ describe('TOTP Rate Limit Memory Fallback and Window', () => {
   });
 
   it('should isolate rate limits across different merchant IDs', async () => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    vi.resetModules();
     const { checkTotpRateLimit, resetTotpRateLimitForTests, TOTP_MAX_ATTEMPTS } = await import('./totp-rate-limit');
     resetTotpRateLimitForTests();
 
