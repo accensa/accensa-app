@@ -82,7 +82,9 @@ describe('Catalog API Handler [merchantId]', () => {
     delete process.env.DATABASE_URL;
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Catalog is unavailable' }));
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'Catalog is unavailable' }),
+    );
   });
 
   it('should return 403 when PUT is called with viewer role', async () => {
@@ -201,7 +203,10 @@ describe('Catalog API Handler [merchantId]', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ revalidated: true });
 
-    vi.mocked(revalidateCatalog).mockResolvedValueOnce({ revalidated: false, error: 'Error revalidating' });
+    vi.mocked(revalidateCatalog).mockResolvedValueOnce({
+      revalidated: false,
+      error: 'Error revalidating',
+    });
     await handler(req, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ revalidated: false, error: 'Error revalidating' });
@@ -214,7 +219,6 @@ describe('Catalog API Handler [merchantId]', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Method not allowed' }));
   });
 });
-
 
 function createMockReqRes(overrides: {
   method?: string;
