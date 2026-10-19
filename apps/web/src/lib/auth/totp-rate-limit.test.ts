@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   checkTotpRateLimit,
   resetTotpRateLimitForTests,
@@ -6,105 +6,80 @@ import {
   TOTP_WINDOW_SECONDS,
 } from './totp-rate-limit';
 
-describe('TOTP Rate Limit In-Memory Fallback (#536)', () => {
-  const originalRedisUrl = process.env.UPSTASH_REDIS_REST_URL;
-  const originalRedisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+describe('TOTP Rate Limiter', () => {
+  const merchantId = 'merchant-test-1';
+  const otherMerchantId = 'merchant-test-2';
 
   beforeEach(() => {
+    resetTotpRateLimitForTests();
     vi.useFakeTimers();
-    vi.resetModules();
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    vi.setSystemTime(1000000);
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    if (originalRedisUrl !== undefined) {
-      process.env.UPSTASH_REDIS_REST_URL = originalRedisUrl;
-    } else {
-      delete process.env.UPSTASH_REDIS_REST_URL;
-    }
-    if (originalRedisToken !== undefined) {
-      process.env.UPSTASH_REDIS_REST_TOKEN = originalRedisToken;
-    } else {
-      delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    }
+    vi.unstubAllEnvs();
   });
 
-  it('succeeds up to TOTP_MAX_ATTEMPTS and decrements remaining, then fails past the cap', async () => {
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    vi.resetModules();
-    const {
-      checkTotpRateLimit,
-      resetTotpRateLimitForTests,
-      TOTP_MAX_ATTEMPTS,
-    } = await import('./totp-rate-limit');
-    resetTotpRateLimitForTests();
-    const merchantId = 301;
-
+  it('allows up to TOTP_MAX_ATTEMPTS and decrements remaining', async () => {
     for (let i = 1; i <= TOTP_MAX_ATTEMPTS; i++) {
       const result = await checkTotpRateLimit(merchantId);
       expect(result.success).toBe(true);
       expect(result.remaining).toBe(TOTP_MAX_ATTEMPTS - i);
     }
-
-    const blockedResult = await checkTotpRateLimit(merchantId);
-    expect(blockedResult.success).toBe(false);
-    expect(blockedResult.remaining).toBe(0);
   });
 
-  it('resets the counter and succeeds again once the clock passes the window', async () => {
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    vi.resetModules();
-    const {
-      checkTotpRateLimit,
-      resetTotpRateLimitForTests,
-      TOTP_MAX_ATTEMPTS,
-      TOTP_WINDOW_SECONDS,
-    } = await import('./totp-rate-limit');
-    resetTotpRateLimitForTests();
-    const merchantId = 302;
-
+  it('returns success: false on the attempt past the cap', async () => {
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
-      const res = await checkTotpRateLimit(merchantId);
-      expect(res.success).toBe(true);
+      await checkTotpRateLimit(merchantId);
     }
-
     const blocked = await checkTotpRateLimit(merchantId);
     expect(blocked.success).toBe(false);
-
-    // Advance time just past the rate limit window
-    vi.advanceTimersByTime(TOTP_WINDOW_SECONDS * 1000 + 1000);
-
-    const recovered = await checkTotpRateLimit(merchantId);
-    expect(recovered.success).toBe(true);
-    expect(recovered.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+    expect(blocked.remaining).toBe(0);
   });
 
-  it('keeps independent windows for different merchant ids', async () => {
-    delete process.env.UPSTASH_REDIS_REST_URL;
-    delete process.env.UPSTASH_REDIS_REST_TOKEN;
-    vi.resetModules();
-    const {
-      checkTotpRateLimit,
-      resetTotpRateLimitForTests,
-      TOTP_MAX_ATTEMPTS,
-    } = await import('./totp-rate-limit');
-    resetTotpRateLimitForTests();
-    const merchantA = 303;
-    const merchantB = 304;
-
+  it('resets counter after advancing clock past the window', async () => {
     for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
-      await checkTotpRateLimit(merchantA);
+      await checkTotpRateLimit(merchantId);
     }
+    expect((await checkTotpRateLimit(merchantId)).success).toBe(false);
 
-    const blockedA = await checkTotpRateLimit(merchantA);
-    expect(blockedA.success).toBe(false);
+    // Advance past the window
+    vi.advanceTimersByTime((TOTP_WINDOW_SECONDS + 1) * 1000);
 
-    const successB = await checkTotpRateLimit(merchantB);
-    expect(successB.success).toBe(true);
-    expect(successB.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+    const afterWindow = await checkTotpRateLimit(merchantId);
+    expect(afterWindow.success).toBe(true);
+    expect(afterWindow.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+  });
+
+  it('maintains independent rate-limit windows per merchant id', async () => {
+    for (let i = 0; i < TOTP_MAX_ATTEMPTS; i++) {
+      await checkTotpRateLimit(merchantId);
+    }
+    expect((await checkTotpRateLimit(merchantId)).success).toBe(false);
+
+    const otherResult = await checkTotpRateLimit(otherMerchantId);
+    expect(otherResult.success).toBe(true);
+    expect(otherResult.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+  });
+
+  it('reaches the memory path when Redis environment is absent', async () => {
+    const originalUrl = process.env.UPSTASH_REDIS_REST_URL;
+    const originalToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+    try {
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+      vi.resetModules();
+      const rateLimitModule = await import('./totp-rate-limit');
+      rateLimitModule.resetTotpRateLimitForTests();
+
+      const result = await rateLimitModule.checkTotpRateLimit('fallback-merchant');
+      expect(result.success).toBe(true);
+      expect(result.remaining).toBe(TOTP_MAX_ATTEMPTS - 1);
+    } finally {
+      if (originalUrl !== undefined) process.env.UPSTASH_REDIS_REST_URL = originalUrl;
+      if (originalToken !== undefined) process.env.UPSTASH_REDIS_REST_TOKEN = originalToken;
+      vi.resetModules();
+    }
   });
 });
