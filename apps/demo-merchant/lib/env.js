@@ -1,6 +1,7 @@
 /**
  * Modular environment access for the demo merchant (issues #340 and #344).
  *
+ *
  * Before this module, each entrypoint read `process.env` inline with its own
  * mix of silent fallbacks and one-off checks — MERCHANT_ADDRESS quietly
  * became 'GAQW...REPLACE_WITH_REAL_ADDRESS' (a broken payment requirement
