@@ -71,3 +71,20 @@ pnpm e2e:trace    # record a trace; open it with: npx playwright show-trace
 The suite includes an automated accessibility pass (`e2e/a11y.spec.ts`) using
 `@axe-core/playwright`; pre-existing violations are listed in an allowlist in
 that file, each linked to its tracking issue, so new violations fail the run.
+
+## Rate limiting
+
+The TOTP verification limiter (`src/lib/auth/totp-rate-limit.ts`) and the inventory reservation limiter (`src/lib/inventory/reservation-rate-limit.ts`) share a backend choice driven by two environment variables:
+
+| Variable                   | Purpose                                     |
+| -------------------------- | ------------------------------------------- |
+| `UPSTASH_REDIS_REST_URL`   | REST endpoint of the Upstash Redis database |
+| `UPSTASH_REDIS_REST_TOKEN` | REST token for that database                |
+
+The pair is all-or-nothing: Upstash is used only when **both** are set. If either is missing, each limiter falls back to an in-memory window held inside the running process. The limiter does not switch off, but its counter is private to that process.
+
+**A deployment that runs more than one instance must set both variables.** Without them every instance keeps its own counter, so the five-attempt TOTP limit and the reservation limit each become that many attempts _per instance_, and the limits stop meaning anything.
+
+## Storybook
+
+This app does not ship Storybook. It was configured but no workflow ever built it, so its config and stories could rot unnoticed while the dependencies were installed on every run. It was removed rather than gated; if component documentation is wanted again, re-add it together with a CI step that runs `storybook build`.

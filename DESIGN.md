@@ -137,11 +137,13 @@ reported it (`apps/web/src/app/api/hook/settle/route.ts`, `verifyingMerchant()`)
 a small number of merchants per deployment this is cheap, and onboarding a merchant's
 settlement reporting needs only a new `merchants` row, never an SDK change.
 
-`apps/web/src/middleware.ts` decodes the verified session JWT and forwards the
-merchant's Stellar address as the `x-accensa-merchant` request header, so route
-handlers trust that header for scoping instead of each re-verifying and re-decoding
-the session cookie independently. The header can't be forged by a caller: middleware
-runs first and overwrites it on every request it forwards.
+`apps/web/src/proxy.ts` decodes the verified session JWT and forwards the
+merchant's Stellar address as the `x-accensa-merchant` request header only for requests
+that pass session verification, while public paths such as `/api/auth`, `/api/verify`,
+`/api/hook/`, `/api/receipts/`, `/api/inventory/` and `/api/status` are exempted.
+Route handlers trust that header for scoping instead of each re-verifying and
+re-decoding the session cookie independently. A caller cannot forge the header on paths apps/web/src/proxy.ts verifies,
+while exempted public paths must handle missing or unverified headers safely.
 
 ### Scope not covered by this change
 

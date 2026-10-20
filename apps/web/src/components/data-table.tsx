@@ -8,7 +8,7 @@ export interface DataTableColumn<T> {
 }
 
 /**
- * The dashboard payments table, extracted far enough to document in Storybook
+ * The dashboard payments table, extracted far enough to document in isolation
  * without dragging in fetch, auth, or refunds.
  *
  * Empty and loading states are first-class: those are the views a merchant

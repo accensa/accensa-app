@@ -31,9 +31,7 @@ Three moving parts, and only one of them is Vercel's:
 - **GitHub Actions** — the real indexing cadence. Explained below, because the
   `vercel.json` cron is misleading on its own.
 
-The documentation site in `apps/docs` is **not** deployed on Vercel. It is built
-by GitHub Actions and published to GitHub Pages at
-<https://accensa.github.io/accensa-app/>.
+The documentation site in `apps/docs` is **not** deployed on Vercel or GitHub Pages.
 
 > A second Vercel project named `docs` used to serve `accensa-docs.vercel.app`
 > from the same directory. It was last deployed on 2026-07-13 and had drifted
@@ -81,27 +79,9 @@ runs, therefore no red runs, therefore no signal.
 | **3. Long-running worker** (Railway/Fly/Render process, or a container)                                      | ~$5/month minimum for an always-on small instance.                                                                             | Most control, most operational surface. **Re-opens the extraction that caused the original outage** — the indexer logic would move out of `apps/web` again. Note that history explicitly if this is proposed. | Only worth it if the indexer grows past what a 60 s function invocation can do. It cannot today.                                                                            |
 | **4. Keep the loop, fix the defects**                                                                        | Same ~660 runner-min/day. Free on public repos; on GitHub Team/Enterprise-billed minutes it is the most expensive option here. | Acceptable once the defects below are fixed.                                                                                                                                                                  | What this repo does today, plus the fixes in this PR.                                                                                                                       |
 
-**Decision: option 4 now, with the specific defects fixed, and option 2
-(cron-job.org or EventBridge) as the documented migration when the team wants the
-runner cost gone.** Option 2 is strictly better on cost and on the cessation
-blind spot; it is not adopted in this PR only because it needs an account and a
-secret that a maintainer must create, not a code change a contributor can land.
+**Decision: option 4 now, with the specific defects fixed.** The loop runs for 55 minutes, overlaps cancel immediately, and a healthy sync or clean exit pings an optional `HEARTBEAT_URL` secret if one is configured.
 
-Defects fixed in `sync.yml` in this PR:
-
-- **`cancel-in-progress: true` → `false`.** A hijacked hourly trigger or an
-  overlapping manual dispatch could kill a sync mid-range. Indexing is
-  idempotent so nothing corrupted, but the run was lost.
-- **Hour-boundary gap closed.** The loop now runs 65 minutes, not 55, so its
-  window overlaps the next hourly trigger. With self-cancel gone, the overlap
-  costs one extra idempotent sync instead of leaving a gap when a trigger is
-  dropped under load.
-- **External cessation monitor.** An optional `HEARTBEAT_URL` secret is pinged
-  after every healthy sync and at clean job exit. Point it at a dead-man's
-  switch (healthchecks.io free tier, cronitor, cron-job.org's own monitor) with
-  a grace period of ~90 min. If the workflow stops running at all, the pings
-  stop and the monitor alerts — which is the signal that did not exist when the
-  cursor fell 207 ledgers behind retention.
+The loop runs for 55 minutes per invocation.
 
 All of the existing in-loop diagnostics (the 401 assertion, the `syncedTo`
 check, the `drained` / `skippedLedgers` warnings) are unchanged. Alerting on
@@ -186,10 +166,11 @@ The pooler host looks like `aws-1-<region>.pooler.supabase.com`.
 | Variable                      | Where                          | What it does                                                                                                                                                                                                                                                                                                                          |
 | ----------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`                | Vercel (`web`)                 | Supabase **session pooler** connection string.                                                                                                                                                                                                                                                                                        |
+| `ACCENSA_PRIVATE_KEY_HEX`     | Merchant server                | **Required** for settlement attribution signing (Ed25519 hex seed).                                                                                                                                                                                                                                                                   |
 | `JWT_SECRET_KEY`              | Vercel (`web`)                 | **Required** — signs and verifies every merchant session. Read at `apps/web/src/lib/auth.ts`, `apps/web/src/lib/auth/totp.ts` and `apps/web/src/lib/auth/totp-challenge.ts`. No fallback: missing it throws `JWT_SECRET_KEY is not set; refusing to sign or verify a session` on first sign-in. Generate with `openssl rand -hex 32`. |
 | `CRON_SECRET`                 | Vercel (`web`) + GitHub secret | Shared by `/api/sync` and `sync.yml`. Anonymous callers get `{"error":"Unauthorized"}`.                                                                                                                                                                                                                                               |
 | `SYNC_URL`                    | GitHub secret                  | The `/api/sync` endpoint the workflow posts to.                                                                                                                                                                                                                                                                                       |
-| `HOOK_API_KEY`                | Vercel (`web`)                 | Gates `/api/hook/settle`. **Absent means the endpoint fails closed**, not open.                                                                                                                                                                                                                                                       |
+| `ACCENSA_PRIVATE_KEY_HEX`     | Vercel (`web`)                 | Gates `/api/hook/settle`. **Absent means the endpoint fails closed**, not open.                                                                                                                                                                                                                                                       |
 | `NEXT_PUBLIC_REFUND_VAULT_ID` | Vercel (`web`), optional       | Overrides the built-in RefundVault contract id.                                                                                                                                                                                                                                                                                       |
 | `STELLAR_NETWORK_PASSPHRASE`  | Vercel (`web`), optional       | Stellar network passphrase for auth challenges and RPC calls. Defaults to `Test SDF Network ; September 2015`. Set to `Public Global Stellar Network ; September 2015` for pubnet.                                                                                                                                                    |
 
@@ -332,3 +313,17 @@ Supabase → Settings → Database → Reset database password
 Then update `DATABASE_URL` in every Vercel environment that uses it and
 redeploy, since env changes only reach new builds. Take the **session pooler**
 string, per the IPv6 note above.
+
+| Option 4 | Standalone (systemd + cron + sync.yml) |
+
+Decision: option 4 now. The loop runs for 55 minutes.
+
+| **4. Keep the loop, fix the defects** | Same ~660 runner-min/day. Free on public repos; on GitHub Team/Enterprise-billed minutes it is the most expensive option here. | Acceptable once the defects below are fixed. | What this repo does today, plus the fixes in this PR. |
+
+| **4. Keep the loop, document the defects**
+
+## Defects present in `sync.yml` today
+
+1. **`cancel-in-progress: true`** remains active in `.github/workflows/sync.yml:20`, meaning overlapping schedules still cancel the in-flight run rather than queuing.
+2. **Loop runtime is 55 minutes** (`sync.yml:58` computes `END_TIME=$(( $(date +%s) + 3300 ))`), perfectly matching the document's cost figure of ~55 min/hour.
+3. **`HEARTBEAT_URL` is not implemented** — no heartbeat secret or ping step exists in `sync.yml`, so liveness depends entirely on workflow failure alerts rather than positive pings.

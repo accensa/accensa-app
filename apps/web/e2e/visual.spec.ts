@@ -93,7 +93,7 @@ test('Dispute Flow @visual', async ({ page, context }) => {
   await context.addCookies([await sessionCookie()]);
   await page.goto('/merchant/disputes');
   await expect(page.locator('main')).toHaveScreenshot('dispute-flow.png', {
-    maxDiffPixelRatio: 0.02,
+    mask: [page.locator('time'), page.locator('.text-xs.text-muted-foreground')],
   });
 });
 

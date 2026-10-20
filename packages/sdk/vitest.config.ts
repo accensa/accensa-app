@@ -2,6 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // DOM tests opt in with a per-file @vitest-environment jsdom docblock so
+    // the SDK's existing Node-only tests keep their current runtime.
     /**
      * `tsc` now runs alongside the suite, which starves the event loop enough
      * on a loaded machine to push the timer-driven tests (the abort and retry
