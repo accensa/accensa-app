@@ -4,6 +4,7 @@ import { withMerchantClient } from '../../../lib/db';
 import { getMerchantByAddress } from '../../../lib/merchants';
 import { revalidateCatalog } from '../../../../lib/cache/revalidate';
 import type { NextApiRequest, NextApiResponse } from 'next';
+import type { Client } from 'pg';
 
 vi.mock('../../../lib/db', () => ({
   ensureSchema: vi.fn(),
@@ -125,7 +126,7 @@ describe('Catalog API Handler [merchantId]', () => {
         query: vi.fn().mockResolvedValueOnce({
           rows: [{ sku: 'VALID-SKU_1.2:3', name: 'Valid Item', price: '19.99' }],
         }),
-      } as any),
+      } as unknown as Client),
     );
 
     await handler(req, res);
@@ -142,7 +143,7 @@ describe('Catalog API Handler [merchantId]', () => {
     vi.mocked(withMerchantClient).mockImplementationOnce(async (_id, cb) =>
       cb({
         query: vi.fn().mockResolvedValueOnce({ rowCount: 1 }),
-      } as any),
+      } as unknown as Client),
     );
 
     await handler(req, res);
@@ -181,7 +182,7 @@ describe('Catalog API Handler [merchantId]', () => {
         query: vi.fn().mockResolvedValueOnce({
           rows: [{ sku: 'SKU1', name: 'Item 1', description: 'Desc', price: '10.00' }],
         }),
-      } as any),
+      } as unknown as Client),
     );
 
     await handler(req, res);
