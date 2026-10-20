@@ -1,6 +1,7 @@
 /**
  * Modular environment access for the demo merchant (issues #340 and #344).
  *
+ *
  * Before this module, each entrypoint read `process.env` inline with its own
  * mix of silent fallbacks and one-off checks — MERCHANT_ADDRESS quietly
  * became 'GAQW...REPLACE_WITH_REAL_ADDRESS' (a broken payment requirement
@@ -150,9 +151,11 @@ export function boot(loader) {
  * announce their fallback here so the startup log is the whole story.
  */
 export function loadServerEnv() {
-  const hookApiKey = readEnv('HOOK_API_KEY');
-  if (hookApiKey === undefined) {
-    console.warn('⚠️  HOOK_API_KEY is not set; settlement attribution reports will be skipped.');
+  const privateKeyHex = readEnv('ACCENSA_PRIVATE_KEY_HEX');
+  if (privateKeyHex === undefined) {
+    console.warn(
+      '⚠️  ACCENSA_PRIVATE_KEY_HEX is not set; settlement attribution reports will be skipped.',
+    );
   }
   const webhookSecret = readEnv('WEBHOOK_SECRET');
   console.log(
@@ -163,7 +166,7 @@ export function loadServerEnv() {
   return {
     port: parsePort('PORT', DEFAULT_MERCHANT_PORT),
     accensaUrl: parseBaseUrl('ACCENSA_URL', DEFAULT_ACCENSA_URL),
-    hookApiKey,
+    privateKeyHex,
     webhookSecret,
     tokenAddress: optionalEnv('TOKEN_ADDRESS', DEFAULT_XLM_SAC),
     payTo: requireStellarAddress('MERCHANT_ADDRESS'),

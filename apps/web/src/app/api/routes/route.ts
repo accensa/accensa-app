@@ -20,7 +20,13 @@ export async function GET(request: Request) {
 
   let limit = DEFAULT_LIMIT;
   if (limitParam !== null) {
-    const parsed = Number.parseFloat(limitParam);
+    if (!/^\d+$/.test(limitParam)) {
+      return NextResponse.json(
+        { error: `limit must be an integer between 1 and ${MAX_LIMIT}` },
+        { status: 400 },
+      );
+    }
+    const parsed = Number.parseInt(limitParam, 10);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_LIMIT) {
       return NextResponse.json(
         { error: `limit must be an integer between 1 and ${MAX_LIMIT}` },

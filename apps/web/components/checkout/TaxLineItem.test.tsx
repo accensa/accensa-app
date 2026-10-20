@@ -60,4 +60,16 @@ describe('TaxLineItem Component', () => {
     // Total reflects subtotal + tip (0) + tax (19) = 119.00
     expect(screen.getByTestId('checkout-total')).toHaveTextContent('119.00');
   });
+
+  it('keeps tax line and total available even when tipEnabled is false', () => {
+    render(
+      <CheckoutProvider subtotal={100} tipEnabled={false}>
+        <TipSelector country="DE" taxRule={{ type: 'EU_VAT' }} />
+      </CheckoutProvider>,
+    );
+
+    expect(screen.getByTestId('checkout-subtotal')).toHaveTextContent('100.00');
+    expect(screen.getByTestId('checkout-tax-amount')).toHaveTextContent('$19.00');
+    expect(screen.getByTestId('checkout-total')).toHaveTextContent('119.00');
+  });
 });

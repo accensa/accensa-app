@@ -9,7 +9,6 @@
   <p>
     <a href="https://accensa-dashboard.vercel.app/verify"><strong>Verify a Receipt</strong></a> ·
     <a href="https://accensa-dashboard.vercel.app/dashboard"><strong>Live Dashboard</strong></a> ·
-    <a href="https://accensa.github.io/accensa-app/"><strong>Documentation</strong></a> ·
     <a href="https://github.com/accensa/accensa-contracts"><strong>accensa-contracts</strong></a>
   </p>
 </div>
@@ -121,7 +120,7 @@ docker run --name pg -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 MERCHANT_ADDRESS=GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6
 STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-HOOK_API_KEY=any-shared-secret   # required for /api/hook/settle
+ACCENSA_PRIVATE_KEY_HEX=replace-with-32-byte-ed25519-private-key-hex   # required for /api/hook/settle
 # JWT_SECRET_KEY — required for every session, no fallback.
 # Generate with: openssl rand -hex 32
 JWT_SECRET_KEY=replace-with-output-of-openssl-rand-hex-32
@@ -189,7 +188,7 @@ A SAC `transfer` event carries the payer, amount, and asset — never the HTTP r
 that was paid for. That mapping exists only inside your server, at the moment x402
 settles, so it has to be reported rather than indexed.
 
-Set `HOOK_API_KEY` on both sides, then report settlements from your x402 server:
+Set `ACCENSA_PRIVATE_KEY_HEX` on your server, then report settlements signed with an Ed25519 key:
 
 ```ts
 import { createSettleHook } from '@accensa/sdk';
@@ -197,7 +196,7 @@ import { createSettleHook } from '@accensa/sdk';
 resourceServer.onAfterSettle(
   createSettleHook({
     indexerUrl: 'https://your-accensa.vercel.app',
-    apiKey: process.env.HOOK_API_KEY,
+    privateKeyHex: process.env.ACCENSA_PRIVATE_KEY_HEX,
   }),
 );
 ```
@@ -206,8 +205,7 @@ Or, if you only have the response to work from, mount `attachAccensaHook()` afte
 x402 middleware — it reads the `X-PAYMENT-RESPONSE` header.
 
 `POST /api/hook/settle` is the endpoint behind both. It is the only write path into
-`payments` not derived from the ledger, so it fails closed: with no `HOOK_API_KEY`
-configured it accepts nothing. Reported attribution is marked with `hook_reported_at`,
+`payments` not derived from the ledger, so it fails closed: it requires an Ed25519 `x-signature` over the raw body and an `x-key-id` header. Reported attribution is marked with `hook_reported_at`,
 keeping merchant-reported fields distinguishable from on-chain ones. Settlements for
 transfers the indexer has not reached yet are staged and completed on the next run.
 
