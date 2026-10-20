@@ -46,6 +46,7 @@ export interface ApiSchemas {
   SyncState: components['schemas']['SyncState'];
   PaymentsResponse: components['schemas']['PaymentsResponse'];
   RouteRevenue: components['schemas']['RouteRevenue'];
+  RouteRevenueResponse: components['schemas']['RouteRevenueResponse'];
   VerifyRequest: components['schemas']['VerifyRequest'];
   CheckResult: components['schemas']['CheckResult'];
   VerifyResponse: components['schemas']['VerifyResponse'];
@@ -72,6 +73,9 @@ export type PaymentsResponse = ApiSchemas['PaymentsResponse'];
 
 /** One row of `/api/routes`: revenue attributed to a route and method. */
 export type RouteRevenue = ApiSchemas['RouteRevenue'];
+
+/** `/api/routes`' response envelope, including truncation and window metadata. */
+export type RouteRevenueResponse = ApiSchemas['RouteRevenueResponse'];
 
 /** The body POSTed to `/api/verify`. */
 export type VerifyRequest = ApiSchemas['VerifyRequest'];

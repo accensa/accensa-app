@@ -102,6 +102,32 @@ describe('taxService', () => {
       expect(result.totalWithTax).toBe(250);
       expect(result.jurisdiction).toBe('US-OR');
     });
+
+    it('does not charge US sales tax to non-US buyers when US_STATE rule is configured', () => {
+      const result = calculateTax({
+        subtotal: 100,
+        country: 'DE',
+        postalCode: '10115',
+        rule: { type: 'US_STATE' },
+      });
+
+      expect(result.rate).toBe(0);
+      expect(result.amount).toBe(0);
+      expect(result.totalWithTax).toBe(100);
+      expect(result.jurisdiction).toBe('DE');
+    });
+
+    it('infers EU VAT when rule is omitted for an EU country', () => {
+      const result = calculateTax({
+        subtotal: 100,
+        country: 'DE',
+      });
+
+      expect(result.type).toBe('EU_VAT');
+      expect(result.rate).toBe(0.19);
+      expect(result.amount).toBe(19.0);
+      expect(result.jurisdiction).toBe('EU-DE');
+    });
   });
 
   describe('calculateTax - Exemptions and Custom Rules', () => {

@@ -3,7 +3,7 @@
  *
  * Next.js App Router routes do not share an express-style middleware stack,
  * so `requirePermission` here is an async function: call it at the top of a
- * route with the merchant id from middleware's x-accensa-merchant header and
+ * route with the merchant id from `apps/web/src/proxy.ts`'s `x-accensa-merchant` header and
  * the permission the action needs. It returns a NextResponse (401/403) when
  * the call is not allowed, and null when it is.
  *
@@ -23,9 +23,7 @@ export type AuthzResult = NextResponse | null;
  * Checks that the request's merchant grants `permission` to `subject`
  * (a `user:<id>` ref, normally taken from the JWT's sub).
  *
- * Middleware forwards the signed-in merchant as x-accensa-merchant; the
- * subject comes from the session (x-accensa-sub). A caller that bypasses
- * middleware (e.g. a cron) should pass an explicit merchant id and subject.
+ * `apps/web/src/proxy.ts` forwards `x-accensa-merchant`/`x-accensa-role` only for requests that pass session verification, while public paths such as `/api/auth`, `/api/verify`, `/api/hook/`, `/api/receipts/`, `/api/inventory/` and `/api/status` are exempted. The subject comes from the session (`x-accensa-sub`). A caller that bypasses the proxy (e.g. a cron) should pass an explicit merchant id and subject.
  */
 export async function authorize(
   permission: WildcardPermission | string,

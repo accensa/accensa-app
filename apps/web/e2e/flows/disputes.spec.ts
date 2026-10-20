@@ -99,8 +99,7 @@ test.describe('dispute flow', () => {
   });
 
   test('attaches evidence to a dispute and the UI shows the uploaded state', async ({ page }) => {
-    await page.route('**/api/disputes/**/evidence', (route) =>
-      route.fulfill({
+    await page.route('**/api/disputes/**/evidence', (route) =>e.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ cid: 'bafy-test-cid' }),
