@@ -11,6 +11,18 @@ export interface ApiKeyModalProps {
 export function ApiKeyModal({ isOpen, onClose, onGenerate }: ApiKeyModalProps) {
   const [name, setName] = useState('');
   const [permissions, setPermissions] = useState<string[]>(['read']);
+  // Returning null below doesn't unmount this component, so its state would
+  // otherwise leak a closed-without-saving draft into the next time it opens.
+  // Adjusting state during render (rather than in an effect) avoids the
+  // cascading-render rejected by react-hooks/set-state-in-effect.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (!isOpen) {
+      setName('');
+      setPermissions(['read']);
+    }
+  }
 
   if (!isOpen) return null;
 

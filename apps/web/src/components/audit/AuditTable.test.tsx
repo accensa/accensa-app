@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { AuditTable, type AuditLog } from './AuditTable';
 
 const mockLogs: AuditLog[] = [
@@ -62,16 +62,18 @@ describe('AuditTable', () => {
     it('renders all audit log rows with formatted timestamps and metadata', () => {
       render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
+      const table = within(screen.getByRole('table'));
+
       expect(screen.getByText('admin@merchant.com')).toBeInTheDocument();
-      expect(screen.getByText('Changed Treasury Address')).toBeInTheDocument();
+      expect(table.getByText('Changed Treasury Address')).toBeInTheDocument();
       expect(screen.getByText('192.168.1.100')).toBeInTheDocument();
 
       expect(screen.getByText('staff@merchant.com')).toBeInTheDocument();
-      expect(screen.getByText('Issued Refund')).toBeInTheDocument();
+      expect(table.getByText('Issued Refund')).toBeInTheDocument();
       expect(screen.getByText('10.0.0.50')).toBeInTheDocument();
 
       expect(screen.getByText('security@merchant.com')).toBeInTheDocument();
-      expect(screen.getByText('Revoked API Key')).toBeInTheDocument();
+      expect(table.getByText('Revoked API Key')).toBeInTheDocument();
       expect(screen.getByText('172.16.0.20')).toBeInTheDocument();
 
       const viewButtons = screen.getAllByRole('button', { name: 'View' });
@@ -95,8 +97,8 @@ describe('AuditTable', () => {
 
   describe('CSV Export', () => {
     let clickSpy: ReturnType<typeof vi.spyOn>;
-    let appendChildSpy: ReturnType<typeof vi.spyOn>;
-    let removeChildSpy: ReturnType<typeof vi.spyOn>;
+    let appendChildSpy: MockInstance<(node: Node) => Node>;
+    let removeChildSpy: MockInstance<(child: Node) => Node>;
 
     beforeEach(() => {
       clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
@@ -110,6 +112,10 @@ describe('AuditTable', () => {
 
     it('provides an export CSV button and triggers download with correct file name and header', () => {
       render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
+      // render() itself appends its container to document.body, which the
+      // spy above also observes — clear that noise so the assertions below
+      // see only the export button's own appendChild call.
+      appendChildSpy.mockClear();
 
       const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
       expect(exportBtn).toBeInTheDocument();
@@ -142,6 +148,7 @@ describe('AuditTable', () => {
 
     it('exports CSV with only headers when logs array is empty', () => {
       render(<AuditTable logs={[]} isLoading={false} onFilterChange={onFilterChangeMock} />);
+      appendChildSpy.mockClear();
 
       const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
       fireEvent.click(exportBtn);
@@ -170,6 +177,7 @@ describe('AuditTable', () => {
       render(
         <AuditTable logs={specialLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
       );
+      appendChildSpy.mockClear();
 
       fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
 
@@ -187,6 +195,7 @@ describe('AuditTable', () => {
       const { rerender } = render(
         <AuditTable logs={[mockLogs[0]]} isLoading={false} onFilterChange={onFilterChangeMock} />,
       );
+      appendChildSpy.mockClear();
 
       const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
       fireEvent.click(exportBtn);

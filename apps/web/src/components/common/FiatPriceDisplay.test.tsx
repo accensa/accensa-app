@@ -33,7 +33,7 @@ describe('FiatPriceDisplay', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Fiat currency' }), {
       target: { value: 'EUR' },
     });
-    expect(screen.getByText('~120,00 €')).toBeInTheDocument();
+    expect(screen.getByText('~120,00 €')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'crypto' }));
     expect(screen.getByText('~4.0000 XLM')).toBeInTheDocument();

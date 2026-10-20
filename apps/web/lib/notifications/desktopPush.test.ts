@@ -109,7 +109,6 @@ describe('desktopPush notifications and audio', () => {
       const notificationCtor = vi.fn();
       Reflect.set(window, 'Notification', {
         permission: 'denied',
-        // @ts-expect-error test mock
         constructor: notificationCtor,
       });
 
@@ -129,7 +128,7 @@ describe('desktopPush notifications and audio', () => {
         set onclick(fn: () => void) {
           capturedOnclick = fn;
         },
-        get onclick() {
+        get onclick(): (() => void) | null {
           return capturedOnclick;
         },
         close: closeMock,
@@ -187,9 +186,7 @@ describe('desktopPush notifications and audio', () => {
       expect(capturedOnclick).toBeTypeOf('function');
 
       // Simulate click
-      if (capturedOnclick) {
-        capturedOnclick();
-      }
+      capturedOnclick!();
 
       expect(focusMock).toHaveBeenCalled();
       expect(dispatchEventMock).toHaveBeenCalled();
