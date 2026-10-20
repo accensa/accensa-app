@@ -42,7 +42,7 @@ Create `apps/web/.env.local` with the following contents:
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 MERCHANT_ADDRESS=GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6
 STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-HOOK_API_KEY=any-shared-secret
+ACCENSA_PRIVATE_KEY_HEX=replace-with-32-byte-ed25519-private-key-hex
 ```
 
 `DATABASE_URL` is a standard `libpq` connection string. The format is:
@@ -68,13 +68,14 @@ EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS` — so a fresh
 database gets its tables on the very first request, and existing databases are
 quietly brought up to date if the schema has changed.
 
-The three tables created are:
+The fourteen tables created are grouped by purpose below:
 
-| Table              | Purpose                                                         |
-| ------------------ | --------------------------------------------------------------- |
-| `payments`         | Indexed Stellar SAC transfer events (the core payment ledger)   |
-| `sync_state`       | Singleton row tracking the indexer's last-scanned ledger cursor |
-| `challenge_nonces` | Auth challenge nonces used by `/api/auth/verify`                |
+| Purpose / Domain         | Table Names                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| **Core Indexer & Auth**  | `payments`, `sync_state`, `challenge_nonces`, `merchants`                                            |
+| **Tenancy & Roles**      | `role_tuples`, `merchant_stores`, `merchant_api_keys`                                                |
+| **Inventory Management** | `merchant_catalog_items`, `inventory_items`, `inventory_reservations`, `inventory_reservation_items` |
+| **Webhooks & Batches**   | `receipt_batches`, `webhook_deliveries`, `webhook_attempts`                                          |
 
 ### How to verify
 
@@ -99,11 +100,22 @@ the tables. You can now inspect them:
 docker exec -it pg psql -U postgres -c "\dt"
 
               List of relations
- Schema |      Name       | Type  |  Owner
---------+-----------------+-------+----------
- public | challenge_nonces| table | postgres
- public | payments        | table | postgres
- public | sync_state      | table | postgres
+ Schema |             Name             | Type  |  Owner
+--------+------------------------------+-------+----------
+ public | challenge_nonces             | table | postgres
+ public | inventory_items              | table | postgres
+ public | inventory_reservation_items  | table | postgres
+ public | inventory_reservations       | table | postgres
+ public | merchant_api_keys            | table | postgres
+ public | merchant_catalog_items       | table | postgres
+ public | merchant_stores              | table | postgres
+ public | merchants                    | table | postgres
+ public | payments                     | table | postgres
+ public | receipt_batches              | table | postgres
+ public | role_tuples                  | table | postgres
+ public | sync_state                   | table | postgres
+ public | webhook_attempts             | table | postgres
+ public | webhook_deliveries           | table | postgres
 ```
 
 ### Reference migrations
@@ -111,10 +123,18 @@ docker exec -it pg psql -U postgres -c "\dt"
 The `migrations/` directory contains SQL files that document the schema's
 evolution:
 
-- `migrations/001_unify_payments.sql` — unifies historical payments table
-  variants into the current canonical shape
-- `migrations/002_settlement_attribution.sql` — adds `hook_reported_at` and
-  drops NOT NULL on `amount`/`payer` for merchant-reported settlements
+- `migrations/001_unify_payments.sql` — unifies historical payments table variants into the current canonical shape
+- `migrations/002_settlement_attribution.sql` — adds `hook_reported_at` and drops NOT NULL on `amount`/`payer` for merchant-reported settlements
+- `migrations/003_multi_merchant.sql` — introduces multi-merchant support and row-level security policies
+- `migrations/004_receipt_batches.sql` — adds receipt batching and Merkle root anchoring tables
+- `migrations/005_zk_commitments.sql` — adds zero-knowledge commitment ledger tables
+- `migrations/006_merchant_profiles.sql` — adds merchant profile settings and overrides
+- `migrations/007_role_tuples.sql` — creates `role_tuples` for Zanzibar-style permissions
+- `migrations/008_inventory_reservations.sql` — creates inventory catalog, items, and reservation tables
+- `migrations/009_multi_store_organizations.sql` — adds multi-store organization and store tables
+- `migrations/010_notifications.sql` — adds merchant notification center tables
+- `migrations/011_chat_notifiers.sql` — adds chat notifier integrations for Telegram and Discord
+- `migrations/012_disputes.sql` — sets up dispute chat and tracking evidence tables
 
 These files are **not executed by any tool**. They exist as documentation of what
 `ensureSchema()` does in code. If you need to understand why a column exists or
@@ -122,13 +142,13 @@ what changed, read the corresponding migration file for the full rationale.
 
 ## 4. Environment variables reference
 
-| Variable           | Required | Description                                                                     |
-| ------------------ | -------- | ------------------------------------------------------------------------------- |
-| `DATABASE_URL`     | Yes      | PostgreSQL connection string (see format above)                                 |
-| `MERCHANT_ADDRESS` | Yes      | Stellar public key of the merchant to index payments for                        |
-| `STELLAR_RPC_URL`  | Yes      | Soroban RPC endpoint (testnet: `https://soroban-testnet.stellar.org`)           |
-| `HOOK_API_KEY`     | No*      | Shared secret for `POST /api/hook/settle`. Required for route-level attribution |
-| `CRON_SECRET`      | No       | Bearer token protecting the cron-triggered `GET /api/sync` endpoint             |
+| Variable                  | Required | Description                                                                     |
+| ------------------------- | -------- | ------------------------------------------------------------------------------- |
+| `DATABASE_URL`            | Yes      | PostgreSQL connection string (see format above)                                 |
+| `MERCHANT_ADDRESS`        | Yes      | Stellar public key of the merchant to index payments for                        |
+| `STELLAR_RPC_URL`         | Yes      | Soroban RPC endpoint (testnet: `https://soroban-testnet.stellar.org`)           |
+| `ACCENSA_PRIVATE_KEY_HEX` | No*      | Shared secret for `POST /api/hook/settle`. Required for route-level attribution |
+| `CRON_SECRET`             | No       | Bearer token protecting the cron-triggered `GET /api/sync` endpoint             |
 
 All variables go in `apps/web/.env.local`.
 

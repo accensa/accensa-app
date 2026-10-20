@@ -15,9 +15,9 @@
 -- indexes smaller without changing results, since `route = $x` can never match
 -- a NULL.
 --
--- Applied automatically by ensureSchema() in apps/web/src/lib/db.ts, the same
--- way 001–005 are; committed here for documentation and for anyone restoring a
--- database outside the app.
+-- ensureSchema() in apps/web/src/lib/db.ts creates these same indexes for
+-- databases provisioned by code alone. This migration remains the equivalent
+-- DDL for migration-based restores and is safe to apply after ensureSchema().
 
 BEGIN;
 

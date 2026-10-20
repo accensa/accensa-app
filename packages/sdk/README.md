@@ -1,6 +1,6 @@
 # @accensa/sdk
 
-Middleware hook and receipt verification for [Accensa](https://accensa.github.io/accensa-app/), the merchant back-office for x402 sellers on Stellar.
+Middleware hook and receipt verification for Accensa, the merchant back-office for x402 sellers on Stellar.
 
 ## Installation
 
@@ -114,6 +114,21 @@ import { verifyReceipt } from '@accensa/sdk/merkle';
 
 const isValid = verifyReceipt(leaf, proof, root);
 ```
+
+### Subpath Imports
+
+The SDK publishes several independent subpaths so you can import only what you need:
+
+- `@accensa/sdk/merkle` — Merkle receipt verification
+- `@accensa/sdk/receipt-anchor` — Receipt anchor registry
+- `@accensa/sdk/receipt-anchor-client` — On-chain Soroban RPC verification client
+- `@accensa/sdk/types` — TypeScript types (`Order`, `Product`, etc.)
+- `@accensa/sdk/webhooks` — Webhook signature verification
+- `@accensa/sdk/retry` — Retry utilities
+- `@accensa/sdk/zk-proof` — Zero-knowledge proof helpers
+- `@accensa/sdk/events` — Event handling utilities
+- `@accensa/sdk/subscription` — Subscription management helpers
+- `@accensa/sdk/session/express` — Express session helpers
 
 ## API Reference
 

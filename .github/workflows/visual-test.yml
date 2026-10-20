@@ -27,13 +27,15 @@ jobs:
         working-directory: ./apps/web
     steps:
       - uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install pnpm
-        run: npm install -g pnpm@11
-        working-directory: .
+          cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         working-directory: .

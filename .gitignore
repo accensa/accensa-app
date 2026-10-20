@@ -26,6 +26,17 @@ apps/web/test-results/
 .scratch/
 /body.txt
 /issues.json
+/fetch_issues.py
+/issues.md
+/pr_body.md
+/patch_ci.js
+/patch_index.js
+/patch_route.js
+/patch_test.js
+/patch_workspace.js
+/fix_test.js
+/fix_type.js
+/fix_type2.js
 
 # This is a pnpm workspace; pnpm-lock.yaml is the only lockfile.
 # Stray npm/yarn lockfiles drift from it and change which package manager

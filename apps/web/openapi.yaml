@@ -78,7 +78,7 @@ paths:
       operationId: listPayments
       summary: Cursor-paginated payment history.
       description: |
-        Session-authenticated; see apps/web/src/middleware.ts.
+        Session-authenticated via `apps/web/src/proxy.ts`, which forwards `x-accensa-merchant`/`x-accensa-role` only for requests that pass session verification, while public paths such as `/api/auth`, `/api/verify`, `/api/hook/`, `/api/receipts/`, `/api/inventory/` and `/api/status` are exempted.
 
         Filters narrow the result set server-side before pagination, so the
         cursor stays correct under every combination: rows are neither skipped
@@ -164,7 +164,7 @@ paths:
     get:
       operationId: listRouteRevenue
       summary: Revenue grouped by attributed route, method, and asset.
-      description: Session-authenticated; see apps/web/src/middleware.ts.
+      description: Session-authenticated via `apps/web/src/proxy.ts`, which forwards `x-accensa-merchant`/`x-accensa-role` only for requests that pass session verification, while public paths such as `/api/auth`, `/api/verify`, `/api/hook/`, `/api/receipts/`, `/api/inventory/` and `/api/status` are exempted.
       parameters:
         - name: from
           in: query
@@ -176,24 +176,27 @@ paths:
           schema:
             type: string
             format: date-time
+        - name: limit
+          in: query
+          description: Maximum number of top route groups to include (integer between 1 and 200, default 50); any remaining groups beyond the limit are aggregated into the first group past the limit in the "(other)" totals.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                required: [routes, truncated, default_window_days]
-                properties:
-                  routes:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/RouteRevenue'
-                  truncated:
-                    type: boolean
-                  default_window_days:
-                    type: integer
-                    nullable: true
+$ref: '#/components/schemas/RouteRevenueResponse'
+        '400':
+          description: The limit query parameter is malformed or not a valid integer between 1 and 200.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized.
           content:
@@ -439,14 +442,29 @@ components:
           type: string
         method:
           type: string
-          nullable: true
+nullable: true
         asset:
           type: string
           description: Canonical payment asset, with native used for legacy null assets.
+          nullable: true
         total_revenue:
           type: string
         calls:
           type: integer
+
+    RouteRevenueResponse:
+      type: object
+      required: [routes, truncated, default_window_days]
+      properties:
+        routes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteRevenue'
+        truncated:
+          type: boolean
+        default_window_days:
+          type: integer
+          nullable: true
 
     VerifyRequest:
       type: object

@@ -55,30 +55,34 @@ export function resolveStellarNetwork(
   const network = env.network?.trim()?.toLowerCase();
 
   if (passphrase) {
-    const match = KNOWN_NETWORKS[passphrase];
-    if (!match) {
+    if (!Object.prototype.hasOwnProperty.call(KNOWN_NETWORKS, passphrase)) {
       throw new StellarNetworkConfigurationError(
         `Unrecognised Stellar network passphrase: "${passphrase}"`,
       );
     }
-    return match;
+    return KNOWN_NETWORKS[passphrase];
   }
 
   if (network) {
-    const match = NETWORK_NAMES[network];
-    if (!match) {
+    if (!Object.prototype.hasOwnProperty.call(NETWORK_NAMES, network)) {
       throw new StellarNetworkConfigurationError(`Unrecognised Stellar network: "${network}"`);
     }
-    return match;
+    return NETWORK_NAMES[network];
   }
 
   return KNOWN_NETWORKS[Networks.TESTNET];
 }
 
 export function getStellarNetwork(): StellarNetworkConfig {
-  const passphrase =
-    process.env.STELLAR_NETWORK_PASSPHRASE ?? process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE;
-  const network = process.env.STELLAR_NETWORK ?? process.env.NEXT_PUBLIC_STELLAR_NETWORK;
+  const isClient = typeof window !== 'undefined';
+  const passphrase = isClient
+    ? process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE || undefined
+    : process.env.STELLAR_NETWORK_PASSPHRASE ||
+      process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ||
+      undefined;
+  const network = isClient
+    ? process.env.NEXT_PUBLIC_STELLAR_NETWORK || undefined
+    : process.env.STELLAR_NETWORK || process.env.NEXT_PUBLIC_STELLAR_NETWORK || undefined;
 
   return resolveStellarNetwork({ passphrase, network });
 }
