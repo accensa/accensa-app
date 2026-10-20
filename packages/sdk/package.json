@@ -50,7 +50,11 @@
       "import": "./dist/retry.mjs",
       "require": "./dist/retry.js"
     },
-    "./currency": "./currency.ts",
+    "./currency": {
+      "types": "./dist/currency.d.ts",
+      "import": "./dist/currency.mjs",
+      "require": "./dist/currency.js"
+    },
     "./zk-proof": {
       "types": "./dist/zk-proof.d.ts",
       "import": "./dist/zk-proof.mjs",

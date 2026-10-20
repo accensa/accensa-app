@@ -43,12 +43,11 @@ RECEIPT_ANCHOR_ID=CBHRJU7CF4XIFRNDITFHNQHABKBMFM2FYFHLGWN3JGSFYYCDSMDAWPRV
 
 ### 3. Connect Your Wallet
 
-Use Freighter or another Stellar wallet to sign transactions:
+Use your Stellar wallet to sign transactions:
 
 ```typescript
-import { readStatus } from '@accensa/sdk/freighter';
-
-const status = await readStatus();
+// Wallet status can be read via your wallet adapter integration
+const status = { kind: 'connected', address: 'G...' };
 if (status.kind === 'connected') {
   console.log('Connected address:', status.address);
 }
