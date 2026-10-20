@@ -112,7 +112,9 @@ test.describe('accessibility', () => {
     await runAxe(page, '/login');
   });
 
-  test('regression check demonstration: failing gate when allowlist rule is omitted', async ({ page }) => {
+  test('regression check demonstration: failing gate when allowlist rule is omitted', async ({
+    page,
+  }) => {
     await mockDashboardApi(page);
     await mintSession(page);
     await page.goto('/dashboard');
