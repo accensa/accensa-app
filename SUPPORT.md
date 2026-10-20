@@ -25,7 +25,7 @@ Both channels are staffed by the maintainers. If you are working on a Drips Wave
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution workflow and code quality standards
 - [`DESIGN.md`](DESIGN.md) — architecture and the reasoning behind it
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) — how the app is deployed
-- [Documentation site](https://accensa.github.io/accensa-app/)
+- Documentation site (not deployed)
 
 **When you do ask**, include the issue number, what you have already tried, and the exact command and output if something is failing. "It doesn't work" takes several round trips to resolve; a pasted error message usually takes one.
 

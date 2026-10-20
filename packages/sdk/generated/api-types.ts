@@ -198,10 +198,13 @@ export interface components {
     RouteRevenue: {
       route: string;
       method: string | null;
-      /** @description Canonical payment asset, with native used for legacy null assets. */
-      asset: string;
       total_revenue: string;
       calls: number;
+    };
+    RouteRevenueResponse: {
+      routes: components['schemas']['RouteRevenue'][];
+      truncated: boolean;
+      default_window_days: number | null;
     };
     VerifyRequest: {
       batchId: number;
@@ -369,6 +372,8 @@ export interface operations {
       query?: {
         from?: string;
         to?: string;
+        /** @description Maximum number of route groups to include before aggregating any remaining groups into "(other)". */
+        limit?: number;
       };
       header?: never;
       path?: never;
@@ -382,11 +387,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': {
-            routes: components['schemas']['RouteRevenue'][];
-            truncated: boolean;
-            default_window_days: number | null;
-          };
+          'application/json': components['schemas']['RouteRevenueResponse'];
+        };
+      };
+      /** @description The limit query parameter is not an integer between 1 and 200. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Unauthorized. */

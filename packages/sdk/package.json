@@ -6,7 +6,6 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "license": "MIT",
-  "homepage": "https://accensa.github.io/accensa-app/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/accensa/accensa-app.git",
@@ -26,16 +25,52 @@
       "import": "./dist/merkle.mjs",
       "require": "./dist/merkle.js"
     },
-    "./receipt-anchor": "./receipt-anchor.ts",
-    "./receipt-anchor-client": "./receipt-anchor-client.ts",
-    "./types": "./src/types/index.ts",
-    "./webhooks": "./webhooks.ts",
-    "./retry": "./retry.ts",
+    "./receipt-anchor": {
+      "types": "./dist/receipt-anchor.d.ts",
+      "import": "./dist/receipt-anchor.mjs",
+      "require": "./dist/receipt-anchor.js"
+    },
+    "./receipt-anchor-client": {
+      "types": "./dist/receipt-anchor-client.d.ts",
+      "import": "./dist/receipt-anchor-client.mjs",
+      "require": "./dist/receipt-anchor-client.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.mjs",
+      "require": "./dist/types/index.js"
+    },
+    "./webhooks": {
+      "types": "./dist/webhooks.d.ts",
+      "import": "./dist/webhooks.mjs",
+      "require": "./dist/webhooks.js"
+    },
+    "./retry": {
+      "types": "./dist/retry.d.ts",
+      "import": "./dist/retry.mjs",
+      "require": "./dist/retry.js"
+    },
     "./currency": "./currency.ts",
-    "./zk-proof": "./src/zk-proof.ts",
-    "./events": "./src/events/index.ts",
-    "./subscription": "./src/subscription/index.ts",
-    "./session/express": "./src/session/express.ts"
+    "./zk-proof": {
+      "types": "./dist/zk-proof.d.ts",
+      "import": "./dist/zk-proof.mjs",
+      "require": "./dist/zk-proof.js"
+    },
+    "./events": {
+      "types": "./dist/events/index.d.ts",
+      "import": "./dist/events/index.mjs",
+      "require": "./dist/events/index.js"
+    },
+    "./subscription": {
+      "types": "./dist/subscription/index.d.ts",
+      "import": "./dist/subscription/index.mjs",
+      "require": "./dist/subscription/index.js"
+    },
+    "./session/express": {
+      "types": "./dist/session/express.d.ts",
+      "import": "./dist/session/express.mjs",
+      "require": "./dist/session/express.js"
+    }
   },
   "files": [
     "dist",
@@ -73,6 +108,7 @@
     "@types/express": "^5.0.6",
     "@types/react": "^18.3.3",
     "@types/supertest": "^7.2.1",
+    "jsdom": "^30.1.1",
     "openapi-typescript": "^7.13.0",
     "supertest": "^7.2.2",
     "tsup": "^8.0.0",

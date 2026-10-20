@@ -8,6 +8,7 @@ import {
 } from '@x402/express';
 import { HTTPFacilitatorClient } from '@x402/core/server';
 import { ExactStellarScheme } from '@x402/stellar/exact/server';
+import { Keypair } from '@stellar/stellar-sdk';
 import { boot, loadServerEnv } from './lib/env.js';
 
 const app = express();
@@ -20,7 +21,8 @@ const app = express();
 const {
   port: PORT,
   accensaUrl: ACCENSA_URL,
-  hookApiKey: HOOK_API_KEY,
+  privateKeyHex: PRIVATE_KEY_HEX,
+  keyId: KEY_ID,
   webhookSecret: WEBHOOK_SECRET,
   // Native XLM Stellar Asset Contract on testnet unless overridden. Priced as
   // an explicit AssetAmount rather than a bare number: the default money
@@ -132,8 +134,8 @@ resourceServer.onAfterSettle(async (ctx) => {
     console.warn('⚠️  Settlement succeeded without a transaction hash; nothing to attribute');
     return;
   }
-  if (!HOOK_API_KEY) {
-    console.warn('⚠️  HOOK_API_KEY is not set; skipping attribution report');
+  if (!PRIVATE_KEY_HEX) {
+    console.warn('⚠️  ACCENSA_PRIVATE_KEY_HEX is not set; skipping attribution report');
     return;
   }
 
@@ -149,18 +151,23 @@ resourceServer.onAfterSettle(async (ctx) => {
   console.log('✅ Settled', ctx.result.transaction, 'for', route);
 
   try {
+    const payload = JSON.stringify({
+      tx_hash: ctx.result.transaction,
+      route,
+      method: 'GET',
+      payer: ctx.result.payer,
+    });
+    const keypair = Keypair.fromRawEd25519Seed(Buffer.from(PRIVATE_KEY_HEX, 'hex'));
+    const signature = keypair.sign(Buffer.from(payload, 'utf8')).toString('hex');
+
     const res = await fetch(`${ACCENSA_URL}/api/hook/settle`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${HOOK_API_KEY}`,
+        'x-signature': signature,
+        'x-key-id': keypair.publicKey(),
       },
-      body: JSON.stringify({
-        tx_hash: ctx.result.transaction,
-        route,
-        method: 'GET',
-        payer: ctx.result.payer,
-      }),
+      body: payload,
     });
 
     if (!res.ok) {

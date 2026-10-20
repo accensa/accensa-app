@@ -50,7 +50,21 @@ export default defineConfig([
   },
   {
     ...baseOptions,
-    // A secondary entry point specifically for merkle tree functionality.
-    entry: { merkle: 'merkle.ts' },
+    // Keep every published subpath as a real, independently resolvable entry.
+    // In particular, the browser-safe receipt-anchor registry and the RPC
+    // client stay separate so consumers can opt into the Stellar SDK only
+    // when they need on-chain reads.
+    entry: {
+      merkle: 'merkle.ts',
+      'receipt-anchor': 'receipt-anchor.ts',
+      'receipt-anchor-client': 'receipt-anchor-client.ts',
+      types: 'src/types/index.ts',
+      webhooks: 'webhooks.ts',
+      retry: 'retry.ts',
+      'zk-proof': 'src/zk-proof.ts',
+      events: 'src/events/index.ts',
+      subscription: 'src/subscription/index.ts',
+      'session/express': 'src/session/express.ts',
+    },
   },
 ]);

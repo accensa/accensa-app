@@ -174,6 +174,32 @@ export async function ensureSchema(client: Client): Promise<void> {
   );
 
   await ensureMultiMerchantSchema(client);
+  // Keep code-provisioned databases in sync with migrations/004 and /006.
+  // These are create-only so requests never remove indexes from an existing DB.
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_payments_hook_reported
+      ON payments(hook_reported_at)
+      WHERE hook_reported_at IS NOT NULL;
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_payments_merchant_ts_txhash
+      ON payments(merchant_id, ts DESC, tx_hash DESC);
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_payments_merchant_route
+      ON payments(merchant_id, route)
+      WHERE route IS NOT NULL;
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_payments_merchant_payer
+      ON payments(merchant_id, payer)
+      WHERE payer IS NOT NULL;
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_payments_merchant_asset
+      ON payments(merchant_id, asset)
+      WHERE asset IS NOT NULL;
+  `);
   await ensureRoleTupleSchema(client);
   await ensureStoreSchema(client);
   await ensureInventorySchema(client);
