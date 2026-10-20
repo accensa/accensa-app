@@ -58,6 +58,11 @@ expectTypeOf<keyof ApiOperationResponse>().toEqualTypeOf<keyof operations>();
 /** Every schema the spec declares is reachable under a short name. */
 expectTypeOf<ApiSchemas['SettlementReport']>().toEqualTypeOf<SettlementReport>();
 expectTypeOf<ApiSchemas['ErrorResponse']>().toEqualTypeOf<{ error: string }>();
+expectTypeOf<ApiSchemas['RouteRevenueResponse']>().toEqualTypeOf<{
+  routes: components['schemas']['RouteRevenue'][];
+  truncated: boolean;
+  default_window_days: number | null;
+}>();
 
 /* -------------------------------------------------------------------------- */
 /* 2. Identity: the SDK's public wire types are the spec's, not copies of it.  */
@@ -99,6 +104,9 @@ expectTypeOf<JsonResponseBody<'verifyReceipt', 200>>().toEqualTypeOf<
 expectTypeOf<JsonResponseBody<'listPayments', 200>>().toEqualTypeOf<
   components['schemas']['PaymentsResponse']
 >();
+expectTypeOf<JsonResponseBody<'listRouteRevenue', 200>>().toEqualTypeOf<
+  components['schemas']['RouteRevenueResponse']
+>();
 
 /**
  * Every response the spec documents carries a JSON body, the non-2xx ones
@@ -115,12 +123,17 @@ expectTypeOf<JsonRequestBody<'runManualSync'>>().toBeUndefined();
 
 /** The status codes the spec documents for one operation. */
 expectTypeOf<ResponseStatus<'reportSettlement'>>().toEqualTypeOf<200 | 400 | 401 | 503>();
-expectTypeOf<ResponseStatus<'listRouteRevenue'>>().toEqualTypeOf<200 | 401 | 500>();
+expectTypeOf<ResponseStatus<'listRouteRevenue'>>().toEqualTypeOf<200 | 400 | 401 | 500>();
 
 /** Parameters: `/api/hook/settle` is header-authenticated, `/api/payments` filtered. */
 expectTypeOf<HeaderParams<'reportSettlement'>>().toHaveProperty('X-Signature');
 expectTypeOf<QueryParams<'listPayments'>>().toHaveProperty('cursor');
 expectTypeOf<QueryParams<'listRouteRevenue'>>().toHaveProperty('from');
+expectTypeOf<QueryParams<'listRouteRevenue'>>().toEqualTypeOf<{
+  from?: string;
+  to?: string;
+  limit?: number;
+}>();
 
 /* -------------------------------------------------------------------------- */
 /* Route and method lookup, derived from the spec rather than restated.        */

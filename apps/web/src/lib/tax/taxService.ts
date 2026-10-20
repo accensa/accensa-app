@@ -114,40 +114,50 @@ export function calculateTax({
   country = 'US',
   postalCode = '',
   classification = 'standard',
-  rule = { type: 'US_STATE' },
+  rule,
 }: TaxCalculationInput): TaxBreakdown {
   const normCountry = country.trim().toUpperCase();
+  const ruleType =
+    rule?.type ??
+    (normCountry === 'US'
+      ? 'US_STATE'
+      : EU_VAT_RATES[normCountry] !== undefined
+        ? 'EU_VAT'
+        : 'STANDARD_GLOBAL');
+
   const isExempt =
     classification === 'exempt' ||
-    (rule.exemptClassifications && rule.exemptClassifications.includes(classification));
+    (rule?.exemptClassifications && rule.exemptClassifications.includes(classification));
 
   let rate = 0;
   let jurisdiction = normCountry;
-  const ruleType = rule.type;
 
   if (!isExempt && subtotal > 0) {
-    if (rule.customRates && rule.customRates[normCountry] !== undefined) {
+    if (rule?.customRates && rule.customRates[normCountry] !== undefined) {
       rate = rule.customRates[normCountry];
     } else if (ruleType === 'EU_VAT') {
       if (EU_VAT_RATES[normCountry] !== undefined) {
         rate = EU_VAT_RATES[normCountry];
         jurisdiction = `EU-${normCountry}`;
       } else {
-        rate = rule.standardRate ?? 0.2;
+        rate = rule?.standardRate ?? 0.2;
         jurisdiction = 'EU-VAT';
       }
-    } else if (ruleType === 'US_STATE' || normCountry === 'US') {
+    } else if (ruleType === 'US_STATE' && normCountry === 'US') {
       const state = postalCode ? lookupUSStateByPostalCode(postalCode) : null;
       if (state && US_STATE_RATES[state] !== undefined) {
         rate = US_STATE_RATES[state];
         jurisdiction = `US-${state}`;
       } else {
-        rate = rule.standardRate ?? 0.05;
+        rate = rule?.standardRate ?? 0.05;
         jurisdiction = state ? `US-${state}` : 'US-STANDARD';
       }
-    } else {
-      rate = rule.standardRate ?? 0.08;
+    } else if (ruleType === 'STANDARD_GLOBAL') {
+      rate = rule?.standardRate ?? 0.08;
       jurisdiction = `${normCountry}-GLOBAL`;
+    } else {
+      rate = rule?.standardRate ?? 0;
+      jurisdiction = normCountry;
     }
   }
 

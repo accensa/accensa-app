@@ -67,7 +67,7 @@ class AccensaCheckoutWidget extends HTMLElementBase {
   }
 
   disconnectedCallback() {
-    window.removeEventListener('message', this.handleMessage);
+    window.removeEventListener('message', this.boundHandleMessage);
   }
 
   attributeChangedCallback(name: string, oldValue: string, newValue: string) {
@@ -88,7 +88,7 @@ class AccensaCheckoutWidget extends HTMLElementBase {
   }
 
   private setupMessageListener() {
-    window.addEventListener('message', this.handleMessage.bind(this));
+    window.addEventListener('message', this.boundHandleMessage);
   }
 
   private handleMessage = (event: MessageEvent<ParentMessage>) => {
@@ -118,6 +118,9 @@ class AccensaCheckoutWidget extends HTMLElementBase {
         break;
     }
   };
+
+  // Retain the same bound callback so disconnection can remove the listener.
+  private boundHandleMessage = this.handleMessage.bind(this);
 
   private postMessage(message: WidgetMessage, targetOrigin: string = MESSAGE_ORIGIN) {
     if (this.messageId > 10000) {

@@ -174,7 +174,7 @@ export type ListPaymentsQuery = QueryParams<'listPayments'>;
 /** `/api/payments`' 200 body: one page of rows plus the sync state. */
 export type ListPaymentsResponse = ApiOperationResponse['listPayments'];
 
-/** `/api/routes`' 200 body: revenue grouped by route and method. */
+/** `/api/routes`' 200 body: route revenue plus truncation and window metadata. */
 export type ListRouteRevenueResponse = ApiOperationResponse['listRouteRevenue'];
 
 /** `/api/verify`'s request body. */

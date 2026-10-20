@@ -48,7 +48,40 @@ export default function TipSelector({
   const [customInput, setCustomInput] = useState('');
   const [calculatedTax, setCalculatedTax] = useState(0);
 
-  if (!tipEnabled) return null;
+  const hasTaxInputs = Boolean(country || postalCode || taxRule);
+  const activeTax = hasTaxInputs ? calculatedTax : 0;
+
+  if (!tipEnabled) {
+    if (!hasTaxInputs) return null;
+    return (
+      <div
+        className="rounded-lg border border-gray-200 bg-white p-4 space-y-4"
+        data-testid="tip-selector"
+      >
+        <div className="space-y-1.5 text-sm">
+          <div className="flex justify-between text-gray-600">
+            <span>Subtotal</span>
+            <span data-testid="checkout-subtotal">{subtotal.toFixed(2)}</span>
+          </div>
+          <TaxLineItem
+            subtotal={subtotal}
+            country={country}
+            postalCode={postalCode}
+            classification={classification}
+            rule={taxRule}
+            onTaxCalculated={(tax) => {
+              setCalculatedTax(tax.amount);
+              onTaxCalculated?.(tax);
+            }}
+          />
+          <div className="flex justify-between font-semibold text-gray-900">
+            <span>Total</span>
+            <span data-testid="checkout-total">{(total + activeTax).toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const isPercentSelected = (percent: number) => tipPercent === percent && customTipAmount === null;
   const isCustomSelected = customTipAmount !== null;
@@ -160,7 +193,7 @@ export default function TipSelector({
         )}
         <div className="flex justify-between font-semibold text-gray-900">
           <span>Total</span>
-          <span data-testid="checkout-total">{(total + calculatedTax).toFixed(2)}</span>
+          <span data-testid="checkout-total">{(total + activeTax).toFixed(2)}</span>
         </div>
       </div>
     </div>

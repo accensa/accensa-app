@@ -31,17 +31,21 @@ export default function TaxLineItem({
   onTaxCalculated,
   className = 'flex justify-between text-gray-600',
 }: TaxLineItemProps) {
-  const tax = calculateTax({
-    subtotal,
-    country,
-    postalCode,
-    classification,
-    rule,
+  const ruleKey = JSON.stringify(rule ?? null);
+  const tax = React.useMemo(
+    () => calculateTax({ subtotal, country, postalCode, classification, rule }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [subtotal, country, postalCode, classification, ruleKey],
+  );
+
+  const cbRef = React.useRef(onTaxCalculated);
+  React.useEffect(() => {
+    cbRef.current = onTaxCalculated;
   });
 
   React.useEffect(() => {
-    onTaxCalculated?.(tax);
-  }, [tax, onTaxCalculated]);
+    cbRef.current?.(tax);
+  }, [tax]);
 
   const label =
     tax.type === 'EU_VAT'
