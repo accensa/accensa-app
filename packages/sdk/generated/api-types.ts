@@ -38,7 +38,7 @@ export interface paths {
     };
     /**
      * Cursor-paginated payment history.
-     * @description Session-authenticated; see apps/web/src/middleware.ts.
+     * @description Session-authenticated via `apps/web/src/proxy.ts`, which forwards `x-accensa-merchant`/`x-accensa-role` only for requests that pass session verification, while public paths such as `/api/auth`, `/api/verify`, `/api/hook/`, `/api/receipts/`, `/api/inventory/` and `/api/status` are exempted.
      *
      *     Filters narrow the result set server-side before pagination, so the
      *     cursor stays correct under every combination: rows are neither skipped
@@ -74,7 +74,7 @@ export interface paths {
     };
     /**
      * Revenue grouped by attributed route, method, and asset.
-     * @description Session-authenticated; see apps/web/src/middleware.ts.
+     * @description Session-authenticated via `apps/web/src/proxy.ts`, which forwards `x-accensa-merchant`/`x-accensa-role` only for requests that pass session verification, while public paths such as `/api/auth`, `/api/verify`, `/api/hook/`, `/api/receipts/`, `/api/inventory/` and `/api/status` are exempted.
      */
     get: operations['listRouteRevenue'];
     put?: never;
@@ -198,6 +198,8 @@ export interface components {
     RouteRevenue: {
       route: string;
       method: string | null;
+      /** @description Canonical payment asset, with native used for legacy null assets. */
+      asset: string;
       total_revenue: string;
       calls: number;
     };
@@ -372,7 +374,7 @@ export interface operations {
       query?: {
         from?: string;
         to?: string;
-        /** @description Maximum number of route groups to include before aggregating any remaining groups into "(other)". */
+        /** @description Maximum number of top route groups to include (integer between 1 and 200, default 50); any remaining groups beyond the limit are aggregated into the first group past the limit in the "(other)" totals. */
         limit?: number;
       };
       header?: never;
@@ -390,7 +392,7 @@ export interface operations {
           'application/json': components['schemas']['RouteRevenueResponse'];
         };
       };
-      /** @description The limit query parameter is not an integer between 1 and 200. */
+      /** @description The limit query parameter is malformed or not a valid integer between 1 and 200. */
       400: {
         headers: {
           [name: string]: unknown;

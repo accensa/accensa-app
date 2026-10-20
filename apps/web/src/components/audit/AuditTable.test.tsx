@@ -49,9 +49,7 @@ describe('AuditTable', () => {
 
   describe('Basic Rendering and Loading States', () => {
     it('renders audit trail heading and table headers', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       expect(screen.getByRole('heading', { name: 'Audit Trail' })).toBeInTheDocument();
       expect(screen.getByRole('columnheader', { name: 'Timestamp' })).toBeInTheDocument();
@@ -62,9 +60,7 @@ describe('AuditTable', () => {
     });
 
     it('renders all audit log rows with formatted timestamps and metadata', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       expect(screen.getByText('admin@merchant.com')).toBeInTheDocument();
       expect(screen.getByText('Changed Treasury Address')).toBeInTheDocument();
@@ -83,9 +79,7 @@ describe('AuditTable', () => {
     });
 
     it('shows loading indicator and hides table when isLoading is true', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={true} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={true} onFilterChange={onFilterChangeMock} />);
 
       expect(screen.getByText('Loading logs...')).toBeInTheDocument();
       expect(screen.queryByRole('table')).not.toBeInTheDocument();
@@ -94,9 +88,7 @@ describe('AuditTable', () => {
     it('displays empty state message when logs array is empty and not loading', () => {
       render(<AuditTable logs={[]} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
-      expect(
-        screen.getByText('No audit logs found matching your criteria.'),
-      ).toBeInTheDocument();
+      expect(screen.getByText('No audit logs found matching your criteria.')).toBeInTheDocument();
       expect(screen.getByRole('table')).toBeInTheDocument();
     });
   });
@@ -117,9 +109,7 @@ describe('AuditTable', () => {
     });
 
     it('provides an export CSV button and triggers download with correct file name and header', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
       expect(exportBtn).toBeInTheDocument();
@@ -225,9 +215,7 @@ describe('AuditTable', () => {
 
   describe('Row Toggle Behavior', () => {
     it('expands row details on clicking View and collapses on clicking Hide', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       // Initially details are not visible
       expect(
@@ -238,9 +226,7 @@ describe('AuditTable', () => {
       fireEvent.click(viewButtons[0]);
 
       // Row 1 should now be expanded
-      expect(
-        screen.getByText('Updated treasury to cold storage address'),
-      ).toBeInTheDocument();
+      expect(screen.getByText('Updated treasury to cold storage address')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Hide' })).toBeInTheDocument();
 
       // Click Hide to collapse
@@ -254,21 +240,15 @@ describe('AuditTable', () => {
     });
 
     it('maintains independent row selection and single-expanded state across multiple rows', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       const viewButtons = screen.getAllByRole('button', { name: 'View' });
       expect(viewButtons).toHaveLength(3);
 
       // Expand row 1
       fireEvent.click(viewButtons[0]);
-      expect(
-        screen.getByText('Updated treasury to cold storage address'),
-      ).toBeInTheDocument();
-      expect(
-        screen.queryByText('Refunded $45.00 for order #12345'),
-      ).not.toBeInTheDocument();
+      expect(screen.getByText('Updated treasury to cold storage address')).toBeInTheDocument();
+      expect(screen.queryByText('Refunded $45.00 for order #12345')).not.toBeInTheDocument();
 
       // Expand row 2 (which collapses row 1)
       const remainingViewButtons = screen.getAllByRole('button', { name: 'View' });
@@ -283,18 +263,14 @@ describe('AuditTable', () => {
       const hideButton = screen.getByRole('button', { name: 'Hide' });
       fireEvent.click(hideButton);
 
-      expect(
-        screen.queryByText('Refunded $45.00 for order #12345'),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText('Refunded $45.00 for order #12345')).not.toBeInTheDocument();
       expect(screen.getAllByRole('button', { name: 'View' })).toHaveLength(3);
     });
   });
 
   describe('Diff View', () => {
     it('renders before and after diff JSON panels when both are present', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       const viewButtons = screen.getAllByRole('button', { name: 'View' });
       fireEvent.click(viewButtons[0]); // Row 1 has before and after
@@ -307,9 +283,7 @@ describe('AuditTable', () => {
     });
 
     it('renders only description without diff panels when before/after are absent', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       const viewButtons = screen.getAllByRole('button', { name: 'View' });
       fireEvent.click(viewButtons[1]); // Row 2 only has description
@@ -320,9 +294,7 @@ describe('AuditTable', () => {
     });
 
     it('renders diff panels without description when description is absent', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       const viewButtons = screen.getAllByRole('button', { name: 'View' });
       fireEvent.click(viewButtons[2]); // Row 3 has before/after but no description
@@ -378,9 +350,7 @@ describe('AuditTable', () => {
 
   describe('Filter Controls', () => {
     it('allows entering actor filter and selecting action filter', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       const actorInput = screen.getByPlaceholderText('Filter by actor (email)');
       const actionSelect = screen.getByRole('combobox');
@@ -398,9 +368,7 @@ describe('AuditTable', () => {
     });
 
     it('submits empty filters when filter fields are cleared or untouched', () => {
-      render(
-        <AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
-      );
+      render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
       const applyBtn = screen.getByRole('button', { name: 'Apply Filters' });
       fireEvent.click(applyBtn);

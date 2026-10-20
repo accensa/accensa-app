@@ -196,7 +196,7 @@ paths:
           content:
             application/json:
               schema:
-$ref: '#/components/schemas/RouteRevenueResponse'
+                $ref: '#/components/schemas/RouteRevenueResponse'
         '400':
           description: The limit query parameter is malformed or not a valid integer between 1 and 200.
           content:
@@ -448,11 +448,10 @@ components:
           type: string
         method:
           type: string
-nullable: true
+          nullable: true
         asset:
           type: string
           description: Canonical payment asset, with native used for legacy null assets.
-          nullable: true
         total_revenue:
           type: string
         calls:
