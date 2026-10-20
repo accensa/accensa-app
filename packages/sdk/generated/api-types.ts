@@ -73,7 +73,7 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Revenue grouped by attributed route and method.
+     * Revenue grouped by attributed route, method, and asset.
      * @description Session-authenticated; see apps/web/src/middleware.ts.
      */
     get: operations['listRouteRevenue'];
@@ -291,7 +291,7 @@ export interface operations {
           'application/json': components['schemas']['ErrorResponse'];
         };
       };
-      /** @description Missing or invalid signature. */
+      /** @description Missing or invalid signature; a valid signature whose signed `reported_at` falls outside the accepted five-minute window (codes `report_too_old` / `report_future_dated`); or a signature that has already been consumed (code `report_replayed`). Error bodies for these carry a machine-readable `code` alongside `error`. */
       401: {
         headers: {
           [name: string]: unknown;

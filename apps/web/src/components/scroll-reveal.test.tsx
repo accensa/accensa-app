@@ -5,6 +5,18 @@ import { render, screen, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ScrollReveal } from './scroll-reveal';
 
+/**
+ * Anything that can host the `IntersectionObserver` global the component
+ * reads — `globalThis` and jsdom's `window` — typed so the test can install
+ * and remove the mock without `any` casts.
+ */
+interface IntersectionObserverHost {
+  IntersectionObserver?: typeof IntersectionObserver;
+}
+
+const globalHost = globalThis as unknown as IntersectionObserverHost;
+const windowHost = window as unknown as IntersectionObserverHost;
+
 class MockIntersectionObserver implements IntersectionObserver {
   static instances: MockIntersectionObserver[] = [];
 
@@ -49,15 +61,16 @@ class MockIntersectionObserver implements IntersectionObserver {
     entry: Partial<IntersectionObserverEntry> & { isIntersecting: boolean; target?: Element },
   ) {
     const target = entry.target ?? this.observeCalls[0];
+    // `isIntersecting` is spread in from `entry` below rather than listed here
+    // — repeating it would trip TS2783 (the spread overwrites it anyway).
     const constructedEntry = {
       time: Date.now(),
+      target,
+      intersectionRatio: entry.isIntersecting ? 1 : 0,
       boundingClientRect: {} as DOMRectReadOnly,
       intersectionRect: {} as DOMRectReadOnly,
       rootBounds: null,
       ...entry,
-      target,
-      isIntersecting: entry.isIntersecting,
-      intersectionRatio: entry.isIntersecting ? 1 : 0,
     } as IntersectionObserverEntry;
 
     act(() => {
@@ -72,9 +85,9 @@ describe('ScrollReveal', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     MockIntersectionObserver.instances = [];
-    originalIntersectionObserver = globalThis.IntersectionObserver;
-    globalThis.IntersectionObserver = MockIntersectionObserver;
-    window.IntersectionObserver = MockIntersectionObserver;
+    originalIntersectionObserver = globalHost.IntersectionObserver;
+    globalHost.IntersectionObserver = MockIntersectionObserver;
+    windowHost.IntersectionObserver = MockIntersectionObserver;
     delete document.documentElement.dataset.srReady;
   });
 
@@ -83,11 +96,11 @@ describe('ScrollReveal', () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     if (originalIntersectionObserver) {
-      globalThis.IntersectionObserver = originalIntersectionObserver;
-      window.IntersectionObserver = originalIntersectionObserver;
+      globalHost.IntersectionObserver = originalIntersectionObserver;
+      windowHost.IntersectionObserver = originalIntersectionObserver;
     } else {
-      Reflect.deleteProperty(globalThis, 'IntersectionObserver');
-      Reflect.deleteProperty(window, 'IntersectionObserver');
+      delete globalHost.IntersectionObserver;
+      delete windowHost.IntersectionObserver;
     }
     delete document.documentElement.dataset.srReady;
   });
@@ -250,8 +263,8 @@ describe('ScrollReveal', () => {
   });
 
   it('throws when IntersectionObserver is undefined in the environment, confirming lack of fallback handling', () => {
-    Reflect.deleteProperty(globalThis, 'IntersectionObserver');
-    Reflect.deleteProperty(window, 'IntersectionObserver');
+    delete globalHost.IntersectionObserver;
+    delete windowHost.IntersectionObserver;
 
     expect(() => {
       render(

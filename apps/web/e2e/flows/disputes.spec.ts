@@ -6,21 +6,24 @@ import { mintSessionCookie } from '../helpers/auth';
  * Functional e2e spec for the merchant dispute flow
  * (`src/pages/merchant/disputes/index.tsx` and `[id].tsx`).
  *
- * Two parts of the issue's description do not match main and are recorded as
+ * Three gaps between the issue's description and main are recorded as
  * skipped with the reason rather than faked:
  *
  * - `index.tsx` hardcodes `const pendingDisputes: PendingDispute[] = []`, so
  *   the list is always empty and renders no links. "At least two disputes with
  *   distinct ids" and clicking a link into `[id]` cannot be exercised. The
  *   detail route is covered directly instead.
- * - `[id].tsx` composes only `EvidenceUpload`. `DisputeChat` exists
- *   (`apps/web/components/disputes/DisputeChat.tsx`) but is not rendered by any
- *   page, so there is no message input to post from.
+ * - `[id].tsx` no longer composes `EvidenceUpload`: PR #688 removed the
+ *   component and its page wiring because it posted to
+ *   `/api/disputes/<id>/evidence`, an API route that does not exist (issue
+ *   #510). The evidence-upload test below is skipped for that reason.
+ * - `DisputeChat` exists (`apps/web/components/disputes/DisputeChat.tsx`) but
+ *   is not rendered by any page, so there is no message input to post from.
  *
- * Accessibility gap (reported, not fixed): the evidence `<input type="file">`
- * is `sr-only` with no label or `aria-label`, so this spec scopes to the
- * upload section and its `input[type=file]` — the most semantic locator that
- * exists.
+ * Accessibility note (recorded while `EvidenceUpload` still existed): its
+ * `<input type="file">` was `sr-only` with no label or `aria-label`, which is
+ * why the skipped evidence test scopes to the upload section and its
+ * `input[type=file]` rather than a labelled control.
  */
 
 // A 1x1 transparent PNG, built in memory so no fixture file is added. The
@@ -100,9 +103,16 @@ test.describe('dispute flow', () => {
     await expect(page.getByText('Dispute DSP-1001')).toHaveCount(0);
   });
 
-  test('attaches evidence to a dispute and the UI shows the uploaded state', async ({ page }) => {
+  // Skipped, not deleted: the component this test drove (`EvidenceUpload`) and
+  // its page wiring were removed by PR #688 because the endpoint it posted to
+  // (`/api/disputes/<id>/evidence`) never existed (issue #510). Re-enabling
+  // means restoring that API first; the body below documents the intended
+  // interaction until then.
+  test.skip('attaches evidence to a dispute and the UI shows the uploaded state', async ({
+    page,
+  }) => {
     await page.route('**/api/disputes/**/evidence', (route) =>
-      e.fulfill({
+      route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ cid: 'bafy-test-cid' }),
@@ -132,8 +142,9 @@ test.describe('dispute flow', () => {
   // navigation the issue describes cannot be exercised.
   test.skip('links at least two distinct disputes into their detail routes', async () => {});
 
-  // src/pages/merchant/disputes/[id].tsx renders only EvidenceUpload; no page
-  // renders DisputeChat, so there is no message field or send button to post
-  // from. The chat backend exists but has no UI wired to these pages.
+  // src/pages/merchant/disputes/[id].tsx renders neither EvidenceUpload nor
+  // DisputeChat, and no page renders DisputeChat, so there is no message field
+  // or send button to post from. The chat backend exists but has no UI wired
+  // to these pages.
   test.skip('posts a merchant message and clears the input', async () => {});
 });

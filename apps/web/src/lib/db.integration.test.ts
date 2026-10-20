@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { Client } from 'pg';
 import {
   withClient,
@@ -6,6 +7,7 @@ import {
   setLastSyncedLedger,
   getLastSyncedLedger,
   rollbackSyncToLedger,
+  consumeSettlementNonce,
 } from './db';
 import { insertPaymentsInTransaction } from './insert-payments';
 import { getMerchantByAddress } from './merchants';
@@ -35,6 +37,7 @@ async function setupTestDatabase(): Promise<void> {
       'payments',
       'sync_state',
       'challenge_nonces',
+      'settle_nonces',
       'merchants',
       'role_tuples',
       'merchant_stores',
@@ -537,5 +540,36 @@ describe('Database Integration', () => {
       return insertPaymentsInTransaction(client, merchant!.id, [{ ...row, ledger: 301 }], 601);
     });
     expect(second.inserted).toBe(0);
+  });
+
+  it('a settlement-report nonce is consumable exactly once, even across connections', async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('Skipping integration test as DATABASE_URL is missing');
+      return;
+    }
+
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO merchants (address) VALUES ($1) ON CONFLICT (address) DO NOTHING`,
+        ['GSETTLENONCEMERCHANTxxxxxxxxxxxxxxxxxxxx'],
+      );
+      return getMerchantByAddress(client, 'GSETTLENONCEMERCHANTxxxxxxxxxxxxxxxxxxxx');
+    });
+    expect(merchant).not.toBeNull();
+
+    // 128 hex chars — an Ed25519 signature's length, which is exactly what
+    // /api/hook/settle uses as the nonce.
+    const nonce = randomBytes(64).toString('hex');
+
+    // A fresh connection per call stands in for a process restart: the claim
+    // lives in the `settle_nonces` table, not in either connection's memory.
+    const first = await withClient((client) => consumeSettlementNonce(client, nonce, merchant!.id));
+    const second = await withClient((client) =>
+      consumeSettlementNonce(client, nonce, merchant!.id),
+    );
+
+    expect(first).toBe(true);
+    expect(second).toBe(false);
   });
 });
