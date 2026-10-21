@@ -136,6 +136,20 @@ describe('Database Integration', () => {
       'idx_payments_merchant_asset',
     ];
 
+    // payments.merchant_id is an INT, so the plans below need a real merchant
+    // id — a UUID string is rejected by the column type before the planner
+    // ever sees it.
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO merchants (address) VALUES ($1) ON CONFLICT (address) DO NOTHING`,
+        ['GINDEXPLANMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'],
+      );
+      return getMerchantByAddress(client, 'GINDEXPLANMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX');
+    });
+    expect(merchant).not.toBeNull();
+    const merchantId = merchant!.id;
+
     await withClient(async (client) => {
       // Re-running ensureSchema must remain safe on a database with these indexes.
       await ensureSchema(client);
@@ -164,25 +178,42 @@ describe('Database Integration', () => {
 
       await client.query('BEGIN');
       try {
+        // The schema still carries the pre-tenant single-column indexes
+        // (idx_payments_ts, idx_payments_route, idx_payments_payer and
+        // idx_payments_merchant_ts). They are not tenant-scoped, so RLS makes
+        // them unusable in production, but the planner still weighs them: on
+        // an empty table their estimated cost ties with the composite indexes
+        // below and the tie is broken by index order, not by usefulness. Drop
+        // them for the duration of the transaction so each plan can only be
+        // served by the index it is meant to prove. ROLLBACK puts them back.
+        for (const legacyIndex of [
+          'idx_payments_ts',
+          'idx_payments_route',
+          'idx_payments_payer',
+          'idx_payments_merchant_ts',
+        ]) {
+          await client.query(`DROP INDEX IF EXISTS ${legacyIndex}`);
+        }
+
         await client.query('SET LOCAL enable_seqscan = off');
         const plans = [
           {
             name: 'route filter',
             index: 'idx_payments_merchant_route',
             sql: 'EXPLAIN SELECT tx_hash FROM payments WHERE merchant_id = $1 AND route = $2',
-            values: ['00000000-0000-0000-0000-000000000001', '/checkout'],
+            values: [merchantId, '/checkout'],
           },
           {
             name: 'payer filter',
             index: 'idx_payments_merchant_payer',
             sql: 'EXPLAIN SELECT tx_hash FROM payments WHERE merchant_id = $1 AND payer = $2',
-            values: ['00000000-0000-0000-0000-000000000001', 'G'.padEnd(56, 'A')],
+            values: [merchantId, 'G'.padEnd(56, 'A')],
           },
           {
             name: 'asset filter',
             index: 'idx_payments_merchant_asset',
             sql: 'EXPLAIN SELECT tx_hash FROM payments WHERE merchant_id = $1 AND asset = $2',
-            values: ['00000000-0000-0000-0000-000000000001', 'USDC'],
+            values: [merchantId, 'USDC'],
           },
           {
             name: 'keyset page',
@@ -191,12 +222,7 @@ describe('Database Integration', () => {
                   WHERE merchant_id = $1 AND ts IS NOT NULL
                     AND (ts < $2 OR (ts = $2 AND tx_hash < $3))
                   ORDER BY ts DESC, tx_hash DESC LIMIT $4`,
-            values: [
-              '00000000-0000-0000-0000-000000000001',
-              '2026-01-01T00:00:00Z',
-              'f'.repeat(64),
-              20,
-            ],
+            values: [merchantId, '2026-01-01T00:00:00Z', 'f'.repeat(64), 20],
           },
         ];
 
