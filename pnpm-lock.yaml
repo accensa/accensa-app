@@ -259,16 +259,10 @@ importers:
       express:
         specifier: '>=4'
         version: 5.2.1(supports-color@10.2.2)
-      react:
-        specifier: '>=18'
-        version: 19.2.4
     devDependencies:
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
-      '@types/react':
-        specifier: ^18.3.3
-        version: 18.3.31
       '@types/supertest':
         specifier: ^7.2.1
         version: 7.2.1

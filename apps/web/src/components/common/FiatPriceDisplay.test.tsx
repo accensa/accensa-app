@@ -33,10 +33,7 @@ describe('FiatPriceDisplay', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Fiat currency' }), {
       target: { value: 'EUR' },
     });
-    // Intl formats German currency with a non-breaking space before the
-    // symbol; Testing Library's normalizer collapses it to a plain space,
-    // so match the separator as whitespace rather than pinning one code point.
-    expect(screen.getByText(/^~120,00\s*€$/)).toBeInTheDocument();
+    expect(screen.getByText('~120,00 €')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'crypto' }));
     expect(screen.getByText('~4.0000 XLM')).toBeInTheDocument();

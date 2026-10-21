@@ -185,13 +185,8 @@ describe('desktopPush notifications and audio', () => {
 
       expect(capturedOnclick).toBeTypeOf('function');
 
-      // Simulate click. The handler is captured by the mocked `onclick`
-      // setter, so TypeScript's control-flow analysis still sees the variable
-      // as null here — read it through a binding typed as the handler.
-      const onclick = capturedOnclick as (() => void) | null;
-      if (onclick) {
-        onclick();
-      }
+      // Simulate click
+      capturedOnclick!();
 
       expect(focusMock).toHaveBeenCalled();
       expect(dispatchEventMock).toHaveBeenCalled();

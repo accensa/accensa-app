@@ -162,6 +162,22 @@ describe('/api/merchant/profile PATCH', () => {
     expect(mockRecordMerchantConfigChange).not.toHaveBeenCalled();
   });
 
+  test('returns 403 for a resolved viewer and never reaches the update query path', async () => {
+    mockGetMerchantFromRequest.mockResolvedValue(MERCHANT);
+
+    const res = await PATCH(
+      patchRequest({ webhookUrl: 'https://merchant.example/hook' }, 'viewer'),
+    );
+    const data = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(data.error).toBe('Forbidden: viewer sessions cannot modify merchant settings');
+    expect(mockUpdateMerchantProfile).toHaveBeenCalledTimes(0);
+    expect(mockWithMerchantClient).toHaveBeenCalledTimes(0);
+    expect(clientStub.query).toHaveBeenCalledTimes(0);
+    expect(mockRevalidateTag).toHaveBeenCalledTimes(0);
+  });
+
   test('validates the request body before evaluating the role guard', async () => {
     const res = await PATCH(patchRequest({ webhookUrl: 'not a url' }, 'viewer'));
 

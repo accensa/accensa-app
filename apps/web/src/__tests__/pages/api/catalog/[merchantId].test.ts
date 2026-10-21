@@ -1,21 +1,12 @@
-/**
- * This suite covers the Pages Router route at
- * `src/pages/api/catalog/[merchantId].ts`, but it cannot live next to it:
- * every file under `src/pages/` is a route as far as Next.js is concerned, so
- * a co-located `*.test.ts` is compiled as an API route and breaks the build
- * (`next build` type-checks it as an `ApiRouteConfig` and finds no default
- * export). The pages tree therefore holds routes only, and the tests for them
- * live here, mirroring the source path.
- */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import handler from '../../../../src/pages/api/catalog/[merchantId]';
-import { withMerchantClient } from '../../../../src/lib/db';
-import { getMerchantByAddress } from '../../../../src/lib/merchants';
-import { revalidateCatalog } from '../../../../lib/cache/revalidate';
+import handler from '../../../../pages/api/catalog/[merchantId]';
+import { withMerchantClient } from '../../../../lib/db';
+import { getMerchantByAddress } from '../../../../lib/merchants';
+import { revalidateCatalog } from '../../../../../lib/cache/revalidate';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import type { Client } from 'pg';
 
-vi.mock('../../../../src/lib/db', () => ({
+vi.mock('../../../../lib/db', () => ({
   ensureSchema: vi.fn(),
   withClient: vi.fn(async (cb) =>
     cb({
@@ -29,11 +20,11 @@ vi.mock('../../../../src/lib/db', () => ({
   ),
 }));
 
-vi.mock('../../../../src/lib/merchants', () => ({
+vi.mock('../../../../lib/merchants', () => ({
   getMerchantByAddress: vi.fn(),
 }));
 
-vi.mock('../../../../lib/cache/revalidate', () => ({
+vi.mock('../../../../../lib/cache/revalidate', () => ({
   revalidateCatalog: vi.fn(),
 }));
 

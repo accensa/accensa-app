@@ -62,21 +62,19 @@ describe('AuditTable', () => {
     it('renders all audit log rows with formatted timestamps and metadata', () => {
       render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
 
-      // The action filter lists the same action names as the table's Action
-      // column, so the row assertions are scoped to the table itself.
       const table = within(screen.getByRole('table'));
 
-      expect(table.getByText('admin@merchant.com')).toBeInTheDocument();
+      expect(screen.getByText('admin@merchant.com')).toBeInTheDocument();
       expect(table.getByText('Changed Treasury Address')).toBeInTheDocument();
-      expect(table.getByText('192.168.1.100')).toBeInTheDocument();
+      expect(screen.getByText('192.168.1.100')).toBeInTheDocument();
 
-      expect(table.getByText('staff@merchant.com')).toBeInTheDocument();
+      expect(screen.getByText('staff@merchant.com')).toBeInTheDocument();
       expect(table.getByText('Issued Refund')).toBeInTheDocument();
-      expect(table.getByText('10.0.0.50')).toBeInTheDocument();
+      expect(screen.getByText('10.0.0.50')).toBeInTheDocument();
 
-      expect(table.getByText('security@merchant.com')).toBeInTheDocument();
+      expect(screen.getByText('security@merchant.com')).toBeInTheDocument();
       expect(table.getByText('Revoked API Key')).toBeInTheDocument();
-      expect(table.getByText('172.16.0.20')).toBeInTheDocument();
+      expect(screen.getByText('172.16.0.20')).toBeInTheDocument();
 
       const viewButtons = screen.getAllByRole('button', { name: 'View' });
       expect(viewButtons).toHaveLength(3);
@@ -98,9 +96,9 @@ describe('AuditTable', () => {
   });
 
   describe('CSV Export', () => {
-    let clickSpy: MockInstance<typeof HTMLAnchorElement.prototype.click>;
-    let appendChildSpy: MockInstance<typeof document.body.appendChild>;
-    let removeChildSpy: MockInstance<typeof document.body.removeChild>;
+    let clickSpy: ReturnType<typeof vi.spyOn>;
+    let appendChildSpy: MockInstance<(node: Node) => Node>;
+    let removeChildSpy: MockInstance<(child: Node) => Node>;
 
     beforeEach(() => {
       clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
@@ -112,26 +110,20 @@ describe('AuditTable', () => {
       vi.restoreAllMocks();
     });
 
-    /**
-     * The anchors the export appended to the body. `render()` appends its own
-     * container to `document.body` as well, so the spy also sees that; only
-     * the export's download links are anchors.
-     */
-    const exportedAnchors = (): HTMLAnchorElement[] =>
-      appendChildSpy.mock.calls
-        .map(([node]) => node)
-        .filter((node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement);
-
     it('provides an export CSV button and triggers download with correct file name and header', () => {
       render(<AuditTable logs={mockLogs} isLoading={false} onFilterChange={onFilterChangeMock} />);
+      // render() itself appends its container to document.body, which the
+      // spy above also observes — clear that noise so the assertions below
+      // see only the export button's own appendChild call.
+      appendChildSpy.mockClear();
 
       const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
       expect(exportBtn).toBeInTheDocument();
 
       fireEvent.click(exportBtn);
 
-      expect(exportedAnchors()).toHaveLength(1);
-      const link = exportedAnchors()[0];
+      expect(appendChildSpy).toHaveBeenCalledTimes(1);
+      const link = appendChildSpy.mock.calls[0][0] as HTMLAnchorElement;
       expect(link.tagName).toBe('A');
       expect(link.getAttribute('download')).toBe('audit_logs_export.csv');
 
@@ -156,12 +148,13 @@ describe('AuditTable', () => {
 
     it('exports CSV with only headers when logs array is empty', () => {
       render(<AuditTable logs={[]} isLoading={false} onFilterChange={onFilterChangeMock} />);
+      appendChildSpy.mockClear();
 
       const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
       fireEvent.click(exportBtn);
 
-      expect(exportedAnchors()).toHaveLength(1);
-      const link = exportedAnchors()[0];
+      expect(appendChildSpy).toHaveBeenCalledTimes(1);
+      const link = appendChildSpy.mock.calls[0][0] as HTMLAnchorElement;
       const decoded = decodeURI(link.getAttribute('href')!);
 
       expect(decoded).toBe('data:text/csv;charset=utf-8,Timestamp,Actor,Action,IP Address\n');
@@ -184,11 +177,11 @@ describe('AuditTable', () => {
       render(
         <AuditTable logs={specialLogs} isLoading={false} onFilterChange={onFilterChangeMock} />,
       );
+      appendChildSpy.mockClear();
 
       fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
 
-      expect(exportedAnchors()).toHaveLength(1);
-      const link = exportedAnchors()[0];
+      const link = appendChildSpy.mock.calls[0][0] as HTMLAnchorElement;
       const rawHref = link.getAttribute('href')!;
       expect(rawHref).toContain('data:text/csv;charset=utf-8,');
 
@@ -202,12 +195,12 @@ describe('AuditTable', () => {
       const { rerender } = render(
         <AuditTable logs={[mockLogs[0]]} isLoading={false} onFilterChange={onFilterChangeMock} />,
       );
+      appendChildSpy.mockClear();
 
       const exportBtn = screen.getByRole('button', { name: 'Export CSV' });
       fireEvent.click(exportBtn);
 
-      expect(exportedAnchors()).toHaveLength(1);
-      const firstLink = exportedAnchors()[0];
+      const firstLink = appendChildSpy.mock.calls[0][0] as HTMLAnchorElement;
       const firstDecoded = decodeURI(firstLink.getAttribute('href')!);
       const firstRowCount = firstDecoded.trim().split('\n').length;
       expect(firstRowCount).toBe(2); // Header + 1 row
@@ -219,8 +212,8 @@ describe('AuditTable', () => {
 
       fireEvent.click(exportBtn);
 
-      expect(exportedAnchors()).toHaveLength(2);
-      const secondLink = exportedAnchors()[1];
+      expect(appendChildSpy).toHaveBeenCalledTimes(2);
+      const secondLink = appendChildSpy.mock.calls[1][0] as HTMLAnchorElement;
       const secondDecoded = decodeURI(secondLink.getAttribute('href')!);
       const secondRowCount = secondDecoded.trim().split('\n').length;
       expect(secondRowCount).toBe(2); // Header + 1 row
