@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef } from 'react';
 import { ArrowUpRight } from 'lucide-react';
-import Link from 'next/link';
 import { formatAmount, assetLabel } from '@/lib/money';
 import { CopyButton } from '@/components/copy-button';
 import { RiskScoreBadge } from '@/components/transactions/RiskScoreBadge';

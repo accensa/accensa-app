@@ -61,7 +61,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Missing or invalid signature.
+          description: >-
+            Missing or invalid signature; a valid signature whose signed
+            `reported_at` falls outside the accepted five-minute window
+            (codes `report_too_old` / `report_future_dated`); or a signature
+            that has already been consumed (code `report_replayed`). Error
+            bodies for these carry a machine-readable `code` alongside
+            `error`.
           content:
             application/json:
               schema:
@@ -190,7 +196,7 @@ paths:
           content:
             application/json:
               schema:
-$ref: '#/components/schemas/RouteRevenueResponse'
+                $ref: '#/components/schemas/RouteRevenueResponse'
         '400':
           description: The limit query parameter is malformed or not a valid integer between 1 and 200.
           content:
@@ -442,7 +448,7 @@ components:
           type: string
         method:
           type: string
-nullable: true
+          nullable: true
         asset:
           type: string
           description: Canonical payment asset, with native used for legacy null assets.

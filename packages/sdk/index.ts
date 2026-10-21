@@ -60,6 +60,7 @@ export {
 export {
   AccensaError,
   AccensaAuthError,
+  AccensaRateLimitError,
   AccensaNetworkError,
   AccensaContractError,
   type AccensaErrorOptions,

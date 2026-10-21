@@ -47,7 +47,9 @@ describe('Landing page vault contract section (#625)', () => {
 
     // Verify no contract ID (neither the old hardcoded CCMB nor any contract ID) appears in the vault card markup
     expect(vaultCard.textContent).toBe('RefundVault');
-    expect(vaultCard.innerHTML).not.toContain('CCMBM44EJUGD52G4LSMGHSXMAH2KSAQZX7VOYY4TTBF5BK4D7M4IHRQA');
+    expect(vaultCard.innerHTML).not.toContain(
+      'CCMBM44EJUGD52G4LSMGHSXMAH2KSAQZX7VOYY4TTBF5BK4D7M4IHRQA',
+    );
 
     // ReceiptAnchor should still have its link and contract ID
     const receiptCard = screen.getByTestId('contract-card-receiptanchor');

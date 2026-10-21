@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isHex64, normalizeHex, validate, type FieldErrors } from './validators';
+import { isHex64, normalizeHex, validate } from './validators';
 
 describe('normalizeHex', () => {
   it('trims whitespace', () => {

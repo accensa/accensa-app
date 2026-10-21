@@ -158,7 +158,13 @@ describe('CSP report handling', () => {
     }
 
     const ref = new ReferenceLimiter();
-    const clients = ['client-alpha', 'client-beta', 'client-gamma', 'client-delta', 'client-epsilon'];
+    const clients = [
+      'client-alpha',
+      'client-beta',
+      'client-gamma',
+      'client-delta',
+      'client-epsilon',
+    ];
 
     // Linear Congruential Generator (LCG) for deterministic pseudo-random sequence
     let seed = 123456789;

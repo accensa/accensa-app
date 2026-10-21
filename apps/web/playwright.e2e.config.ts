@@ -47,13 +47,10 @@ export default defineConfig({
     { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
   ],
   webServer: {
-    // `next dev` rather than a production build: the app's API routes are
-    // type-checked lazily per request, and the e2e specs intercept every API
-    // route they touch at the network layer, so the harness is immune to the
-    // pre-existing `getMaxBatchSize` build break on main (see
-    // apps/web/src/app/api/payments/route.ts). The same interception makes
-    // backend state fully deterministic without a database.
-    command: 'pnpm dev',
+    // Runs against a production build (`next build` followed by `next start`).
+    // The e2e specs intercept every API route they touch at the network layer,
+    // making backend state fully deterministic without a database.
+    command: 'pnpm build && pnpm exec next start --port 3000',
     url: 'http://127.0.0.1:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

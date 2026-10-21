@@ -329,7 +329,7 @@ try {
 }
 ```
 
-The error classes are also available from `@accensa/sdk/errors`.
+The error classes are also available from the main package import `@accensa/sdk`.
 
 ## Verifying Inbound Webhooks
 

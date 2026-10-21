@@ -40,7 +40,7 @@ export async function validateSep41Compliance(contractId: string): Promise<boole
   try {
     await fetchTokenMetadata(contractId);
     return true; // Assume compliant if metadata can be fetched
-  } catch (error) {
+  } catch {
     return false;
   }
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { normalizeHex, validate } from './validators';
+import { normalizeHex } from './validators';
 import type { VerifyResponse } from '../api/verify/route';
 import { PageContainer } from '@/components/page-container';
 import { formatTimestamp, toISO8601 } from '@/lib/format-timestamp';

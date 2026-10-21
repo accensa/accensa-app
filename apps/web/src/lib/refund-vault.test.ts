@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   REFUND_ERRORS,
   describeRefundError,
@@ -76,6 +76,15 @@ describe('describeRefundError', () => {
 
 describe('Refund vault contract ID resolver (#625)', () => {
   const originalEnv = process.env.NEXT_PUBLIC_REFUND_VAULT_ID;
+
+  // `REFUND_VAULT_ID` is a module-level constant, so it only reflects the
+  // env at module evaluation. Without a reset, `await import('./refund-vault')`
+  // below returns the instance the file's top-level import already evaluated
+  // and the configured-ID case can never pass. Resetting makes each dynamic
+  // import re-evaluate the module against the env set by that test.
+  beforeEach(() => {
+    vi.resetModules();
+  });
 
   afterEach(() => {
     if (originalEnv === undefined) {
