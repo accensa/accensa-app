@@ -112,7 +112,7 @@ test.describe('accessibility', () => {
     await runAxe(page, '/login');
   });
 
-  test('regression check demonstration: failing gate when allowlist rule is omitted', async ({
+  test('regression check demonstration: failing gate when a violation is present', async ({
     page,
   }) => {
     await mockDashboardApi(page);
@@ -120,20 +120,28 @@ test.describe('accessibility', () => {
     await page.goto('/dashboard');
     await expect(page.getByRole('heading', { name: 'Settled Volume' })).toBeVisible();
 
-    // Temporarily remove 'color-contrast' from ALLOWLIST to prove that an active
-    // violation or unallowlisted rule correctly triggers test failure.
-    const originalAllowlist = { ...ALLOWLIST };
-    delete ALLOWLIST['color-contrast'];
+    // Prove the gate actually fails when a violation is present and not on
+    // the allowlist.
+    //
+    // The violation is injected rather than borrowed from the allowlist: the
+    // allowlisted `color-contrast` entry is a light-theme contrast defect, and
+    // whether axe reports it as a violation or as "incomplete" (needs review)
+    // depends on the browser's ability to resolve the background colour.
+    // Firefox lands it in "incomplete", so a check that leans on it fails on
+    // one browser and passes on the other. An image with no alt text trips
+    // `image-alt` the same way everywhere.
+    await page.evaluate(() => {
+      const img = document.createElement('img');
+      img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      document.body.appendChild(img);
+    });
+
+    let failed = false;
     try {
-      let failed = false;
-      try {
-        await runAxe(page, '/dashboard-regression-check');
-      } catch {
-        failed = true;
-      }
-      expect(failed).toBe(true);
-    } finally {
-      Object.assign(ALLOWLIST, originalAllowlist);
+      await runAxe(page, '/dashboard-regression-check');
+    } catch {
+      failed = true;
     }
+    expect(failed).toBe(true);
   });
 });
