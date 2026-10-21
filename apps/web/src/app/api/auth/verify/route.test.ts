@@ -240,4 +240,3 @@ describe('/api/auth/verify POST', () => {
     expect(res.status).not.toBe(500);
   });
 });
-

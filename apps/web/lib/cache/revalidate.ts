@@ -7,7 +7,7 @@ export async function revalidateCatalog(res: NextApiResponse, merchantId: string
   try {
     await res.revalidate(`/api/catalog/${merchantId}`);
     return { revalidated: true };
-  } catch (err) {
+  } catch {
     return { revalidated: false, error: 'Error revalidating' };
   }
 }

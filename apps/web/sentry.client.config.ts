@@ -1,9 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
-import {
-  SENTRY_DSN,
-  SENTRY_TRACES_SAMPLE_RATE,
-  scrubStellarPii,
-} from './src/lib/sentry-scrub';
+import { SENTRY_DSN, SENTRY_TRACES_SAMPLE_RATE, scrubStellarPii } from './src/lib/sentry-scrub';
 
 const COMMON_SENTRY_CONFIG = {
   dsn: SENTRY_DSN,
