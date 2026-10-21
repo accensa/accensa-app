@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { AuditTable, AuditLog } from '../../../components/audit/AuditTable';
+import { forceDynamic } from '@/lib/force-dynamic';
 
 // Mock data to represent server response
 const MOCK_LOGS: AuditLog[] = [
@@ -36,6 +37,8 @@ const MOCK_LOGS: AuditLog[] = [
     },
   },
 ];
+
+export const getServerSideProps = forceDynamic;
 
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
