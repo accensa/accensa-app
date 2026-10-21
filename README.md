@@ -108,7 +108,7 @@ for the commands.
 
 ### Prerequisites
 
-Node 22+, pnpm 9, and a PostgreSQL instance.
+Node 22+, pnpm 11.28.5, and a PostgreSQL instance.
 
 ### Run locally
 
