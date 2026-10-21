@@ -96,4 +96,17 @@ describe('client API route coverage', () => {
 
     expect(missing).toEqual([]);
   });
+
+  test('no test file lives in the pages tree, where Next.js would build it as a route', () => {
+    // Everything under src/pages/ is a page or an API route to Next.js, so a
+    // co-located *.test.ts is compiled as a route and fails the build with
+    // "Property 'default' is missing in type ... ApiRouteConfig". The pages
+    // tree holds routes only; their tests live under apps/web/tests/.
+    const pagesRoot = resolve(sourceRoot, 'pages');
+    const offenders = filesBelow(pagesRoot)
+      .filter((file) => /\.(test|spec)\./.test(file))
+      .map((file) => relative(webRoot, file));
+
+    expect(offenders).toEqual([]);
+  });
 });
