@@ -109,7 +109,6 @@ describe('desktopPush notifications and audio', () => {
       const notificationCtor = vi.fn();
       Reflect.set(window, 'Notification', {
         permission: 'denied',
-        // @ts-expect-error test mock
         constructor: notificationCtor,
       });
 
@@ -129,7 +128,7 @@ describe('desktopPush notifications and audio', () => {
         set onclick(fn: () => void) {
           capturedOnclick = fn;
         },
-        get onclick() {
+        get onclick(): (() => void) | null {
           return capturedOnclick;
         },
         close: closeMock,
@@ -186,9 +185,12 @@ describe('desktopPush notifications and audio', () => {
 
       expect(capturedOnclick).toBeTypeOf('function');
 
-      // Simulate click
-      if (capturedOnclick) {
-        capturedOnclick();
+      // Simulate click. The handler is captured by the mocked `onclick`
+      // setter, so TypeScript's control-flow analysis still sees the variable
+      // as null here — read it through a binding typed as the handler.
+      const onclick = capturedOnclick as (() => void) | null;
+      if (onclick) {
+        onclick();
       }
 
       expect(focusMock).toHaveBeenCalled();
