@@ -9,10 +9,17 @@ export interface ApiKeyModalProps {
 }
 
 export function ApiKeyModal({ isOpen, onClose, onGenerate }: ApiKeyModalProps) {
+  // The form lives in its own component so that closing the modal unmounts it
+  // and throws its state away. Keeping the state here instead would leave the
+  // next open showing the previous session's name and permissions.
+  if (!isOpen) return null;
+
+  return <ApiKeyModalForm onClose={onClose} onGenerate={onGenerate} />;
+}
+
+function ApiKeyModalForm({ onClose, onGenerate }: Omit<ApiKeyModalProps, 'isOpen'>) {
   const [name, setName] = useState('');
   const [permissions, setPermissions] = useState<string[]>(['read']);
-
-  if (!isOpen) return null;
 
   const togglePermission = (perm: string) => {
     setPermissions((prev) =>
