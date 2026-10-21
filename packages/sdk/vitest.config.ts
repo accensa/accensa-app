@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    environment: 'jsdom',
     /**
      * `tsc` now runs alongside the suite, which starves the event loop enough
      * on a loaded machine to push the timer-driven tests (the abort and retry

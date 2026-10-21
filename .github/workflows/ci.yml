@@ -59,7 +59,7 @@ jobs:
 
       # Lints apps/web from the root.
       # packages/sdk has no ESLint config; typecheck covers it in the typecheck step.
-      # apps/docs (Docusaurus) and apps/demo-merchant (example JS) are excluded.
+      # apps/docs (Docusaurus) and apps/demo-merchant (standalone example) are excluded.
       # The `@accensa/sdk` half of this script is an `echo` — see issue #511.
       - name: Lint workspace packages
         run: pnpm lint
@@ -102,7 +102,7 @@ jobs:
       # Typechecks apps/web and packages/sdk from the root.
       # apps/docs (Docusaurus) uses its own tsconfig via @docusaurus/tsconfig
       # and is excluded — its types are checked by docusaurus build instead.
-      # apps/demo-merchant is plain JavaScript and has no TypeScript to check.
+      # apps/demo-merchant is a standalone Next.js example and is typechecked by its own build.
       - name: Typecheck workspace packages
         run: pnpm typecheck
 
