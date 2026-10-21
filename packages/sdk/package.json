@@ -36,9 +36,9 @@
       "require": "./dist/receipt-anchor-client.js"
     },
     "./types": {
-      "types": "./dist/types/index.d.ts",
-      "import": "./dist/types/index.mjs",
-      "require": "./dist/types/index.js"
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.mjs",
+      "require": "./dist/types.js"
     },
     "./webhooks": {
       "types": "./dist/webhooks.d.ts",
@@ -61,14 +61,14 @@
       "require": "./dist/zk-proof.js"
     },
     "./events": {
-      "types": "./dist/events/index.d.ts",
-      "import": "./dist/events/index.mjs",
-      "require": "./dist/events/index.js"
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.mjs",
+      "require": "./dist/events.js"
     },
     "./subscription": {
-      "types": "./dist/subscription/index.d.ts",
-      "import": "./dist/subscription/index.mjs",
-      "require": "./dist/subscription/index.js"
+      "types": "./dist/subscription.d.ts",
+      "import": "./dist/subscription.mjs",
+      "require": "./dist/subscription.js"
     },
     "./session/express": {
       "types": "./dist/session/express.d.ts",
