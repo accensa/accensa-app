@@ -140,7 +140,7 @@ describe('enqueueWebhookDelivery', () => {
 describe('deliverDue — a sleeping host cannot stall the caller past the budget', () => {
   it('returns before a webhook that never responds would exhaust the indexer budget', async () => {
     const hanging = () => new Promise<Response>(() => {});
-    const query = vi.fn(async (sql: string, _params?: unknown[]) => {
+    const query = vi.fn(async (sql: string) => {
       if (sql.includes("SET status = 'delivering'")) return { rowCount: 1, rows: [{ id: 1 }] };
       if (sql.includes('FROM webhook_deliveries')) {
         return {
@@ -276,13 +276,17 @@ describe('webhookSummary', () => {
         },
       ],
     };
-    const query = vi.fn(async (sql: string, _params?: unknown[]) => {
-      if (sql.includes('json_agg')) return { rows: [delivery] };
-      if (/^SELECT d\.status, count/.test(sql)) return { rows: [] };
-      if (/^SELECT d\.id, d\.payment_tx_hash/.test(sql)) return { rows: [] };
-      if (/^SELECT count\(\*\)::text AS count/.test(sql)) return { rows: [{ count: '0' }] };
-      return { rows: [] };
-    });
+    // Two-arg signature so `mock.calls[..][1]` (the bound params) is typed
+    // for the merchant-scoping assertion below, without naming an unused arg.
+    const query = vi.fn<(sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }>>(
+      async (sql) => {
+        if (sql.includes('json_agg')) return { rows: [delivery] };
+        if (/^SELECT d\.status, count/.test(sql)) return { rows: [] };
+        if (/^SELECT d\.id, d\.payment_tx_hash/.test(sql)) return { rows: [] };
+        if (/^SELECT count\(\*\)::text AS count/.test(sql)) return { rows: [{ count: '0' }] };
+        return { rows: [] };
+      },
+    );
 
     const summary = await webhookSummary({ query } as never, 7);
 

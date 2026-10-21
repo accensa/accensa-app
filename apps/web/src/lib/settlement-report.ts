@@ -16,7 +16,20 @@ export interface SettlementReport {
   reportedAt: string | null;
 }
 
-export type ParseResult = { ok: true; report: SettlementReport } | { ok: false; error: string };
+/**
+ * Typed rejection codes for reports that fail the *timestamp window* rather
+ * than shape validation.
+ *
+ * The signature over such a report verifies — the bytes are genuinely the
+ * merchant's — but the signed time is not acceptable at this moment. The
+ * route maps these to a 401 with the same `code` echoed back, so callers can
+ * branch on a stable token instead of matching prose.
+ */
+export type SettlementWindowCode = 'report_too_old' | 'report_future_dated';
+
+export type ParseResult =
+  | { ok: true; report: SettlementReport }
+  | { ok: false; error: string; code?: SettlementWindowCode };
 
 /** Stellar transaction hashes are 32 bytes, hex-encoded. */
 const TX_HASH = /^[0-9a-f]{64}$/i;
@@ -89,15 +102,24 @@ export function parseSettlementReport(body: unknown): ParseResult {
     if (Number.isNaN(d.getTime())) {
       return { ok: false, error: 'reported_at must be an ISO-8601 timestamp' };
     }
-    const maxAgeMs = process.env.HOOK_MAX_AGE_MS ? Number(process.env.HOOK_MAX_AGE_MS) : 3600000;
+    // The accepted window is five minutes by default — the exact bound
+    // apps/web/src/proxy.ts documents for this endpoint. `reported_at` is
+    // inside the signed bytes, so it is the one timestamp a replay cannot
+    // refresh: a captured body grows older by the second and leaves this
+    // window permanently. `HOOK_MAX_AGE_MS` overrides the age bound for a
+    // deployment with genuinely skewed clocks; a non-numeric or non-positive
+    // value must not silently disable the window (Number('x') is NaN, and
+    // `age > NaN` is never true).
+    const envMaxAge = Number(process.env.HOOK_MAX_AGE_MS);
+    const maxAgeMs = Number.isFinite(envMaxAge) && envMaxAge > 0 ? envMaxAge : 300000;
     const now = Date.now();
     const age = now - d.getTime();
     if (age > maxAgeMs) {
-      return { ok: false, error: 'report_too_old' };
+      return { ok: false, error: 'report_too_old', code: 'report_too_old' };
     }
     // 5 minutes clock skew
     if (d.getTime() > now + 300000) {
-      return { ok: false, error: 'report_future_dated' };
+      return { ok: false, error: 'report_future_dated', code: 'report_future_dated' };
     }
     reportedAt = b.reported_at;
   } else {
