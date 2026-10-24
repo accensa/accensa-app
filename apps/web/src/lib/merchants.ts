@@ -75,12 +75,20 @@ export async function getMerchantById(client: Client, id: number): Promise<Merch
 /**
  * Resolves the merchant scoping a request.
  *
- * `apps/web/src/middleware.ts` verifies the session cookie and forwards the
- * signed-in Stellar address as `x-accensa-merchant` — routes trust that
- * header rather than re-verifying the cookie themselves, since middleware has
- * already run and the header cannot be forged by the caller (middleware
- * overwrites it on every request it forwards). Null means the header is
- * missing, empty, or names a merchant this deployment doesn't have.
+ * `src/proxy.ts` verifies the session cookie and forwards the signed-in
+ * Stellar address as `x-accensa-merchant` — but only on the paths it
+ * session-verifies (private API routes and the dashboard). On those paths the
+ * proxy sets the header on the *outgoing* request after `jwtVerify` succeeds,
+ * overwriting any value a caller tried to smuggle in, so routes may trust it
+ * rather than re-verifying the cookie themselves.
+ *
+ * The exemption matters: `/api/auth` is in the proxy's public-path list, so
+ * requests there are not session-verified and the header is **not** set or
+ * overwritten — a caller can supply any merchant it likes. Routes on public
+ * paths must resolve identity from the `accensa_session` cookie instead (see
+ * `lib/auth/request-session.ts`); this function is only safe where the proxy
+ * has already run its session gate. Null means the header is missing, empty,
+ * or names a merchant this deployment doesn't have.
  */
 export async function getMerchantFromRequest(
   client: Client,

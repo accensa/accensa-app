@@ -22,8 +22,8 @@ Run the `x402-facilitator-stellar` service to handle the standard x402 protocol 
 
 ```bash
 cd x402-facilitator-stellar
-pnpm install
-pnpm start
+npm install
+npm start
 ```
 
 ### 3. Start the Dashboard
@@ -49,14 +49,15 @@ You do not need to run any infrastructure to verify an Accensa receipt provided 
 
 ### Verifying a Receipt
 
-When a merchant gives you a receipt, it includes the batch Merkle root, the specific leaf (your payment hash + metadata), and the Merkle proof.
+When a merchant gives you a receipt, it includes the batch Merkle root, the specific leaf (the SDK's `receiptLeaf` function applied to the transaction hash, with no amount, payer, asset, ledger, or metadata in the leaf; see [Receipt leaves](./app/receipt-leaves)), and the Merkle proof.
 
 You can mathematically verify this receipt off-chain by using the Accensa Node SDK. All three arguments are hex-encoded 32-byte hashes; the proof lists sibling hashes from leaf to root:
 
 ```typescript
-import { verifyReceipt } from '@accensa/sdk';
+import { receiptLeaf, verifyReceipt } from '@accensa/sdk';
 
-const isValid = verifyReceipt(receiptLeaf, proof, batchRoot);
+const leaf = receiptLeaf(txHash);
+const isValid = verifyReceipt(leaf, proof, batchRoot);
 if (!isValid) {
   throw new Error('Receipt does not match the anchored batch root.');
 }

@@ -46,6 +46,7 @@ describe('recordAnchoredBatch', () => {
       .mockResolvedValueOnce({}); // COMMIT
 
     const result = await recordAnchoredBatch(client as never, {
+      merchantId: 7,
       selectionHash: preview.selectionHash,
       batchId: 7,
       anchorTx: tx(99),
@@ -80,6 +81,7 @@ describe('recordAnchoredBatch', () => {
     });
 
     const result = await recordAnchoredBatch(client as never, {
+      merchantId: 7,
       selectionHash: preview.selectionHash,
       batchId: 3,
       anchorTx: tx(99),
@@ -89,6 +91,49 @@ describe('recordAnchoredBatch', () => {
     expect(result).toEqual({ batchId: 3, alreadyRecorded: false, status: 'recorded' });
     const updates = query.mock.calls.filter((c) => String(c[0]).includes('UPDATE payments'));
     expect(updates).toHaveLength(2);
+    expect(String(updates[0][0])).toContain('merchant_id = $1');
+    expect(updates[0][1][0]).toBe(7);
+    expect(String(updates[0][0])).toContain('SET batch_id = $3');
+    expect(updates[0][1].slice(0, 3)).toEqual([7, tx(1), 3]);
+  });
+
+  it('does not mark a batch recorded when forced RLS hides the payment update', async () => {
+    const preview = buildPreview([payment(1)]);
+    query.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'ROLLBACK' || sql === 'COMMIT') return {};
+      if (sql.includes('FROM receipt_batches WHERE selection_hash')) {
+        return {
+          rows: [
+            {
+              selection_hash: preview.selectionHash,
+              batch_id: null,
+              root: preview.root,
+              status: 'previewed',
+              proofs: preview.proofs,
+            },
+          ],
+        };
+      }
+      if (sql.includes('UPDATE receipt_batches')) return { rowCount: 1 };
+      if (sql.includes('UPDATE payments')) return { rowCount: 0 };
+      if (sql.includes('SELECT batch_id FROM payments')) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 0 };
+    });
+
+    await expect(
+      recordAnchoredBatch(client as never, {
+        merchantId: 7,
+        selectionHash: preview.selectionHash,
+        batchId: 3,
+        anchorTx: tx(99),
+        root: preview.root,
+      }),
+    ).rejects.toMatchObject({ code: 'PAYMENT_NOT_FOUND' });
+
+    expect(query.mock.calls.some((call) => call[0] === 'ROLLBACK')).toBe(true);
+    expect(query.mock.calls.some((call) => String(call[0]).includes("status = 'recorded'"))).toBe(
+      false,
+    );
   });
 
   it('rolls back when the supplied root does not match the preview', async () => {
@@ -110,6 +155,7 @@ describe('recordAnchoredBatch', () => {
 
     await expect(
       recordAnchoredBatch(client as never, {
+        merchantId: 7,
         selectionHash: preview.selectionHash,
         batchId: 3,
         anchorTx: tx(99),

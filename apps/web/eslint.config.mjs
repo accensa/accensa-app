@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     // Playwright output — generated per run, never source.
     'test-results/**',
     'playwright-report/**',
+    // Build artifacts (e.g. packages/sdk/dist). CI lints before building, but a
+    // locally built tree must lint the same way — emitted JS is not source.
+    '**/dist/**',
   ]),
 ]);
 

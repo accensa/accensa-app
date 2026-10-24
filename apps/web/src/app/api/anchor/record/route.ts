@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { withClient, ensureSchema } from '@/lib/db';
+import { withClient, withMerchantClient, ensureSchema } from '@/lib/db';
 import { recordAnchoredBatch } from '@/lib/anchor';
 import { getBatch, isHash32 } from '@/lib/receipt-anchor';
+import { getMerchantFromRequest } from '@/lib/merchants';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'batchId must be a positive integer' }, { status: 400 });
   }
 
+  let merchant;
+  try {
+    merchant = await withClient((client) => getMerchantFromRequest(client, request));
+  } catch (error) {
+    console.error('anchor record merchant lookup failed:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+  if (!merchant) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   let onchain;
   try {
     onchain = await getBatch(batchId);
@@ -77,9 +87,10 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await withClient(async (client) => {
+    const result = await withMerchantClient(merchant.id, async (client) => {
       await ensureSchema(client);
       return recordAnchoredBatch(client, {
+        merchantId: merchant.id,
         selectionHash: selectionHash.toLowerCase(),
         batchId,
         anchorTx: anchorTx.toLowerCase(),
@@ -93,7 +104,8 @@ export async function POST(request: Request) {
       code === 'UNKNOWN_SELECTION' ||
       code === 'ROOT_MISMATCH' ||
       code === 'ALREADY_ANCHORED' ||
-      code === 'PAYMENT_ALREADY_ANCHORED'
+      code === 'PAYMENT_ALREADY_ANCHORED' ||
+      code === 'PAYMENT_NOT_FOUND'
     ) {
       return NextResponse.json(
         { error: error instanceof Error ? error.message : 'Conflict' },

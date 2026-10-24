@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Keypad from '../../../components/pos/Keypad';
 import { useOnline } from '@/components/network-status';
+import { forceDynamic } from '@/lib/force-dynamic';
 
 interface OfflineTransaction {
   amount: string;
   date: string;
 }
+
+export const getServerSideProps = forceDynamic;
 
 export default function POS() {
   const [amount, setAmount] = useState('0');

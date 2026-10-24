@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import { randomBytes } from 'node:crypto';
 import { Client } from 'pg';
 import {
   withClient,
@@ -6,6 +7,7 @@ import {
   setLastSyncedLedger,
   getLastSyncedLedger,
   rollbackSyncToLedger,
+  consumeSettlementNonce,
 } from './db';
 import { insertPaymentsInTransaction } from './insert-payments';
 import { getMerchantByAddress } from './merchants';
@@ -35,6 +37,7 @@ async function setupTestDatabase(): Promise<void> {
       'payments',
       'sync_state',
       'challenge_nonces',
+      'settle_nonces',
       'merchants',
       'role_tuples',
       'merchant_stores',
@@ -116,6 +119,122 @@ describe('Database Integration', () => {
       await setLastSyncedLedger(client, merchant!.id, 42);
       const ledger = await getLastSyncedLedger(client, merchant!.id);
       expect(ledger).toBe(42);
+    });
+  });
+
+  it('creates every payments index declared by migrations 004 and 006', async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('Skipping integration test as DATABASE_URL is missing');
+      return;
+    }
+
+    const expectedIndexes = [
+      'idx_payments_hook_reported',
+      'idx_payments_merchant_ts_txhash',
+      'idx_payments_merchant_route',
+      'idx_payments_merchant_payer',
+      'idx_payments_merchant_asset',
+    ];
+
+    // payments.merchant_id is an INT, so the plans below need a real merchant
+    // id — a UUID string is rejected by the column type before the planner
+    // ever sees it.
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO merchants (address) VALUES ($1) ON CONFLICT (address) DO NOTHING`,
+        ['GINDEXPLANMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'],
+      );
+      return getMerchantByAddress(client, 'GINDEXPLANMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX');
+    });
+    expect(merchant).not.toBeNull();
+    const merchantId = merchant!.id;
+
+    await withClient(async (client) => {
+      // Re-running ensureSchema must remain safe on a database with these indexes.
+      await ensureSchema(client);
+      await ensureSchema(client);
+
+      const { rows } = await client.query<{ indexname: string; indexdef: string }>(
+        `SELECT indexname, indexdef
+         FROM pg_indexes
+         WHERE schemaname = current_schema()
+           AND tablename = 'payments'
+           AND indexname = ANY($1::text[])`,
+        [expectedIndexes],
+      );
+      const definitions = new Map(rows.map(({ indexname, indexdef }) => [indexname, indexdef]));
+
+      expect([...definitions.keys()].sort()).toEqual([...expectedIndexes].sort());
+      expect(definitions.get('idx_payments_hook_reported')).toContain(
+        'WHERE (hook_reported_at IS NOT NULL)',
+      );
+      expect(definitions.get('idx_payments_merchant_ts_txhash')).toContain(
+        '(merchant_id, ts DESC, tx_hash DESC)',
+      );
+      expect(definitions.get('idx_payments_merchant_route')).toContain('WHERE (route IS NOT NULL)');
+      expect(definitions.get('idx_payments_merchant_payer')).toContain('WHERE (payer IS NOT NULL)');
+      expect(definitions.get('idx_payments_merchant_asset')).toContain('WHERE (asset IS NOT NULL)');
+
+      await client.query('BEGIN');
+      try {
+        // The schema still carries the pre-tenant single-column indexes
+        // (idx_payments_ts, idx_payments_route, idx_payments_payer and
+        // idx_payments_merchant_ts). They are not tenant-scoped, so RLS makes
+        // them unusable in production, but the planner still weighs them: on
+        // an empty table their estimated cost ties with the composite indexes
+        // below and the tie is broken by index order, not by usefulness. Drop
+        // them for the duration of the transaction so each plan can only be
+        // served by the index it is meant to prove. ROLLBACK puts them back.
+        for (const legacyIndex of [
+          'idx_payments_ts',
+          'idx_payments_route',
+          'idx_payments_payer',
+          'idx_payments_merchant_ts',
+        ]) {
+          await client.query(`DROP INDEX IF EXISTS ${legacyIndex}`);
+        }
+
+        await client.query('SET LOCAL enable_seqscan = off');
+        const plans = [
+          {
+            name: 'route filter',
+            index: 'idx_payments_merchant_route',
+            sql: 'EXPLAIN SELECT tx_hash FROM payments WHERE merchant_id = $1 AND route = $2',
+            values: [merchantId, '/checkout'],
+          },
+          {
+            name: 'payer filter',
+            index: 'idx_payments_merchant_payer',
+            sql: 'EXPLAIN SELECT tx_hash FROM payments WHERE merchant_id = $1 AND payer = $2',
+            values: [merchantId, 'G'.padEnd(56, 'A')],
+          },
+          {
+            name: 'asset filter',
+            index: 'idx_payments_merchant_asset',
+            sql: 'EXPLAIN SELECT tx_hash FROM payments WHERE merchant_id = $1 AND asset = $2',
+            values: [merchantId, 'USDC'],
+          },
+          {
+            name: 'keyset page',
+            index: 'idx_payments_merchant_ts_txhash',
+            sql: `EXPLAIN SELECT tx_hash FROM payments
+                  WHERE merchant_id = $1 AND ts IS NOT NULL
+                    AND (ts < $2 OR (ts = $2 AND tx_hash < $3))
+                  ORDER BY ts DESC, tx_hash DESC LIMIT $4`,
+            values: [merchantId, '2026-01-01T00:00:00Z', 'f'.repeat(64), 20],
+          },
+        ];
+
+        for (const { name, index, sql, values } of plans) {
+          const { rows: planRows } = await client.query<{ 'QUERY PLAN': string }>(sql, values);
+          const plan = planRows.map(({ 'QUERY PLAN': line }) => line).join('\n');
+          console.info(`EXPLAIN ${name}:\n${plan}`);
+          expect(plan, `${name} should use ${index}`).toContain(index);
+        }
+      } finally {
+        await client.query('ROLLBACK');
+      }
     });
   });
 
@@ -220,6 +339,59 @@ describe('Database Integration', () => {
       return res.rows;
     });
     expect(rowsSeenByB).toHaveLength(1);
+  });
+
+  it('a forced-RLS payment update is hidden through an unscoped client and succeeds when merchant-scoped', async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('Skipping integration test as DATABASE_URL is missing');
+      return;
+    }
+
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      const address = 'GANCHORRLSMERCHANTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+      await client.query(`INSERT INTO merchants (address) VALUES ($1) ON CONFLICT DO NOTHING`, [
+        address,
+      ]);
+      return getMerchantByAddress(client, address);
+    });
+    expect(merchant).not.toBeNull();
+    const txHash = 'e'.repeat(64);
+
+    await withMerchantClient(merchant!.id, async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO payments (merchant_id, tx_hash) VALUES ($1, $2)
+         ON CONFLICT (merchant_id, tx_hash) DO NOTHING`,
+        [merchant!.id, txHash],
+      );
+    });
+
+    const unscopedUpdate = await withClient(async (client) => {
+      await client.query('SET SESSION AUTHORIZATION test_app_user');
+      return client.query(
+        `UPDATE payments SET batch_id = $1 WHERE merchant_id = $2 AND tx_hash = $3`,
+        [23, merchant!.id, txHash],
+      );
+    });
+    expect(unscopedUpdate.rowCount).toBe(0);
+
+    const scopedUpdate = await withMerchantClient(merchant!.id, (client) =>
+      client.query(`UPDATE payments SET batch_id = $1 WHERE merchant_id = $2 AND tx_hash = $3`, [
+        23,
+        merchant!.id,
+        txHash,
+      ]),
+    );
+    expect(scopedUpdate.rowCount).toBe(1);
+
+    const savedBatchId = await withMerchantClient(merchant!.id, async (client) => {
+      const result = await client.query(`SELECT batch_id FROM payments WHERE tx_hash = $1`, [
+        txHash,
+      ]);
+      return Number(result.rows[0].batch_id);
+    });
+    expect(savedBatchId).toBe(23);
   });
 
   it('batched inserts write many rows in one statement and commit the cursor atomically', async () => {
@@ -394,5 +566,36 @@ describe('Database Integration', () => {
       return insertPaymentsInTransaction(client, merchant!.id, [{ ...row, ledger: 301 }], 601);
     });
     expect(second.inserted).toBe(0);
+  });
+
+  it('a settlement-report nonce is consumable exactly once, even across connections', async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn('Skipping integration test as DATABASE_URL is missing');
+      return;
+    }
+
+    const merchant = await withClient(async (client) => {
+      await ensureSchema(client);
+      await client.query(
+        `INSERT INTO merchants (address) VALUES ($1) ON CONFLICT (address) DO NOTHING`,
+        ['GSETTLENONCEMERCHANTxxxxxxxxxxxxxxxxxxxx'],
+      );
+      return getMerchantByAddress(client, 'GSETTLENONCEMERCHANTxxxxxxxxxxxxxxxxxxxx');
+    });
+    expect(merchant).not.toBeNull();
+
+    // 128 hex chars — an Ed25519 signature's length, which is exactly what
+    // /api/hook/settle uses as the nonce.
+    const nonce = randomBytes(64).toString('hex');
+
+    // A fresh connection per call stands in for a process restart: the claim
+    // lives in the `settle_nonces` table, not in either connection's memory.
+    const first = await withClient((client) => consumeSettlementNonce(client, nonce, merchant!.id));
+    const second = await withClient((client) =>
+      consumeSettlementNonce(client, nonce, merchant!.id),
+    );
+
+    expect(first).toBe(true);
+    expect(second).toBe(false);
   });
 });

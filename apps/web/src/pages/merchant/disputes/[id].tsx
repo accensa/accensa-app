@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
-import { EvidenceUpload } from '@/components/disputes/EvidenceUpload';
 
 interface DisputeEvent {
   label: string;
@@ -41,7 +40,6 @@ export default function DisputeDetailPage({
   const [remainingMs, setRemainingMs] = useState(() =>
     Math.max(0, Date.parse(dispute.evidenceDeadline) - Date.now()),
   );
-  const [decision, setDecision] = useState<'accepted' | 'contested' | null>(null);
   const urgency = remainingMs <= 24 * 60 * 60 * 1000 ? 'urgent' : 'open';
 
   useEffect(() => {
@@ -59,14 +57,6 @@ export default function DisputeDetailPage({
     const seconds = totalSeconds % 60;
     return `${hours}h ${minutes}m ${seconds}s`;
   }, [remainingMs]);
-
-  async function decide(nextDecision: 'accepted' | 'contested') {
-    setDecision(nextDecision);
-    await fetch(`/api/disputes/${encodeURIComponent(dispute.id)}/${nextDecision}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
 
   return (
     <main className="mx-auto max-w-4xl space-y-6 px-6 py-10">
@@ -122,38 +112,6 @@ export default function DisputeDetailPage({
             </li>
           ))}
         </ol>
-      </section>
-
-      <EvidenceUpload disputeId={dispute.id} />
-
-      <section
-        aria-labelledby="decision-heading"
-        className="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-5"
-      >
-        <h2 id="decision-heading" className="sr-only">
-          Dispute decision
-        </h2>
-        <button
-          type="button"
-          onClick={() => void decide('accepted')}
-          disabled={decision !== null}
-          className="rounded-md border border-red-700 px-4 py-2 text-red-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-50"
-        >
-          Accept refund
-        </button>
-        <button
-          type="button"
-          onClick={() => void decide('contested')}
-          disabled={decision !== null || remainingMs === 0}
-          className="rounded-md bg-emerald-700 px-4 py-2 text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-50"
-        >
-          Contest with evidence
-        </button>
-        {decision && (
-          <p role="status" aria-live="polite">
-            Decision submitted: {decision}.
-          </p>
-        )}
       </section>
     </main>
   );

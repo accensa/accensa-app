@@ -38,7 +38,7 @@ export interface paths {
     };
     /**
      * Cursor-paginated payment history.
-     * @description Session-authenticated; see apps/web/src/middleware.ts.
+     * @description Session-authenticated via `apps/web/src/proxy.ts`, which forwards `x-accensa-merchant`/`x-accensa-role` only for requests that pass session verification, while public paths such as `/api/auth`, `/api/verify`, `/api/hook/`, `/api/receipts/`, `/api/inventory/` and `/api/status` are exempted.
      *
      *     Filters narrow the result set server-side before pagination, so the
      *     cursor stays correct under every combination: rows are neither skipped
@@ -73,8 +73,8 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Revenue grouped by attributed route and method.
-     * @description Session-authenticated; see apps/web/src/middleware.ts.
+     * Revenue grouped by attributed route, method, and asset.
+     * @description Session-authenticated via `apps/web/src/proxy.ts`, which forwards `x-accensa-merchant`/`x-accensa-role` only for requests that pass session verification, while public paths such as `/api/auth`, `/api/verify`, `/api/hook/`, `/api/receipts/`, `/api/inventory/` and `/api/status` are exempted.
      */
     get: operations['listRouteRevenue'];
     put?: never;
@@ -197,9 +197,16 @@ export interface components {
     };
     RouteRevenue: {
       route: string;
-      method: string;
+      method: string | null;
+      /** @description Canonical payment asset, with native used for legacy null assets. */
+      asset: string | null;
       total_revenue: string;
       calls: number;
+    };
+    RouteRevenueResponse: {
+      routes: components['schemas']['RouteRevenue'][];
+      truncated: boolean;
+      default_window_days: number | null;
     };
     VerifyRequest: {
       batchId: number;
@@ -286,7 +293,7 @@ export interface operations {
           'application/json': components['schemas']['ErrorResponse'];
         };
       };
-      /** @description Missing or invalid signature. */
+      /** @description Missing or invalid signature; a valid signature whose signed `reported_at` falls outside the accepted five-minute window (codes `report_too_old` / `report_future_dated`); or a signature that has already been consumed (code `report_replayed`). Error bodies for these carry a machine-readable `code` alongside `error`. */
       401: {
         headers: {
           [name: string]: unknown;
@@ -367,6 +374,8 @@ export interface operations {
       query?: {
         from?: string;
         to?: string;
+        /** @description Maximum number of top route groups to include (integer between 1 and 200, default 50); any remaining groups beyond the limit are aggregated into the first group past the limit in the "(other)" totals. */
+        limit?: number;
       };
       header?: never;
       path?: never;
@@ -380,7 +389,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['RouteRevenue'][];
+          'application/json': components['schemas']['RouteRevenueResponse'];
+        };
+      };
+      /** @description The limit query parameter is malformed or not a valid integer between 1 and 200. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ErrorResponse'];
         };
       };
       /** @description Unauthorized. */

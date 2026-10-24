@@ -100,9 +100,9 @@ jobs:
         run: pnpm test
 
       # Typechecks apps/web and packages/sdk from the root.
-      # apps/docs (Docusaurus) uses its own tsconfig via @docusaurus/tsconfig
-      # and is excluded — its types are checked by docusaurus build instead.
-      # apps/demo-merchant is a standalone Next.js example and is typechecked by its own build.
+      # apps/docs is not built or typechecked in CI (Pages claims dropped).
+      # apps/demo-merchant is a standalone Next.js example outside the root typecheck;
+      # `next build` typechecks it when run in its own package.
       - name: Typecheck workspace packages
         run: pnpm typecheck
 
@@ -140,6 +140,14 @@ jobs:
             console.log('CJS: merkle entry OK');
           "
 
+          # Every remaining package export must resolve from the packed tarball.
+          node -e "
+            for (const subpath of ['receipt-anchor', 'receipt-anchor-client', 'types', 'webhooks', 'retry', 'zk-proof', 'events', 'subscription', 'session/express']) {
+              require('@accensa/sdk/' + subpath);
+              console.log('CJS: ' + subpath + ' entry OK');
+            }
+          "
+
           # Test ESM import
           cat > "$SCRATCH/test.mjs" << 'EOF'
           import { verifyReceipt, attachAccensaHook, createSettleHook } from '@accensa/sdk';
@@ -149,7 +157,11 @@ jobs:
           if (typeof attachAccensaHook !== 'function') throw new Error('attachAccensaHook not exported');
           if (typeof createSettleHook !== 'function') throw new Error('createSettleHook not exported');
           if (typeof vr !== 'function') throw new Error('verifyReceipt not exported from /merkle');
-          console.log('ESM: both entries OK');
+          for (const subpath of ['receipt-anchor', 'receipt-anchor-client', 'types', 'webhooks', 'retry', 'zk-proof', 'events', 'subscription', 'session/express']) {
+            await import('@accensa/sdk/' + subpath);
+            console.log('ESM: ' + subpath + ' entry OK');
+          }
+          console.log('ESM: all entries OK');
           EOF
           node "$SCRATCH/test.mjs"
 
@@ -170,3 +182,9 @@ jobs:
       - name: Test demo-merchant
         working-directory: ./apps/demo-merchant
         run: pnpm test
+
+      - name: Audit workspace dependencies
+        # Dev-dependency audit policy: dev-only advisories are intentionally included
+        # and gate CI alongside production dependencies at the moderate threshold.
+        # Review date: 2026-06-01. Reason: ensure no unmitigated moderate+ vulns enter release chain.
+        run: pnpm audit --audit-level moderate

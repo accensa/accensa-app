@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { BatchUploadModal } from '../../../../components/refunds/BatchUploadModal';
+import { forceDynamic } from '@/lib/force-dynamic';
+
+export const getServerSideProps = forceDynamic;
 
 export default function BatchRefundPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export interface ContractNode {
   id: string;
@@ -35,7 +35,7 @@ const CONTRACT_NODES: ContractNode[] = [
       'execute_upgrade(proposal_id: u64)',
     ],
     githubUrl:
-      'https://github.com/accensa/accensa-contracts/blob/main/contracts/multisig/src/lib.rs',
+      'https://github.com/accensa/accensa-contracts/blob/main/contracts/multisig-account/src/lib.rs',
   },
   {
     id: 'vault',
@@ -56,11 +56,11 @@ const CONTRACT_NODES: ContractNode[] = [
       'refund_buyer(buyer: Address, order_id: BytesN<32>, proof: DisputeProof)',
     ],
     githubUrl:
-      'https://github.com/accensa/accensa-contracts/blob/main/contracts/refund_vault/src/lib.rs',
+      'https://github.com/accensa/accensa-contracts/blob/main/contracts/refund-vault/src/lib.rs',
   },
   {
     id: 'channel',
-    name: 'Channel Contract',
+    name: 'Channel Contract (Design)',
     role: 'Micropayments & State',
     purpose:
       'Coordinates fast off-chain state channel channels, bilateral payment signing, cooperative channel closing, and dispute submission with evidence timeout.',
@@ -77,7 +77,7 @@ const CONTRACT_NODES: ContractNode[] = [
       'settle_and_close(channel_id: BytesN<32>)',
     ],
     githubUrl:
-      'https://github.com/accensa/accensa-contracts/blob/main/contracts/channel/src/lib.rs',
+      'https://github.com/accensa/accensa-app/blob/main/docs/technical-designs/178-state-channels-sdk.md',
   },
   {
     id: 'shard',
@@ -97,7 +97,8 @@ const CONTRACT_NODES: ContractNode[] = [
       'get_shard_root(shard_id: u32) -> BytesN<32>',
       'verify_inclusion(shard_id: u32, proof: Vec<BytesN<32>>, leaf: BytesN<32>) -> bool',
     ],
-    githubUrl: 'https://github.com/accensa/accensa-contracts/blob/main/contracts/shard/src/lib.rs',
+    githubUrl:
+      'https://github.com/accensa/accensa-contracts/blob/main/contracts/receipt-shard/src/lib.rs',
   },
   {
     id: 'receipt-anchor',
@@ -117,7 +118,7 @@ const CONTRACT_NODES: ContractNode[] = [
       'get_batch(batch_id: u64) -> BatchRecord',
     ],
     githubUrl:
-      'https://github.com/accensa/accensa-contracts/blob/main/contracts/receipt_anchor/src/lib.rs',
+      'https://github.com/accensa/accensa-contracts/blob/main/contracts/receipt-anchor/src/lib.rs',
   },
 ];
 
@@ -127,10 +128,26 @@ export function ArchitectureDiagram() {
   const [selectedNode, setSelectedNode] = useState<ContractNode | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [activeFlow, setActiveFlow] = useState<FlowType>('all');
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogContentRef = useRef<HTMLDivElement>(null);
+  const triggerElementRef = useRef<HTMLElement | SVGElement | null>(null);
+
+  const closeModal = () => {
+    setSelectedNode(null);
+    setTimeout(() => {
+      triggerElementRef.current?.focus();
+    }, 0);
+  };
+
+  useEffect(() => {
+    if (selectedNode) {
+      closeButtonRef.current?.focus();
+    }
+  }, [selectedNode]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSelectedNode(null);
+      if (e.key === 'Escape') closeModal();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -161,8 +178,21 @@ export function ArchitectureDiagram() {
           transition: transform 0.2s ease, filter 0.2s ease;
           cursor: pointer;
         }
-        .contract-box:hover {
+        .contract-box:hover,
+        .contract-box:focus-visible {
           filter: brightness(1.08) drop-shadow(0 6px 14px rgba(0,0,0,0.15));
+        }
+        .contract-box:focus-visible {
+          outline: 2px solid currentColor;
+          outline-offset: 2px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .flow-path {
+            animation: none;
+          }
+          .contract-box {
+            transition: none;
+          }
         }
       `}</style>
 
@@ -381,7 +411,10 @@ export function ArchitectureDiagram() {
               <g
                 key={node.id}
                 className="contract-box"
-                onClick={() => setSelectedNode(node)}
+                onClick={(e) => {
+                  triggerElementRef.current = e.currentTarget;
+                  setSelectedNode(node);
+                }}
                 onMouseEnter={() => setHoveredNodeId(node.id)}
                 onMouseLeave={() => setHoveredNodeId(null)}
                 tabIndex={0}
@@ -389,6 +422,8 @@ export function ArchitectureDiagram() {
                 aria-label={`Contract: ${node.name}`}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    triggerElementRef.current = e.currentTarget;
                     setSelectedNode(node);
                   }
                 }}
@@ -466,7 +501,25 @@ export function ArchitectureDiagram() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="modal-contract-title"
-          onClick={() => setSelectedNode(null)}
+          onClick={closeModal}
+          onKeyDown={(e) => {
+            if (e.key === 'Tab' && dialogContentRef.current) {
+              const focusable = dialogContentRef.current.querySelectorAll<HTMLElement>(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+              );
+              if (focusable.length > 0) {
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                  e.preventDefault();
+                  last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                  e.preventDefault();
+                  first.focus();
+                }
+              }
+            }
+          }}
           style={{
             position: 'fixed',
             top: 0,
@@ -483,6 +536,7 @@ export function ArchitectureDiagram() {
           }}
         >
           <div
+            ref={dialogContentRef}
             onClick={(e) => e.stopPropagation()}
             style={{
               maxWidth: '620px',
@@ -498,8 +552,9 @@ export function ArchitectureDiagram() {
           >
             {/* Close Button */}
             <button
+              ref={closeButtonRef}
               type="button"
-              onClick={() => setSelectedNode(null)}
+              onClick={closeModal}
               aria-label="Close details"
               style={{
                 position: 'absolute',

@@ -5,8 +5,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node --test tests/*.test.mjs",
-    "lint": "pnpm --filter web lint && pnpm --filter @accensa/sdk lint",
-    "typecheck": "pnpm --filter web typecheck && pnpm --filter @accensa/sdk typecheck",
+    "lint": "pnpm --filter web lint && pnpm --filter @accensa/sdk lint && pnpm --filter @accensa/shared lint",
+    "typecheck": "pnpm --filter web typecheck && pnpm --filter @accensa/sdk typecheck && pnpm --filter @accensa/shared typecheck",
     "changeset": "changeset"
   },
   "devDependencies": {

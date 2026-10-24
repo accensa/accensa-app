@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import QRCode from '@qrcode/react';
 import { QrCountdown } from './QrCountdown';
-import { Copy, Check } from 'lucide-react';
+import { Copy } from 'lucide-react';
 
 interface DynamicPaymentQrProps {
   paymentUri: string;

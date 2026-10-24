@@ -42,7 +42,41 @@ decoder against the same real captured testnet fixture
 `stellar-events.test.ts` uses, and asserts it reaches the same answer — that
 cross-check is the point.
 
+## Environment variables
+
+The CLI resolves its inputs as flag-then-environment: command-line flags take
+precedence over environment variables, which in turn take precedence over
+built-in defaults.
+
+| Environment variable | Flag                   | Default                                                    | Missing behavior                        |
+| -------------------- | ---------------------- | ---------------------------------------------------------- | --------------------------------------- |
+| `MERCHANT_ADDRESS`   | `--merchant`           | _(none)_                                                   | Required — exits with code 2 if absent  |
+| `STELLAR_RPC_URL`    | `--rpc-url`            | `https://soroban-testnet.stellar.org`                      | Falls back to default testnet RPC       |
+| `ASSET_CONTRACT_IDS` | `--asset-contract-ids` | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` | Falls back to default asset contract ID |
+| `DATABASE_URL`       | `--database-url`       | _(none)_                                                   | Optional — runs in rebuild-only mode    |
+
+> **Note on `ASSET_CONTRACT_IDS`**: the default value matches the web app's
+> default asset contract. If you are reconciling payments for a different asset
+> set, you _must_ override this — a stale default silently narrows the
+> reconciliation to the wrong assets.
+
 ## Running it
+
+CLI flags take precedence over their matching environment variable; when both
+are absent, the listed default or required-input behavior applies. These are
+all the environment variables read by `cli.mjs`; `db.mjs` reads none directly.
+
+| Environment variable | Overriding flag        | Default                                                                                 | If no flag or environment value is provided                                                    |
+| -------------------- | ---------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `MERCHANT_ADDRESS`   | `--merchant`           | None                                                                                    | Required; prints usage and exits with status 2.                                                |
+| `STELLAR_RPC_URL`    | `--rpc-url`            | `https://soroban-testnet.stellar.org`                                                   | Uses the testnet Soroban RPC endpoint.                                                         |
+| `ASSET_CONTRACT_IDS` | `--asset-contract-ids` | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` (the testnet native XLM SAC) | Rebuilds only the default asset set; set this explicitly to include other assets such as USDC. |
+| `DATABASE_URL`       | `--database-url`       | None                                                                                    | Runs rebuild-only: no database connection or production diff.                                  |
+
+`DATABASE_URL` is a credential. If you supply it, use a private value in the
+environment or a secret manager; do not put a real connection string in shell
+history or a committed file. The accepted shape is a PostgreSQL connection URL
+such as `postgres://USER:PASSWORD@HOST:5432/DB`.
 
 Two modes, selected by whether `--database-url` / `DATABASE_URL` is given.
 

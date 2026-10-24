@@ -1,9 +1,44 @@
 import { NextResponse } from 'next/server';
-import { withClient, withMerchantClient, ensureSchema, recordSettlement } from '@/lib/db';
-import { parseSettlementReport } from '@/lib/settlement-report';
+import {
+  withClient,
+  withMerchantClient,
+  ensureSchema,
+  recordSettlement,
+  consumeSettlementNonce,
+} from '@/lib/db';
+import { parseSettlementReport, type SettlementWindowCode } from '@/lib/settlement-report';
 import { listMerchants, type Merchant } from '@/lib/merchants';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Every way this endpoint can answer "this request is not acceptable" with a
+ * stable, machine-readable token — the typed half of `{ error, code }`.
+ *
+ * `report_replayed` is added by this route; the two window codes come out of
+ * `parseSettlementReport`, which validates the timestamp *inside* the signed
+ * bytes (see settlement-report.ts).
+ */
+export type SettleRejectionCode = SettlementWindowCode | 'report_replayed';
+
+/** Prose paired with each {@link SettleRejectionCode}; `code` is the contract. */
+const REJECTION_TEXT: Record<SettleRejectionCode, string> = {
+  report_too_old: 'Settlement report is outside the accepted window',
+  report_future_dated: 'Settlement report is dated too far in the future',
+  report_replayed: 'Settlement report signature has already been used',
+};
+
+/**
+ * Rejects with a typed error body — `{ error, code }` at 401.
+ *
+ * All three codes are authentication-class failures, not malformed input: the
+ * Ed25519 signature over these exact bytes verified, but the credentials the
+ * request carries — its signed timestamp, its single-use-ness — do not hold
+ * right now. A caller (or a test) branches on `code` rather than on prose.
+ */
+function rejected(code: SettleRejectionCode): NextResponse {
+  return NextResponse.json({ error: REJECTION_TEXT[code], code }, { status: 401 });
+}
 
 /**
  * Finds which configured merchant signed this report.
@@ -78,6 +113,16 @@ async function verifyingMerchant(
  * endpoint refuses to accept anything at all.
  *
  * Ledger-owned fields (ledger, amount, asset, ts) are never written here.
+ *
+ * Two controls make a captured report useless to whoever captures it, both
+ * documented by `apps/web/src/proxy.ts`'s comment about this path:
+ *
+ * 1. The signed `reported_at` must sit inside the accepted five-minute window
+ *    (enforced in `parseSettlementReport`, surfaced here as a typed 401).
+ *    The timestamp is part of the signed bytes, so a replay cannot refresh it.
+ * 2. The signature itself is consumed as a single-use nonce, in the same
+ *    database transaction as the attribution write — store-backed, so the
+ *    claim outlives a process restart.
  */
 export async function POST(request: Request) {
   const signature = request.headers.get('x-signature');
@@ -115,21 +160,51 @@ export async function POST(request: Request) {
 
   const parsed = parseSettlementReport(body);
   if (!parsed.ok) {
+    // A timestamp-window failure is verification, not malformed input: the
+    // signature over these bytes is valid, the signed time is not acceptable
+    // now. It is surfaced as a typed 401 (matching the proxy comment's claim
+    // of a five-minute bound); everything else stays a 400.
+    if (parsed.code) return rejected(parsed.code);
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
+  // The nonce is the signature itself: Ed25519 signs one exact byte
+  // sequence, so "same signature as before" and "same signed body replayed"
+  // are the same event. Normalized so a upper-case hex header cannot smuggle
+  // a second claim past the primary key.
+  const nonce = signature.trim().toLowerCase();
+
   try {
-    const { matchedExistingPayment } = await withMerchantClient(merchant.id, async (client) => {
+    const outcome = await withMerchantClient(merchant.id, async (client) => {
       await ensureSchema(client);
-      return recordSettlement(client, merchant.id, parsed.report);
+      // Consume the nonce and write attribution atomically: a replay fails
+      // the claim and writes nothing, while a transient failure on the write
+      // rolls the claim back so the SDK's own retry of the same signed body
+      // is not mistaken for an attack.
+      await client.query('BEGIN');
+      try {
+        const claimed = await consumeSettlementNonce(client, nonce, merchant.id);
+        if (!claimed) {
+          await client.query('ROLLBACK');
+          return { replayed: true as const };
+        }
+        const result = await recordSettlement(client, merchant.id, parsed.report);
+        await client.query('COMMIT');
+        return { replayed: false as const, ...result };
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      }
     });
+
+    if (outcome.replayed) return rejected('report_replayed');
 
     return NextResponse.json({
       recorded: true,
       txHash: parsed.report.txHash,
       // False means the transfer has not been indexed yet and the attribution
       // was staged. The sync job completes the row when it reaches that ledger.
-      matchedExistingPayment,
+      matchedExistingPayment: outcome.matchedExistingPayment,
     });
   } catch (error) {
     console.error('Error recording settlement:', error);

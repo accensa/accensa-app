@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { forceDynamic } from '@/lib/force-dynamic';
 
 interface PendingDispute {
   id: string;
@@ -12,6 +13,8 @@ const pendingDisputes: PendingDispute[] = [];
 function urgency(deadline: string): 'urgent' | 'open' {
   return Date.parse(deadline) - Date.now() <= 24 * 60 * 60 * 1000 ? 'urgent' : 'open';
 }
+
+export const getServerSideProps = forceDynamic;
 
 export default function MerchantDisputesPage() {
   const grouped = pendingDisputes.reduce<Record<'urgent' | 'open', PendingDispute[]>>(

@@ -198,6 +198,7 @@ export async function persistPreview(
 export async function recordAnchoredBatch(
   client: Client,
   input: {
+    merchantId: number;
     selectionHash: string;
     batchId: number;
     anchorTx: string;
@@ -218,6 +219,7 @@ export async function recordAnchoredBatch(
 async function recordAnchoredBatchTx(
   client: Client,
   input: {
+    merchantId: number;
     selectionHash: string;
     batchId: number;
     anchorTx: string;
@@ -270,19 +272,24 @@ async function recordAnchoredBatchTx(
   for (const [txHash, { leaf, proof }] of Object.entries(proofs)) {
     const updated = await client.query(
       `UPDATE payments
-       SET batch_id = $2, receipt_leaf = $3, receipt_proof = $4::jsonb
-       WHERE tx_hash = $1 AND batch_id IS NULL`,
-      [txHash, input.batchId, leaf, JSON.stringify(proof)],
+        SET batch_id = $3, receipt_leaf = $4, receipt_proof = $5::jsonb
+       WHERE merchant_id = $1 AND tx_hash = $2 AND batch_id IS NULL`,
+      [input.merchantId, txHash, input.batchId, leaf, JSON.stringify(proof)],
     );
     if ((updated.rowCount ?? 0) === 0) {
       const current = await client.query<{ batch_id: string | null }>(
-        `SELECT batch_id FROM payments WHERE tx_hash = $1`,
-        [txHash],
+        `SELECT batch_id FROM payments WHERE merchant_id = $1 AND tx_hash = $2`,
+        [input.merchantId, txHash],
       );
       const existingId = current.rows[0]?.batch_id;
       if (existingId && Number(existingId) !== input.batchId) {
         throw Object.assign(new Error(`payment ${txHash} is already in batch #${existingId}`), {
           code: 'PAYMENT_ALREADY_ANCHORED',
+        });
+      }
+      if (!existingId) {
+        throw Object.assign(new Error(`payment ${txHash} was not updated for this merchant`), {
+          code: 'PAYMENT_NOT_FOUND',
         });
       }
     }

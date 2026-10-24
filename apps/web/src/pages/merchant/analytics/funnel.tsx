@@ -9,6 +9,7 @@ import {
   type DeviceType,
   type FunnelStepKey,
 } from '../../../lib/funnel';
+import { forceDynamic } from '@/lib/force-dynamic';
 
 const STEP_KEYS: FunnelStepKey[] = [
   'checkout_opened',
@@ -53,6 +54,8 @@ function sampleEvents(now: number): CheckoutEvent[] {
 }
 
 const pct = (n: number) => `${n.toFixed(1)}%`;
+
+export const getServerSideProps = forceDynamic;
 
 export default function FunnelAnalytics() {
   const [device, setDevice] = useState<DeviceType | ''>('');
