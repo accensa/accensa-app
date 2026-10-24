@@ -14,6 +14,7 @@
   "license": "MIT",
   "description": "Example x402 seller with webhook listener and real-time SSE updates",
   "dependencies": {
+    "@accensa/sdk": "workspace:^",
     "@stellar/stellar-sdk": "^16.0.1",
     "@x402/core": "^2.21.0",
     "@x402/express": "^2.21.0",
