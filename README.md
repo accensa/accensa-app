@@ -5,6 +5,9 @@
     <img src="https://img.shields.io/github/actions/workflow/status/accensa/accensa-app/ci.yml?branch=main" alt="CI Status" />
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License" />
     <img src="https://img.shields.io/badge/stellar-x402-blue.svg" alt="Stellar x402" />
+    <a href="https://scorecard.dev/viewer/?uri=github.com/accensa/accensa-app">
+      <img src="https://api.scorecard.dev/projects/github.com/accensa/accensa-app/badge" alt="OpenSSF Scorecard" />
+    </a>
   </p>
   <p>
     <a href="https://accensa-dashboard.vercel.app/verify"><strong>Verify a Receipt</strong></a> ·
