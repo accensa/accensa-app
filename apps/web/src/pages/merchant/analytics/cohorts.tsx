@@ -1,6 +1,7 @@
 import React from 'react';
 import Head from 'next/head';
 import CohortHeatmap from '../../../../components/analytics/CohortHeatmap';
+import { forceDynamic } from '@/lib/force-dynamic';
 
 // Mock data representing pre-aggregated cohort data
 const mockCohortData = [
@@ -11,6 +12,8 @@ const mockCohortData = [
   { cohort: 'May 2026', size: 2100, retention: [100, 58] },
   { cohort: 'Jun 2026', size: 2400, retention: [100] },
 ];
+
+export const getServerSideProps = forceDynamic;
 
 export default function CohortAnalytics() {
   const aov = 142.5;

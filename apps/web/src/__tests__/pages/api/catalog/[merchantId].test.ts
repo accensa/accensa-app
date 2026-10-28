@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import handler from './[merchantId]';
-import { withMerchantClient } from '../../../lib/db';
-import { getMerchantByAddress } from '../../../lib/merchants';
-import { revalidateCatalog } from '../../../../lib/cache/revalidate';
+import handler from '../../../../pages/api/catalog/[merchantId]';
+import { withMerchantClient } from '../../../../lib/db';
+import { getMerchantByAddress } from '../../../../lib/merchants';
+import { revalidateCatalog } from '../../../../../lib/cache/revalidate';
 import type { NextApiRequest, NextApiResponse } from 'next';
 import type { Client } from 'pg';
 
-vi.mock('../../../lib/db', () => ({
+vi.mock('../../../../lib/db', () => ({
   ensureSchema: vi.fn(),
   withClient: vi.fn(async (cb) =>
     cb({
@@ -20,11 +20,11 @@ vi.mock('../../../lib/db', () => ({
   ),
 }));
 
-vi.mock('../../../lib/merchants', () => ({
+vi.mock('../../../../lib/merchants', () => ({
   getMerchantByAddress: vi.fn(),
 }));
 
-vi.mock('../../../../lib/cache/revalidate', () => ({
+vi.mock('../../../../../lib/cache/revalidate', () => ({
   revalidateCatalog: vi.fn(),
 }));
 

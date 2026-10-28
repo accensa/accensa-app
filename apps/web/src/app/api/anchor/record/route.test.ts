@@ -75,4 +75,100 @@ describe('POST /api/anchor/record', () => {
     expect(mocks.withMerchantClient).not.toHaveBeenCalled();
     expect(mocks.getBatch).not.toHaveBeenCalled();
   });
+
+  function post(payload: unknown, raw = false) {
+    return POST(
+      new Request('http://localhost/api/anchor/record', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: raw ? (payload as string) : JSON.stringify(payload),
+      }),
+    );
+  }
+
+  it('rejects a non-JSON body with 400', async () => {
+    const response = await post('nope{', true);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Request body must be JSON' });
+  });
+
+  it('rejects a JSON non-object body with 400', async () => {
+    const response = await post([body]);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'Request body must be a JSON object' });
+  });
+
+  it('rejects a malformed root with its own 400 message', async () => {
+    const response = await post({ ...body, root: 'not-a-hash' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'root must be a 32-byte hex hash' });
+    expect(mocks.recordAnchoredBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed anchorTx with its own 400 message', async () => {
+    const response = await post({ ...body, anchorTx: 'zz' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'anchorTx must be a 32-byte hex hash' });
+  });
+
+  it('rejects a malformed batchId with its own 400 message', async () => {
+    const response = await post({ ...body, batchId: 0 });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'batchId must be a positive integer' });
+  });
+
+  it('returns 502 when the ledger read fails and does not write a record', async () => {
+    mocks.getBatch.mockRejectedValue(new Error('rpc down'));
+
+    const response = await post(body);
+    const payload = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(payload.error).toContain('retry recording without submitting again');
+    expect(mocks.recordAnchoredBatch).toHaveBeenCalledTimes(0);
+    expect(mocks.withMerchantClient).not.toHaveBeenCalled();
+  });
+
+  it('accepts a root that differs only by hex case and refuses a different root with 409', async () => {
+    mocks.getBatch.mockResolvedValue({ root: body.root.toUpperCase() });
+    const accepted = await post(body);
+    expect(accepted.status).toBe(200);
+    expect(mocks.recordAnchoredBatch).toHaveBeenCalledTimes(1);
+
+    mocks.recordAnchoredBatch.mockClear();
+    mocks.getBatch.mockResolvedValue({ root: 'a'.repeat(64) });
+    const refused = await post(body);
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({
+      error: 'On-chain root does not match the previewed tree; refusing to record',
+    });
+    expect(mocks.recordAnchoredBatch).toHaveBeenCalledTimes(0);
+  });
+
+  it('replays the same selection as a no-op and returns the first record', async () => {
+    let writes = 0;
+    const existing = { batchId: body.batchId, alreadyRecorded: false, status: 'recorded' as const };
+    mocks.recordAnchoredBatch.mockImplementation(async () => {
+      if (writes > 0) return { ...existing, alreadyRecorded: true };
+      writes += 1;
+      return existing;
+    });
+
+    const first = await post(body);
+    const second = await post(body);
+
+    expect(await first.json()).toMatchObject({
+      success: true,
+      batchId: body.batchId,
+      alreadyRecorded: false,
+    });
+    expect(await second.json()).toMatchObject({
+      success: true,
+      batchId: body.batchId,
+      alreadyRecorded: true,
+    });
+    // The route asks the helper again; the helper's write path runs once and
+    // the replay returns the record from the first call.
+    expect(writes).toBe(1);
+  });
 });

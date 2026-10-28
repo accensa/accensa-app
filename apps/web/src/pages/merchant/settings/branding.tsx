@@ -13,6 +13,7 @@ import {
   type ColorMode,
   type FontKey,
 } from '../../../lib/branding';
+import { forceDynamic } from '@/lib/force-dynamic';
 
 const STORAGE_KEY = 'accensa.merchant.branding';
 
@@ -34,6 +35,8 @@ function parseStored(raw: string | null): Branding {
     return DEFAULT_BRANDING;
   }
 }
+
+export const getServerSideProps = forceDynamic;
 
 export default function BrandingSettings() {
   // Saved brand comes from storage via an external-store read (null on the

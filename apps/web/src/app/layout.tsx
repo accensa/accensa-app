@@ -10,6 +10,21 @@ import { I18nProvider } from '@/i18n/I18nProvider';
 import { SessionRenewal } from '@/components/SessionRenewal';
 import { StoreProvider } from '@/context/StoreContext';
 
+/**
+ * Every page is rendered per request.
+ *
+ * The app ships a per-request nonce CSP (see `src/proxy.ts`), and Next.js can
+ * only attach that nonce to a page's scripts while the page is rendered for a
+ * request. A statically prerendered page has no request to read the nonce
+ * from, so its scripts carry none, and the browser blocks them under
+ * `script-src ... 'strict-dynamic'` — the HTML renders but the page never
+ * hydrates.
+ *
+ * The Pages Router reaches the same conclusion with `getServerSideProps`; see
+ * `src/lib/force-dynamic.ts`.
+ */
+export const dynamic = 'force-dynamic';
+
 const geistSans = Geist({
   variable: '--font-geist-sans',
   subsets: ['latin'],

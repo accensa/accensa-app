@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import Head from 'next/head';
 import { TotpSetupModal } from '../../../components/settings/TotpSetupModal';
+import { forceDynamic } from '@/lib/force-dynamic';
+
+export const getServerSideProps = forceDynamic;
 
 export default function SecuritySettings() {
   const [isTotpModalOpen, setIsTotpModalOpen] = useState(false);
