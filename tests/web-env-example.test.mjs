@@ -74,7 +74,8 @@ test('README prerequisites match the CI toolchain', () => {
 test('apps/web/.env.example covers README.md:120 and every app env read', () => {
   const example = read('apps/web/.env.example');
   const readme = read('README.md').split(/\r?\n/);
-  const sampleLine = readme[119];
+  const sampleLine = readme.find((line) => line.startsWith('DATABASE_URL='));
+  assert.ok(sampleLine, 'README must retain the DATABASE_URL sample line');
   assert.match(sampleLine, /^DATABASE_URL=/);
   assert.match(example, /^DATABASE_URL=$/m);
 
