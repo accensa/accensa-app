@@ -5,11 +5,8 @@ packages:
 # `@next/bundle-analyzer`'s `index.d.ts` does `import type { NextConfig } from
 # 'next'` but its package.json declares no `next` peer, so TypeScript resolves
 # that import by walking up out of the package into pnpm's hidden hoist store.
-# With `apps/demo-merchant` still on next@14 and `apps/web` on next@16, that
-# store holds both, and which one wins is not stable across installs — in CI it
-# came out next@14, making `withBundleAnalyzer(nextConfig)` a type error against
-# the app's own next@16 config. Declaring the missing peer makes pnpm link each
-# importer's own `next` into the analyzer, so resolution stops at the right one.
+# Declaring the missing peer makes pnpm link each importer's own `next` into the
+# analyzer, so resolution stops at the right one for every workspace app.
 packageExtensions:
   '@next/bundle-analyzer':
     peerDependencies:
