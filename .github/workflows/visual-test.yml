@@ -39,6 +39,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         working-directory: .
+      # `apps/web` imports `@accensa/sdk/receipt-anchor`, and the SDK's exports
+      # map to `dist/`, which does not exist until it is built. Without this
+      # step `next dev` dies with "Module not found: Can't resolve
+      # '@accensa/sdk/receipt-anchor'", Playwright times out waiting for
+      # webServer, and the run fails before a single screenshot is taken.
+      # ci.yml builds the SDK before its e2e step for the same reason.
+      - name: Build SDK
+        working-directory: ./packages/sdk
+        run: pnpm build
       - name: Install Playwright browsers
         # Every visual project runs in Chromium (see playwright.config.ts).
         run: pnpm exec playwright install --with-deps chromium
