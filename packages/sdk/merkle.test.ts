@@ -9,25 +9,38 @@ import {
   MerkleError,
   MAX_PROOF_LEN,
 } from './merkle';
-import vectors from './merkle-vectors.json';
+import fixture from './merkle-vectors.json';
 import { sha256, leafOf, VALID, generateTestLeaves } from './merkle-test-helpers';
+
+// accensa-contracts owns the fixture and writes its hashes 0x-prefixed;
+// verifyReceipt takes bare hex. Normalising here keeps the vendored file
+// byte-identical to the canonical copy, which is what the parity check hashes.
+const strip0x = (hash: string) => hash.replace(/^0x/i, '');
+const vectors = fixture.vectors.map((v) => ({
+  ...v,
+  leaf: strip0x(v.leaf),
+  proof: v.proof.map(strip0x),
+  root: strip0x(v.root),
+}));
 
 describe('verifyReceipt — shared conformance vectors', () => {
   // These are the same vectors the Soroban ReceiptAnchor tests run against.
   // If this suite and the contract suite both pass, the two implementations
   // agree on every case in merkle-vectors.json.
-  it.each(vectors.cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+  it.each(vectors.map((c) => [c.name, c] as const))('%s', (_name, c) => {
     expect(verifyReceipt(c.leaf, c.proof, c.root)).toBe(c.expected);
   });
 
   it('covers both true and false expectations', () => {
-    const expectations = new Set(vectors.cases.map((c) => c.expected));
+    const expectations = new Set(vectors.map((c) => c.expected));
     expect(expectations).toEqual(new Set([true, false]));
   });
 
   it('pins the root anchored on-chain as batch #1', () => {
-    expect(vectors.onchain.root).toBe(vectors.cases[0].root);
-    expect(vectors.cases[0].expected).toBe(true);
+    expect(vectors[0].root).toBe(
+      'c6ccdcdb57896fa4999d9dea6a5ef40523d55e46cf32b621d7ea4a582d90e6ac',
+    );
+    expect(vectors[0].expected).toBe(true);
   });
 });
 
@@ -102,7 +115,7 @@ describe('buildBatch — proofs verify against the shared convention', () => {
 
     expect(batch.root).toBe('3aa0080b225e9f7bbfacd4a506648ed95261166a0ba97c5b1c54d253e0bbcb4f');
 
-    const eightLeafCases = vectors.cases.filter((c) => c.name.startsWith('eight-leaf batch'));
+    const eightLeafCases = vectors.filter((c) => c.name.startsWith('eight-leaf batch'));
     expect(eightLeafCases.length).toBeGreaterThan(0);
     for (const c of eightLeafCases) {
       expect(batch.proofs[c.leaf]).toEqual(c.proof);
@@ -169,7 +182,7 @@ describe('verifyReceipt — purity', () => {
   });
 
   it('is deterministic across repeated calls', () => {
-    const c = vectors.cases[0];
+    const c = vectors[0];
     const runs = Array.from({ length: 5 }, () => verifyReceipt(c.leaf, c.proof, c.root));
     expect(new Set(runs).size).toBe(1);
   });

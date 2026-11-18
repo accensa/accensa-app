@@ -2,7 +2,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { nativeToScVal } from '@stellar/stellar-sdk';
 import { isHash32 } from './receipt-anchor';
 import { verifyReceipt } from '@accensa/sdk/merkle';
-import vectors from '../../../../packages/sdk/merkle-vectors.json';
+import fixture from '../../../../packages/sdk/merkle-vectors.json';
+
+// The fixture is vendored byte-for-byte from accensa-contracts (see
+// docs/CONFORMANCE.md there), which writes hashes 0x-prefixed; verifyReceipt
+// takes bare hex.
+const strip0x = (hash: string) => hash.replace(/^0x/i, '');
+const vectors = fixture.vectors.map((v) => ({
+  ...v,
+  leaf: strip0x(v.leaf),
+  proof: v.proof.map(strip0x),
+  root: strip0x(v.root),
+}));
+
+// Testnet batch #1, anchored by accensa-contracts.
+const ONCHAIN_ROOT = 'c6ccdcdb57896fa4999d9dea6a5ef40523d55e46cf32b621d7ea4a582d90e6ac';
 
 const { simulateTransaction } = vi.hoisted(() => ({ simulateTransaction: vi.fn() }));
 
@@ -47,8 +61,8 @@ describe('verifier sample data', () => {
   // The /verify page ships a preloaded sample so anyone can see the verifier
   // work without first obtaining a receipt. If that sample drifts from the
   // conformance vectors, the front page of the product silently starts lying.
-  const live = vectors.cases[0];
-  const forged = vectors.cases[1];
+  const live = vectors[0];
+  const forged = vectors[1];
 
   const SAMPLE_LEAF = 'c476fc0553303ec4275bd4cb50ab7fa8182e343dbc4c721d7e2076fd77a5b56c';
   const SAMPLE_PROOF = [
@@ -69,18 +83,16 @@ describe('verifier sample data', () => {
   });
 
   it('valid sample verifies locally against the on-chain root', () => {
-    expect(verifyReceipt(SAMPLE_LEAF, SAMPLE_PROOF, vectors.onchain.root)).toBe(true);
+    expect(verifyReceipt(SAMPLE_LEAF, SAMPLE_PROOF, ONCHAIN_ROOT)).toBe(true);
   });
 
   it('forged sample fails locally against the on-chain root', () => {
-    expect(verifyReceipt(FORGED_LEAF, SAMPLE_PROOF, vectors.onchain.root)).toBe(false);
+    expect(verifyReceipt(FORGED_LEAF, SAMPLE_PROOF, ONCHAIN_ROOT)).toBe(false);
   });
 
   it('pins the batch that the sample refers to', () => {
-    expect(vectors.onchain.batchId).toBe(1);
-    expect(vectors.onchain.contract).toBe(
-      'CBHRJU7CF4XIFRNDITFHNQHABKBMFM2FYFHLGWN3JGSFYYCDSMDAWPRV',
-    );
+    // Batch #1 on testnet, contract CBHRJU7CF4XIFRNDITFHNQHABKBMFM2FYFHLGWN3JGSFYYCDSMDAWPRV.
+    expect(vectors[0].root).toBe(ONCHAIN_ROOT);
   });
 });
 
