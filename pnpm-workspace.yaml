@@ -94,3 +94,12 @@ minimumReleaseAgeExclude:
   - '@vitest/mocker@5.1.1'
   - '@vitest/spy@5.1.1'
   - colord@2.14.0
+# GHSA-fc5q-39xc-vjpf / CVE-2026-112366: picomatch ReDoS through single-branch
+# repeated extglobs. The advisory covers every published release (<=4.0.7), npm
+# `latest` is still 4.0.7, and the upstream fix is an unmerged PR
+# (micromatch/picomatch#194), so there is no version to upgrade to. This is the
+# only entry here; `pnpm audit` still reports and counts it as ignored.
+# Remove this block as soon as picomatch 4.0.8 is published.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf
