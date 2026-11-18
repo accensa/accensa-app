@@ -26,7 +26,9 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@/lib/merchants', () => ({ getMerchantById: mocks.getMerchantById }));
 vi.mock('@/lib/inventory/reservationManager', () => ({
-  InventoryReservationManager: vi.fn(() => ({ finish: mocks.finish })),
+  InventoryReservationManager: vi.fn(function () {
+    return { finish: mocks.finish };
+  }),
   PostgresInventoryReservationStore: vi.fn(),
 }));
 
