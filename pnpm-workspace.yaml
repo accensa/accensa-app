@@ -14,6 +14,44 @@ packageExtensions:
   '@next/bundle-analyzer':
     peerDependencies:
       next: '*'
+# Transitive packages whose parents are already on their latest release and
+# which still resolve to a version the advisory database flags. Each pin is the
+# smallest published release that clears every open advisory for that package
+# (see the audit gate in ci.yml); they keep the same major line as the parent
+# expects except where no patched release exists in that line (brace-expansion
+# 4.x, body-parser, minimatch).
+overrides:
+  '@swc/html': 1.16.22
+  axios: 1.21.1
+  baseline-browser-mapping: 2.11.38
+  'body-parser@<2': 1.20.9
+  'body-parser@>=2': 2.4.0
+  'brace-expansion@<2': 1.1.21
+  'brace-expansion@>=2 <5': 5.0.13
+  browserslist: 4.29.6
+  colord: 2.14.0
+  compression: 1.8.2
+  fast-uri: 3.1.9
+  follow-redirects: 1.16.3
+  image-size: 2.0.3
+  joi: 17.13.9
+  js-yaml: 4.3.2
+  launch-editor: 2.14.2
+  minimatch: 11.0.9
+  nanoid: 3.3.18
+  postcss-selector-parser: 7.2.1
+  proxy-addr: 2.0.8
+  qs: 6.17.1
+  serialize-javascript: 7.1.4
+  shell-quote: 1.12.0
+  smol-toml: 1.9.1
+  source-map-js: 1.2.2
+  stream-json: 3.9.0
+  svgo: 3.3.5
+  tinypool: 2.2.0
+  undici: 8.12.4
+  uuid: 11.1.1
+  zod: 4.6.7
 allowBuilds:
   '@reown/appkit': false
   '@sentry/cli': true
@@ -38,3 +76,30 @@ minimumReleaseAgeExclude:
   - sharp@0.35.0
   - next@16.2.11
   - brace-expansion@1.1.17 || 1.1.18 || 5.0.8 || 5.0.9
+  - '@sentry/browser-utils@11.14.0'
+  - '@sentry/browser@11.14.0'
+  - '@sentry/bundler-plugins@11.14.0'
+  - '@sentry/cloudflare@11.14.0'
+  - '@sentry/core@11.14.0'
+  - '@sentry/feedback@11.14.0'
+  - '@sentry/nextjs@11.14.0'
+  - '@sentry/node@11.14.0'
+  - '@sentry/opentelemetry@11.14.0'
+  - '@sentry/react@11.14.0'
+  - '@sentry/replay-canvas@11.14.0'
+  - '@sentry/replay@11.14.0'
+  - '@sentry/server-runtime-injection@11.14.0'
+  - '@sentry/server-utils@11.14.0'
+  - '@sentry/vercel-edge@11.14.0'
+  - '@vitest/mocker@5.1.1'
+  - '@vitest/spy@5.1.1'
+  - colord@2.14.0
+# GHSA-fc5q-39xc-vjpf / CVE-2026-112366: picomatch ReDoS through single-branch
+# repeated extglobs. The advisory covers every published release (<=4.0.7), npm
+# `latest` is still 4.0.7, and the upstream fix is an unmerged PR
+# (micromatch/picomatch#194), so there is no version to upgrade to. This is the
+# only entry here; `pnpm audit` still reports and counts it as ignored.
+# Remove this block as soon as picomatch 4.0.8 is published.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf

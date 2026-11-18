@@ -20,7 +20,7 @@
     "@x402/stellar": "^2.21.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "next": "14.2.5",
+    "next": "16.4.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "lucide-react": "^0.412.0"
@@ -33,7 +33,7 @@
     "tailwindcss": "^3.4.6",
     "postcss": "^8.4.39",
     "autoprefixer": "^10.4.19",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.12"
   },
   "type": "module"
 }

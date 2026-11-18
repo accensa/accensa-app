@@ -5,14 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Keypad from './Keypad';
 
 describe('Keypad', () => {
-  let onInput: ReturnType<typeof vi.fn>;
-  let onClear: ReturnType<typeof vi.fn>;
-  let onSubmit: ReturnType<typeof vi.fn>;
+  let onInput: ReturnType<typeof vi.fn<(value: string) => void>>;
+  let onClear: ReturnType<typeof vi.fn<() => void>>;
+  let onSubmit: ReturnType<typeof vi.fn<() => void>>;
 
   beforeEach(() => {
-    onInput = vi.fn();
-    onClear = vi.fn();
-    onSubmit = vi.fn();
+    onInput = vi.fn<(value: string) => void>();
+    onClear = vi.fn<() => void>();
+    onSubmit = vi.fn<() => void>();
   });
 
   afterEach(() => {

@@ -14,8 +14,10 @@ const abortControllers: AbortController[] = [];
 
 function makeController(): ControllerHarness {
   const chunks: Uint8Array[] = [];
-  const enqueue = vi.fn((chunk: Uint8Array) => chunks.push(chunk));
-  const close = vi.fn();
+  const enqueue = vi.fn<(chunk: Uint8Array) => void>((chunk) => {
+    chunks.push(chunk);
+  });
+  const close = vi.fn<() => void>();
   const controller = { enqueue, close, chunks };
   controllers.push(controller);
   return controller;

@@ -27,10 +27,12 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@/lib/rbac', () => ({ isAdmin: mockIsAdmin }));
 vi.mock('@/lib/inventory/reservationManager', () => ({
-  InventoryReservationManager: vi.fn().mockImplementation(() => ({
-    stockLevels: mockStockLevels,
-    setStockLevel: mockSetStockLevel,
-  })),
+  InventoryReservationManager: vi.fn(function () {
+    return {
+      stockLevels: mockStockLevels,
+      setStockLevel: mockSetStockLevel,
+    };
+  }),
   PostgresInventoryReservationStore: vi.fn(),
 }));
 
