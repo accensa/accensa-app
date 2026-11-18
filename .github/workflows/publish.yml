@@ -32,10 +32,13 @@ jobs:
       - name: Typecheck SDK
         working-directory: ./packages/sdk
         run: pnpm typecheck
-      - name: Verify conformance vectors are reproducible
-        run: |
-          node packages/sdk/scripts/generate-vectors.mjs
-          git diff --exit-code -- packages/sdk/merkle-vectors.json packages/sdk/vectors.rs
+      # Same check as CI's "Verify the vendored conformance vectors match their
+      # committed hash": the canonical fixture is vendored byte-for-byte from
+      # accensa-contracts, so publishing must start from a file that matches its
+      # committed hash. There is no generator in this repo to re-run.
+      - name: Verify the vendored conformance vectors match their committed hash
+        working-directory: ./packages/sdk
+        run: sha256sum -c merkle-vectors.json.sha256
 
   verify-pack:
     name: verify tarball
