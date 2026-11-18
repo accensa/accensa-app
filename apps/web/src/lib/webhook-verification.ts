@@ -20,6 +20,12 @@ export function verifyOutboundWebhookDelivery(
  * Verify the HMAC-SHA256 signature of an incoming webhook request or body/signature pair.
  */
 export function verifyWebhookSignature(
+  body: string | Buffer,
+  signature: string | null | undefined,
+  secret: string,
+): boolean;
+export function verifyWebhookSignature(request: Request, secret: string): Promise<boolean>;
+export function verifyWebhookSignature(
   bodyOrRequest: string | Buffer | Request,
   signatureOrSecret?: string | undefined | null,
   secretParam?: string,
