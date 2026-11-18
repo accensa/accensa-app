@@ -73,26 +73,28 @@ describe('desktopPush notifications and audio', () => {
       const setValueAtTimeMock = vi.fn();
       const exponentialRampToValueAtTimeMock = vi.fn();
 
-      const webkitCtor = vi.fn().mockImplementation(() => ({
-        state: 'suspended',
-        resume: resumeMock,
-        currentTime: 0,
-        createOscillator: () => ({
-          type: 'sine',
-          frequency: { setValueAtTime: setValueAtTimeMock },
-          connect: connectMock,
-          start: startMock,
-          stop: stopMock,
-        }),
-        createGain: () => ({
-          gain: {
-            setValueAtTime: setValueAtTimeMock,
-            exponentialRampToValueAtTime: exponentialRampToValueAtTimeMock,
-          },
-          connect: connectMock,
-        }),
-        destination: {},
-      }));
+      const webkitCtor = vi.fn(function () {
+        return {
+          state: 'suspended',
+          resume: resumeMock,
+          currentTime: 0,
+          createOscillator: () => ({
+            type: 'sine',
+            frequency: { setValueAtTime: setValueAtTimeMock },
+            connect: connectMock,
+            start: startMock,
+            stop: stopMock,
+          }),
+          createGain: () => ({
+            gain: {
+              setValueAtTime: setValueAtTimeMock,
+              exponentialRampToValueAtTime: exponentialRampToValueAtTimeMock,
+            },
+            connect: connectMock,
+          }),
+          destination: {},
+        };
+      });
 
       Reflect.set(window, 'webkitAudioContext', webkitCtor);
 
@@ -134,32 +136,36 @@ describe('desktopPush notifications and audio', () => {
         close: closeMock,
       };
 
-      const notificationCtor = vi.fn().mockImplementation(() => notificationInstance);
+      const notificationCtor = vi.fn(function () {
+        return notificationInstance;
+      });
       Reflect.set(window, 'Notification', notificationCtor);
       Reflect.set(window, 'permission', 'granted');
 
       // Mock AudioContext to avoid real audio operations
       const resumeMock = vi.fn().mockResolvedValue(undefined);
-      const audioCtor = vi.fn().mockImplementation(() => ({
-        state: 'running',
-        resume: resumeMock,
-        currentTime: 0,
-        createOscillator: () => ({
-          type: 'sine',
-          frequency: { setValueAtTime: vi.fn() },
-          connect: vi.fn(),
-          start: vi.fn(),
-          stop: vi.fn(),
-        }),
-        createGain: () => ({
-          gain: {
-            setValueAtTime: vi.fn(),
-            exponentialRampToValueAtTime: vi.fn(),
-          },
-          connect: vi.fn(),
-        }),
-        destination: {},
-      }));
+      const audioCtor = vi.fn(function () {
+        return {
+          state: 'running',
+          resume: resumeMock,
+          currentTime: 0,
+          createOscillator: () => ({
+            type: 'sine',
+            frequency: { setValueAtTime: vi.fn() },
+            connect: vi.fn(),
+            start: vi.fn(),
+            stop: vi.fn(),
+          }),
+          createGain: () => ({
+            gain: {
+              setValueAtTime: vi.fn(),
+              exponentialRampToValueAtTime: vi.fn(),
+            },
+            connect: vi.fn(),
+          }),
+          destination: {},
+        };
+      });
       Reflect.set(window, 'AudioContext', audioCtor);
 
       // Temporarily override permission on the constructor object itself
