@@ -223,8 +223,8 @@ pnpm gen:api   # regenerates packages/sdk/generated/api-types.ts from the spec
 ```
 
 CI regenerates the file and fails the build if it does not match what's
-checked in, the same way `gen:vectors` is checked for the Merkle conformance
-fixture.
+checked in, the same way the SDK suite runs the vendored Merkle conformance
+fixture (`packages/sdk/merkle-vectors.json`, copied from `accensa-contracts`).
 
 The generated file is deliberately mechanical, so consuming it means
 four-level index chains and `never` guards at both ends. `src/api/` is the

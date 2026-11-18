@@ -97,7 +97,7 @@ function combine(a: Buffer, b: Buffer): Buffer {
 /**
  * Builds every level of the tree. An odd node at the end of a level is promoted
  * unchanged to the next level rather than duplicated — the same convention as
- * `packages/sdk/scripts/generate-vectors.mjs` and `ReceiptAnchor::verify_receipt`.
+ * `packages/sdk/merkle-vectors.json` and `ReceiptAnchor::verify_receipt`.
  */
 function buildLevels(leaves: Buffer[]): Buffer[][] {
   const levels: Buffer[][] = [leaves];

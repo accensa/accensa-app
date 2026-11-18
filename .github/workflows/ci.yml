@@ -82,10 +82,16 @@ jobs:
           pnpm --filter @accensa/sdk gen:api
           git diff --exit-code -- packages/sdk/generated/api-types.ts
 
-      - name: Verify conformance vectors are reproducible
-        run: |
-          node packages/sdk/scripts/generate-vectors.mjs
-          git diff --exit-code -- packages/sdk/merkle-vectors.json packages/sdk/vectors.rs
+      # The canonical fixture is owned by accensa-contracts and vendored here
+      # byte-for-byte (packages/sdk/README.md); there is no generator in this
+      # repo any more, so this is the in-repo half of the parity guarantee —
+      # the committed hash must describe the committed file, and `Test SDK`
+      # above proves the SDK's verifier accepts every case in it. The cross-repo
+      # half (matching accensa-contracts@$ACCENSA_CONTRACTS_REF) lives in
+      # .github/workflows/vector-parity.yml.
+      - name: Verify the vendored conformance vectors match their committed hash
+        working-directory: ./packages/sdk
+        run: sha256sum -c merkle-vectors.json.sha256
 
       # Unit tests only: synthetic and fixture data, no live RPC or database.
       # The live reconciliation itself runs on a schedule, in reconcile.yml.

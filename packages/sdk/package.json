@@ -89,7 +89,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "gen:vectors": "node scripts/generate-vectors.mjs",
     "gen:api": "openapi-typescript ../../apps/web/openapi.yaml -o ./generated/api-types.ts && prettier --write ./generated/api-types.ts",
     "check-bundle-size": "node scripts/check-bundle-size.mjs"
   },

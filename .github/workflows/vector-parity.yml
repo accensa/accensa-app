@@ -1,0 +1,67 @@
+name: Vector parity
+
+# Mirror of the `Vector parity, cross-repo hash` job in
+# accensa-contracts/.github/workflows/ci.yml (issue #53). accensa-contracts owns
+# the canonical `contracts/receipt-anchor/merkle-vectors.json`; this repo
+# vendors a byte-identical copy at `packages/sdk/merkle-vectors.json`, and this
+# job fails the build the moment the two hashes disagree.
+#
+# Requires the repository variable ACCENSA_CONTRACTS_REF, pinned to a
+# contracts commit SHA or tag. Pinning is deliberate: vectors changes are rolled
+# out on both sides together, not picked up silently from `main`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vector-parity:
+    name: Vector parity, cross-repo hash
+    runs-on: ubuntu-latest
+    env:
+      ACCENSA_CONTRACTS_REF: ${{ vars.ACCENSA_CONTRACTS_REF }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare vendored vectors with the canonical copy
+        run: |
+          set -euo pipefail
+
+          REF="${ACCENSA_CONTRACTS_REF}"
+          if [ -z "$REF" ]; then
+            echo "::error::Repository variable ACCENSA_CONTRACTS_REF is absent or empty."
+            exit 1
+          fi
+          echo "Canonical source: accensa-contracts@${REF}"
+
+          LOCAL_HASH=$(cut -d' ' -f1 packages/sdk/merkle-vectors.json.sha256)
+          COMPUTED_HASH=$(sha256sum packages/sdk/merkle-vectors.json | cut -d' ' -f1)
+          if [ "$COMPUTED_HASH" != "$LOCAL_HASH" ]; then
+            echo "::error::packages/sdk/merkle-vectors.json.sha256 is stale."
+            echo "Run: sha256sum packages/sdk/merkle-vectors.json > packages/sdk/merkle-vectors.json.sha256"
+            exit 1
+          fi
+
+          URL="https://raw.githubusercontent.com/accensa/accensa-contracts/${REF}/contracts/receipt-anchor/merkle-vectors.json"
+          if ! CANONICAL_HASH=$(curl --proto '=https' --tlsv1.2 -fsSL "$URL" | sha256sum | cut -d' ' -f1); then
+            echo "::error::Could not fetch the canonical vectors from ${URL}."
+            exit 1
+          fi
+
+          echo "Canonical hash: ${CANONICAL_HASH}"
+          echo "Vendored hash:  ${LOCAL_HASH}"
+          if [ "$CANONICAL_HASH" != "$LOCAL_HASH" ]; then
+            echo "::error::merkle-vectors.json diverged from accensa-contracts@${REF}."
+            echo "::error::Copy the canonical file byte-for-byte into packages/sdk/merkle-vectors.json,"
+            echo "::error::re-commit its .sha256, and land it here before bumping the ref."
+            exit 1
+          fi
+          echo "Vendored vectors match accensa-contracts@${REF}."
