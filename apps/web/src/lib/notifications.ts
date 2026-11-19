@@ -116,19 +116,31 @@ export async function ensureNotificationSchema(client: Client): Promise<void> {
  * `read` is deliberately not a filter: the drawer shows read and unread
  * together so a merchant can revisit a payout confirmation, and the unread
  * state is carried per row (plus aggregated in `unreadCount`).
+ *
+ * `category` is an optional filter: when present only that category's rows
+ * are returned, so the drawer's "Security" tab can query the database
+ * directly instead of filtering a mixed page client-side.
  */
 export async function listNotifications(
   client: Client,
   merchantId: number,
   limit = 50,
+  category?: NotificationCategory,
 ): Promise<Notification[]> {
+  const params: [number, number, ...string[]] = [merchantId, limit];
+  let categoryClause = '';
+  if (category) {
+    params.push(category);
+    categoryClause = ` AND category = $${params.length}`;
+  }
+
   const res = await client.query<NotificationRow>(
     `SELECT id, category, title, body, read, created_at, read_at
      FROM notifications
-     WHERE merchant_id = $1
+     WHERE merchant_id = $1${categoryClause}
      ORDER BY created_at DESC, id DESC
      LIMIT $2`,
-    [merchantId, limit],
+    params,
   );
   return res.rows.map(fromRow);
 }

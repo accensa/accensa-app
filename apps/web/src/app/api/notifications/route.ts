@@ -7,8 +7,11 @@ import {
   markAllNotificationsAsRead,
   markNotificationAsRead,
   dismissNotification,
+  parseNotificationCategory,
+  NOTIFICATION_CATEGORIES,
   type Notification,
   type NotificationAction,
+  type NotificationCategory,
 } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
@@ -38,6 +41,19 @@ export async function GET(request: Request) {
   if (!process.env.DATABASE_URL) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
+  const { searchParams } = new URL(request.url);
+  const categoryParam = searchParams.get('category');
+  let category: NotificationCategory | undefined;
+  if (categoryParam !== null) {
+    const parsed = parseNotificationCategory(categoryParam);
+    if (parsed === null) {
+      return NextResponse.json(
+        { error: `category must be one of: ${NOTIFICATION_CATEGORIES.join(', ')}` },
+        { status: 400 },
+      );
+    }
+    category = parsed;
+  }
 
   try {
     const merchant = await withClient((client) => getMerchantFromRequest(client, request));
@@ -48,7 +64,7 @@ export async function GET(request: Request) {
     const { notifications, unreadCount } = await withMerchantClient(merchant.id, async (client) => {
       await ensureSchema(client);
       const [rows, unread] = await Promise.all([
-        listNotifications(client, merchant.id, NOTIFICATION_LIMIT),
+        listNotifications(client, merchant.id, NOTIFICATION_LIMIT, category),
         getUnreadNotificationCount(client, merchant.id),
       ]);
       return { notifications: rows, unreadCount: unread };
