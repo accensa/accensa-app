@@ -1,5 +1,5 @@
-import { TransactionBuilder, Horizon, Account, BASE_FEE, Networks } from '@stellar/stellar-sdk';
-import { AccensaError, AccensaContractError } from '../errors';
+import { TransactionBuilder, Horizon, BASE_FEE, Networks } from '@stellar/stellar-sdk';
+import { AccensaContractError } from '../errors';
 
 /**
  * Dispute reason categories matching the escrow contract enum
@@ -73,11 +73,11 @@ export interface DisputeResult {
 export async function submitDispute(
   request: DisputeRequest,
   signerPublicKey: string,
-  opts: DisputeOptions,
+  _opts: DisputeOptions,
 ): Promise<DisputeResult> {
   try {
-    const networkPassphrase = opts.networkPassphrase || Networks.PUBLIC;
-    const horizonUrl = opts.horizonUrl || 'https://horizon.stellar.org';
+    const networkPassphrase = _opts.networkPassphrase || Networks.PUBLIC;
+    const horizonUrl = _opts.horizonUrl || 'https://horizon.stellar.org';
     const server = new Horizon.Server(horizonUrl);
 
     // Load the signer's account to get sequence number
@@ -94,7 +94,7 @@ export async function submitDispute(
         // escrow contract's ABI and Soroban contract invocation
         {
           type: 'invoke_contract',
-          contract: opts.contractId,
+          contract: _opts.contractId,
           function: 'dispute',
           args: [
             request.txHash,
@@ -198,7 +198,7 @@ export function validateDisputeRequest(
  * @param opts - Dispute options
  * @returns Estimated fee in stroops (1 stroop = 0.0000001 XLM)
  */
-export function estimateDisputeFee(opts: DisputeOptions): number {
+export function estimateDisputeFee(): number {
   // Base fee for Stellar transaction (100 stroops)
   const baseFee = 100;
 
