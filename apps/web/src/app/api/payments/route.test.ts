@@ -486,4 +486,57 @@ describe('/api/payments GET', () => {
       expect(countCall?.[1]).toEqual([MERCHANT.id, 'GPAYER']);
     });
   });
+
+  describe('tx_hash lookup (#821)', () => {
+    const TX_HASH = 'a'.repeat(64);
+
+    test('filters payments by tx_hash and echoes it in filter_info', async () => {
+      const row = {
+        tx_hash: TX_HASH,
+        ledger: 7,
+        payer: 'GPAYER',
+        amount: '10',
+        asset: 'XLM',
+        ts: new Date('2026-08-20T07:22:16Z'),
+        route: '/api/v1/pay',
+        method: 'POST',
+      };
+      const query = vi.fn().mockResolvedValue({ rows: [row] });
+      mockWithMerchantClient.mockImplementationOnce(
+        async (_merchantId: number, fn: (client: unknown) => Promise<unknown>) => fn({ query }),
+      );
+
+      const res = await GET(
+        mockRequest(`http://localhost/api/payments?tx_hash=${TX_HASH}&limit=1`),
+      );
+      expect(res.status).toBe(200);
+
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain('tx_hash = $2');
+      expect(params[1]).toBe(TX_HASH);
+
+      const data = await res.json();
+      expect(data.payments).toHaveLength(1);
+      expect(data.payments[0].tx_hash).toBe(TX_HASH);
+      expect(data.filter_info).toEqual({ tx_hash: TX_HASH });
+    });
+
+    test('rejects a tx_hash that is not 64 hex characters', async () => {
+      for (const bad of ['not-a-hash', 'a'.repeat(63), 'g'.repeat(64)]) {
+        const res = await GET(mockRequest(`http://localhost/api/payments?tx_hash=${bad}`));
+        expect(res.status).toBe(400);
+        const data = await res.json();
+        expect(data.error).toBe('tx_hash must be a 64-character hexadecimal string');
+      }
+    });
+
+    test('returns an empty page for a valid hash with no matching payment', async () => {
+      const res = await GET(mockRequest(`http://localhost/api/payments?tx_hash=${TX_HASH}`));
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.payments).toEqual([]);
+      expect(data.total).toBe(0);
+      expect(data.next_cursor).toBeNull();
+    });
+  });
 });

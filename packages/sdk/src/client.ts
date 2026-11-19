@@ -141,13 +141,15 @@ export class AccensaClient {
   /**
    * Looks up one order by its Stellar transaction hash.
    *
-   * The indexer exposes no lookup-by-hash endpoint, so this searches the most
-   * recent `limit` indexed payments (default 1000, the API maximum). Returns
-   * null when the order is not in that window.
+   * Filters directly on `/api/payments?tx_hash=…&limit=1` rather than paging
+   * the most recent orders, so the lookup hits the indexer's `tx_hash` index
+   * and still finds orders older than any page window (#821). Returns null
+   * when no indexed payment matches the hash.
    */
-  async fetchOrder(orderId: string, opts: { limit?: number } = {}): Promise<Order | null> {
-    const page = await this.listOrders({ limit: opts.limit ?? 1000 });
-    return page.orders.find((order) => order.id === orderId) ?? null;
+  async fetchOrder(orderId: string): Promise<Order | null> {
+    const params = new URLSearchParams({ tx_hash: orderId, limit: '1' });
+    const body = await this.getJson(`/api/payments${queryString(params)}`);
+    return ordersFromResponse(body).orders[0] ?? null;
   }
 
   /**

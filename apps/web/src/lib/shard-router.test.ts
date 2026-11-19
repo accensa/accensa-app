@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pickShard, shardsFromEnv, resolveShard, type ShardConfig } from './shard-router';
+import { pickShard, shardsFromEnv, resolveShard, weight, type ShardConfig } from './shard-router';
 
 const SHARDS: ShardConfig[] = [
   { id: 'shard-0', connectionString: 'postgres://shard-0' },
@@ -11,6 +11,21 @@ const SHARDS: ShardConfig[] = [
 function tenants(n: number): string[] {
   return Array.from({ length: n }, (_, i) => `workspace-${i}`);
 }
+
+describe('weight', () => {
+  it('gives overlapping tenant and shard ids distinct weights', () => {
+    // With a space delimiter these two pairs concatenate to the same string
+    // (`"tenant 1 shard"`), so a boundary collision would make them equal.
+    expect(weight('tenant 1', 'shard')).not.toBe(weight('tenant', '1 shard'));
+    expect(weight('a b', 'c')).not.toBe(weight('a', 'b c'));
+  });
+
+  it('is stable for the same inputs and varies with either input', () => {
+    expect(weight('tenant-1', 'shard-0')).toBe(weight('tenant-1', 'shard-0'));
+    expect(weight('tenant-1', 'shard-0')).not.toBe(weight('tenant-1', 'shard-1'));
+    expect(weight('tenant-1', 'shard-0')).not.toBe(weight('tenant-2', 'shard-0'));
+  });
+});
 
 describe('pickShard', () => {
   it('is deterministic for the same tenant and shard list', () => {

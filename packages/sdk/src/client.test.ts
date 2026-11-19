@@ -92,18 +92,20 @@ describe('AccensaClient.fetchOrder', () => {
     expect(order?.id).toBe(TX_HASH);
   });
 
-  it('returns null when the hash is not in the fetched window', async () => {
-    const order = await client(jsonFetch(paymentsBody)).fetchOrder('c'.repeat(64));
-    expect(order).toBeNull();
-  });
-
-  it('defaults to the API-maximum page size and allows overriding it', async () => {
+  it('queries /api/payments directly by tx_hash instead of paging orders', async () => {
     const fetchImpl = jsonFetch(paymentsBody);
     await client(fetchImpl).fetchOrder(TX_HASH);
-    expect(String(fetchImpl.mock.calls[0][0])).toContain('limit=1000');
 
-    await client(fetchImpl).fetchOrder(TX_HASH, { limit: 50 });
-    expect(String(fetchImpl.mock.calls[1][0])).toContain('limit=50');
+    const url = new URL(String(fetchImpl.mock.calls[0][0]));
+    expect(url.pathname).toBe('/api/payments');
+    expect(url.searchParams.get('tx_hash')).toBe(TX_HASH);
+    expect(url.searchParams.get('limit')).toBe('1');
+    expect(url.searchParams.get('cursor')).toBeNull();
+  });
+
+  it('returns null when no order matches the hash', async () => {
+    const order = await client(jsonFetch({ payments: [] })).fetchOrder('c'.repeat(64));
+    expect(order).toBeNull();
   });
 });
 
