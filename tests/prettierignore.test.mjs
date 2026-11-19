@@ -80,7 +80,9 @@ function matchesInOrder(entries, candidates) {
       paths.length > 0 &&
       paths.every((candidate) => previousEntries.some((previous) => matches(previous, candidate)));
     const shadowingEntries = allPathsShadowed
-      ? previousEntries.filter((previous) => paths.some((candidate) => matches(previous, candidate)))
+      ? previousEntries.filter((previous) =>
+          paths.some((candidate) => matches(previous, candidate)),
+        )
       : [];
     return { entry, paths, shadowingEntries };
   });
