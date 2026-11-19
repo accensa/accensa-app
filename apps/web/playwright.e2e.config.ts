@@ -45,6 +45,23 @@ export default defineConfig({
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
     { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    // Mobile accessibility pass (#792). Below `md` the dashboard swaps its
+    // payments table for a card list, so at 375px the accessibility tree holds
+    // a different set of headings, buttons and table semantics than the tree
+    // the two desktop projects above scan. Same viewport and touch emulation
+    // as `mobile` in playwright.config.ts. `testMatch` scopes the project to
+    // the mobile spec alone, so the flow, dashboard and POS specs are not
+    // re-run here.
+    {
+      name: 'a11y-mobile',
+      testMatch: /a11y-mobile\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 375, height: 812 },
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
   ],
   webServer: {
     // Runs against a production build (`next build` followed by `next start`).
