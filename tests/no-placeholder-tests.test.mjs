@@ -14,6 +14,15 @@ function walk(dir) {
   });
 }
 
+// Drop comments and string/template literals so mentions of `expect(` there do not count.
+function hasAssertion(source) {
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+    .replace(/'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`/g, '""');
+  return /\b(expect\(|assert\.|assert\(|test\()/.test(code);
+}
+
 test('no *.test.ts under src/ is a placeholder without assertions', () => {
   let files = [];
   try {
@@ -23,7 +32,7 @@ test('no *.test.ts under src/ is a placeholder without assertions', () => {
   }
   const placeholders = files
     .filter((f) => f.endsWith('.test.ts'))
-    .filter((f) => !/\b(expect\(|assert\.|assert\(|test\()/.test(readFileSync(f, 'utf8')));
+    .filter((f) => !hasAssertion(readFileSync(f, 'utf8')));
   assert.deepEqual(
     placeholders,
     [],

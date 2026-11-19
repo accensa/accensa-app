@@ -41,7 +41,7 @@ test('HTTP 404 is not retried', async () => {
 test('JSON-RPC error body is not retried', async () => {
   const bad = { ok: true, status: 200, json: async () => ({ error: { message: 'bad params' } }) };
   const h = harness([bad, bad, bad]);
-  await assert.rejects(rpcCall('u', 'getEvents', {}, h.opts), /getEvents: bad params/);
+  await assert.rejects(rpcCall('u', 'getEvents', {}, h.opts), /getEvents: bad params \(HTTP 200\)/);
   assert.equal(h.calls.length, 1);
 });
 

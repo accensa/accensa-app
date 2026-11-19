@@ -25,6 +25,11 @@ const allMigrationsSql = readdirSync(migrationsDir)
   .filter((f) => f.endsWith('.sql'))
   .map(readMigration)
   .join('\n');
+// Declared columns: the base CREATE TABLE plus every ADD COLUMN, not mere word matches.
+const declared = new Set(baseCols);
+for (const m of allMigrationsSql.matchAll(/ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?"?(\w+)"?/gi)) {
+  declared.add(m[1].toLowerCase());
+}
 const entryColumns = COLUMN_PROVENANCE.map((e) => e.column);
 
 test('parser finds the base payments columns', () => {
@@ -40,8 +45,7 @@ test('every base payments column has exactly one provenance entry', () => {
 
 test('every provenance entry names a column that exists in the migrations', () => {
   for (const col of entryColumns) {
-    const re = new RegExp(`\\b${col}\\b`, 'i');
-    assert.ok(re.test(allMigrationsSql), `entry "${col}" appears nowhere in migrations/*.sql`);
+    assert.ok(declared.has(col), `entry "${col}" is not declared in migrations/*.sql`);
   }
 });
 

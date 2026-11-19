@@ -61,11 +61,14 @@ export async function rpcCall(
       }
       const body = await res.json();
       if (body.error) {
-        throw new RpcError(`RPC ${method}: ${body.error.message ?? 'unknown error'}`, {
-          status: res.status,
-          method,
-          retryable: false,
-        });
+        throw new RpcError(
+          `RPC ${method}: ${body.error.message ?? 'unknown error'} (HTTP ${res.status})`,
+          {
+            status: res.status,
+            method,
+            retryable: false,
+          },
+        );
       }
       return body.result;
     } catch (error) {
