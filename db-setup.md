@@ -125,16 +125,17 @@ evolution:
 
 - `migrations/001_unify_payments.sql` — unifies historical payments table variants into the current canonical shape
 - `migrations/002_settlement_attribution.sql` — adds `hook_reported_at` and drops NOT NULL on `amount`/`payer` for merchant-reported settlements
-- `migrations/003_multi_merchant.sql` — introduces multi-merchant support and row-level security policies
-- `migrations/004_receipt_batches.sql` — adds receipt batching and Merkle root anchoring tables
-- `migrations/005_zk_commitments.sql` — adds zero-knowledge commitment ledger tables
-- `migrations/006_merchant_profiles.sql` — adds merchant profile settings and overrides
-- `migrations/007_role_tuples.sql` — creates `role_tuples` for Zanzibar-style permissions
-- `migrations/008_inventory_reservations.sql` — creates inventory catalog, items, and reservation tables
-- `migrations/009_multi_store_organizations.sql` — adds multi-store organization and store tables
-- `migrations/010_notifications.sql` — adds merchant notification center tables
-- `migrations/011_chat_notifiers.sql` — adds chat notifier integrations for Telegram and Discord
-- `migrations/012_disputes.sql` — sets up dispute chat and tracking evidence tables
+- `migrations/003_sync_state_and_challenge_nonces.sql` — creates sync_state and challenge_nonces tables
+- `migrations/004_multi_merchant.sql` — introduces multi-merchant support and row-level security policies
+- `migrations/005_receipt_batches.sql` — adds receipt batching and Merkle root anchoring tables
+- `migrations/006_tenant_shard_columns.sql` — adds tenant shard columns for multi-tenant database partitioning
+- `migrations/007_webhook_deliveries.sql` — adds webhook delivery tracking and attempt retry tables
+- `migrations/008_schema_parity_and_keyset_index.sql` — adds keyset pagination indexes
+- `migrations/009_zk_commitments.sql` — adds zero-knowledge commitment ledger tables
+- `migrations/010_payments_filter_indexes.sql` — adds composite indexes for route and payer filtering
+- `migrations/011_role_tuples.sql` — creates `role_tuples` for Zanzibar-style permissions
+- `migrations/012_inventory_reservations.sql` — creates inventory catalog, items, and reservation tables
+- `migrations/013_multi_store_organizations.sql` — adds multi-store organization and store tables
 
 These files are **not executed by any tool**. They exist as documentation of what
 `ensureSchema()` does in code. If you need to understand why a column exists or

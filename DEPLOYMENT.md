@@ -232,7 +232,7 @@ relations (`owner`, `editor`, `viewer`) that map to permissions
 can aggregate many users per role.
 
 **Data model.** Tuples persist in Postgres table `role_tuples`
-(`migrations/007_role_tuples.sql`, also created by `ensureSchema`). It is
+(`migrations/011_role_tuples.sql`, also created by `ensureSchema`). It is
 FORCE-RLS-scoped to `accensa.merchant_id` like every other tenant table, so a
 merchant can only ever read or write its own role grants — the tuples cannot
 leak across tenants even via a broken query.
