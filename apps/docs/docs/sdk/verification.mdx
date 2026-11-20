@@ -1,0 +1,65 @@
+---
+sidebar_position: 1
+title: Receipt Verification
+---
+
+# Receipt Verification
+
+Payment receipts in Accensa are verified off-chain against anchored Merkle roots using `@accensa/sdk`. The verification implementation in `packages/sdk/merkle.ts` mirrors the on-chain Soroban contract `ReceiptAnchor::verify_receipt` exactly.
+
+For the definition of receipt preimages and batch selection rules, see [Receipt leaves](../app/receipt-leaves.mdx). For the full SDK API reference, see [packages/sdk/README.md#merkle-proof-verification](https://github.com/accensa/accensa-app/blob/main/packages/sdk/README.md).
+
+## Verification API
+
+The verification function is exposed as `verifyReceipt`:
+
+```ts
+import { verifyReceipt, MAX_PROOF_LEN } from '@accensa/sdk/merkle';
+
+const isValid = verifyReceipt(leaf, proof, root);
+```
+
+### Parameters
+
+- `leaf`: Hex-encoded 32-byte string representing the receipt leaf hash (`SHA-256(tx_hash)`).
+- `proof`: Array of hex-encoded 32-byte sibling hashes ordered from leaf to root.
+- `root`: Hex-encoded 32-byte string representing the anchored Merkle root on-chain.
+
+## The Proof-Length Cap (`MAX_PROOF_LEN`)
+
+The SDK enforces an explicit proof-length cap:
+
+```ts
+export const MAX_PROOF_LEN = 32;
+```
+
+### Why a Cap Exists
+
+`MAX_PROOF_LEN = 32` directly mirrors the on-chain `ProofTooLong` constraint in `ReceiptAnchor`. A binary Merkle tree of depth 32 can accommodate $2^{32}$ (over 4.29 billion) payment receipts in a single batch, which exceeds any practical batch volume.
+
+A proof with more than 32 siblings is malformed by definition rather than merely large. Enforcing this cap before hashing guarantees that the off-chain SDK and the on-chain Soroban contract maintain strict consensus on which proofs are structurally admissible.
+
+## Sorted-Pair SHA-256 Rule
+
+Accensa Merkle proofs are **position-free**: proof sibling arrays carry no left/right indicators. At each level of the tree, nodes are combined using sorted-pair SHA-256 hashing:
+
+```ts
+const [lo, hi] = Buffer.compare(computed, sibling) <= 0 ? [computed, sibling] : [sibling, computed];
+computed = createHash('sha256')
+  .update(Buffer.concat([lo, hi]))
+  .digest();
+```
+
+Both `@accensa/sdk` and `ReceiptAnchor` are pinned to the shared conformance fixtures in [`packages/sdk/merkle-vectors.json`](https://github.com/accensa/accensa-app/blob/main/packages/sdk/merkle-vectors.json) to ensure identical digest calculations across all platforms.
+
+## The Three Verification Outcomes
+
+Callers must distinguish between validation failure and malformed input:
+
+| Outcome              | Return / Behavior | Cause                                                                                         | Meaning                                                                                                                                      |
+| -------------------- | ----------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Valid**            | `true`            | The computed root from folding `leaf` with `proof` matches `root`.                            | The payment receipt is verified as included in the anchored batch.                                                                           |
+| **Invalid / Forged** | `false`           | The computed root does not equal `root`.                                                      | The receipt was not anchored in this batch or has been tampered with.                                                                        |
+| **Malformed Input**  | `throw Error`     | Non-hex characters, invalid hash length ($\neq 32$ bytes), or `proof.length > MAX_PROOF_LEN`. | Programming or data format error. Throws `HashDecodeError` or `Error("proof length exceeds MAX_PROOF_LEN (32)")` immediately before hashing. |
+
+The distinction between `false` and an exception is essential at the call site: `false` represents a successful cryptographic check showing non-inclusion, whereas a throw indicates invalid arguments that require caller correction.
