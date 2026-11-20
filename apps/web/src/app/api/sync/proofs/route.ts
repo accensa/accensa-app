@@ -33,7 +33,7 @@ export const dynamic = 'force-dynamic';
  *      from the proof's payload + blinding). Verification happens entirely in
  *      memory — the plaintext payload never touches the database.
  *   3. Only the commitment and a one-way SHA-256 of the canonical payload are
- *      persisted (see migrations/005_zk_commitments.sql). A leaked table
+ *      persisted (see migrations/009_zk_commitments.sql). A leaked table
  *      exposes nothing about the underlying data.
  *
  * The verifier is pluggable (`ZkVerifier` in @accensa/sdk/zk-proof): a future

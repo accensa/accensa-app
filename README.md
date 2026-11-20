@@ -225,7 +225,7 @@ scoping and by Postgres row-level security as a second line of defence — see
 [DESIGN.md](DESIGN.md) for the full design.
 
 Upgrading an existing single-merchant deployment needs no action: the migration
-(`migrations/003_multi_merchant.sql`, applied automatically) backfills one `merchants`
+(`migrations/004_multi_merchant.sql`, applied automatically) backfills one `merchants`
 row from `MERCHANT_ADDRESS`/`MERCHANT_PUBLIC_KEY` and every existing payment onto it.
 Onboarding another merchant means inserting one more row into `merchants`, not
 standing up another deployment.

@@ -20,7 +20,7 @@ provides via the `accensa_session` JWT cookie.
 
 ### Data model
 
-A `merchants` table, keyed by Stellar address (`migrations/003_multi_merchant.sql`):
+A `merchants` table, keyed by Stellar address (`migrations/004_multi_merchant.sql`):
 
 ```
 merchants
@@ -54,7 +54,7 @@ already do.
 
 `ensureSchema()` (`apps/web/src/lib/db.ts`) runs this migration idempotently on every
 request, the same pattern 001 and 002 already used, and the SQL is also committed as
-`migrations/003_multi_merchant.sql` with a documented, reversible DOWN section. A
+`migrations/004_multi_merchant.sql` with a documented, reversible DOWN section. A
 deployment upgrading with `MERCHANT_ADDRESS` (and optionally `MERCHANT_PUBLIC_KEY`)
 already set gets exactly one `merchants` row inserted automatically and every existing
 `payments`/`sync_state` row backfilled onto it — no manual SQL, no new environment
@@ -66,7 +66,7 @@ merchants (address) VALUES (...)`), not standing up new infrastructure.
 
 Every query against `payments` and `sync_state` takes an explicit `merchant_id`
 parameter — there is no code path that reads either table unscoped. Behind that,
-`migrations/003_multi_merchant.sql` also turns on Postgres row-level security with
+`migrations/004_multi_merchant.sql` also turns on Postgres row-level security with
 `FORCE ROW LEVEL SECURITY` (not just `ENABLE`, so it binds even the role this app
 connects as) and a policy comparing `merchant_id` against a Postgres session variable,
 `accensa.merchant_id`. `withMerchantClient()` (`apps/web/src/lib/db.ts`) sets that
