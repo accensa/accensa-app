@@ -66,6 +66,16 @@ describe('formatPrice', () => {
   it('handles unknown assets by using the asset code as symbol', () => {
     expect(formatPrice('50000000', 'BTC:GA...')).toBe('5.00 BTC');
   });
+
+  it('formats hyphen-delimited USDC identifiers with the token symbol', () => {
+    expect(
+      formatPrice('10000000', 'USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'),
+    ).toBe('1.00 USDC');
+  });
+
+  it('handles unknown hyphen-delimited assets by using the asset code as symbol', () => {
+    expect(formatPrice('50000000', 'BTC-GA...')).toBe('5.00 BTC');
+  });
 });
 
 describe('formatPriceCompact', () => {
@@ -95,6 +105,16 @@ describe('assetSymbol', () => {
     expect(assetSymbol('USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN')).toBe(
       'USDC',
     );
+  });
+
+  it('extracts the code from a hyphen-delimited identifier', () => {
+    expect(assetSymbol('USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN')).toBe(
+      'USDC',
+    );
+  });
+
+  it('extracts unknown codes from hyphen-delimited identifiers', () => {
+    expect(assetSymbol('BTC-GA...')).toBe('BTC');
   });
 });
 

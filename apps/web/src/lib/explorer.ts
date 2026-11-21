@@ -30,6 +30,11 @@ function getDeploymentNetwork(): StellarNetwork {
   return cachedDeploymentNetwork;
 }
 
+export function _resetDeploymentNetworkForTesting(): void {
+  cachedDeploymentNetwork = undefined;
+  warnedAboutUnsetNetwork = false;
+}
+
 /**
  * Resolves the Stellar network the app is pointed at.
  *

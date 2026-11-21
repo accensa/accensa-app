@@ -21,6 +21,10 @@ jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
+    # A checkout, the Scorecard analysis and two uploads. The analysis is the
+    # slow step and still completes in a couple of minutes; 15 covers a slow
+    # Sarif upload without letting a stuck action hold the runner for hours.
+    timeout-minutes: 15
     # `publish_results: true` only works when run from the default branch. conditional can be removed if disabled.
     if: github.event.repository.default_branch == github.ref_name || github.event_name == 'pull_request'
     permissions:

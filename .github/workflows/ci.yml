@@ -16,6 +16,15 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # Sized from the step list, not copied: a cold `pnpm install`, two
+    # Playwright browser installs, an SDK build, a Next build, the
+    # tarball-install check and the full e2e suite are the expensive steps, and
+    # the suite retries twice when CI is set. That lands around twenty minutes
+    # on a warm cache, so 45 is deliberate headroom rather than a tight budget:
+    # clipping a healthy run is worse than the drift this guards against, while
+    # a wedged step still fails in 45 minutes instead of GitHub's 360-minute
+    # default.
+    timeout-minutes: 45
     services:
       # Only `pnpm --filter web test` reads a database, and the old test-web
       # job was the only one that had this service. Job-scoped services stay up
@@ -181,7 +190,7 @@ jobs:
       - name: Run e2e + accessibility suite
         working-directory: ./apps/web
         env:
-          JWT_SECRET_KEY: playwright-e2e-secret-key
+          JWT_SECRET_KEY: playwright-e2e-secret-key-32-bytes
         run: pnpm e2e
 
       - name: Test demo-merchant

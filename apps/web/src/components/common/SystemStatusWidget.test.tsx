@@ -77,4 +77,48 @@ describe('SystemStatusWidget', () => {
 
     expect(screen.queryByRole('dialog')).toBeNull();
   });
+
+  it('moves focus into the dialog when it opens', () => {
+    render(<SystemStatusWidget />);
+    fireEvent.click(screen.getByRole('button', { name: /all systems operational/i }));
+
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+  });
+
+  it('dismisses the panel when Escape is pressed', () => {
+    render(<SystemStatusWidget />);
+    fireEvent.click(screen.getByRole('button', { name: /all systems operational/i }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps Tab focus inside the dialog', () => {
+    render(<SystemStatusWidget />);
+    fireEvent.click(screen.getByRole('button', { name: /all systems operational/i }));
+
+    const dialog = screen.getByRole('dialog');
+    const closeButton = screen.getByRole('button', { name: 'Close system status' });
+    expect(document.activeElement).toBe(closeButton);
+
+    fireEvent.keyDown(closeButton, { key: 'Tab' });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab', shiftKey: true });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('restores focus to the trigger button when the dialog closes', () => {
+    render(<SystemStatusWidget />);
+    const trigger = screen.getByRole('button', { name: /all systems operational/i });
+    fireEvent.click(trigger);
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
 });

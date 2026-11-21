@@ -22,6 +22,15 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # The loop below deliberately keeps this runner alive for 3300 seconds
+    # (55 minutes) so a 5-minute sync interval survives a scheduler that drops
+    # frequent cron triggers. The cap has to sit above the worst case, not just
+    # above the loop: the last iteration still runs two curls (120s + 30s) and
+    # then its own `sleep 300` before the loop condition is read again, and the
+    # authentication probe ahead of the loop is another 60s. That is ~63.5
+    # minutes, so the cap is 70 rather than a round 60 that would kill a
+    # healthy run.
+    timeout-minutes: 70
     steps:
       # A green run used to prove only that something answered 200. On
       # 2026-08-06 the route was replaced by a stub that returned
