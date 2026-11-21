@@ -31,8 +31,9 @@ describe('formatTimestamp', () => {
   it('respects explicit timezone parameter', () => {
     // New York is UTC-5 in March 2026 (EST)
     const result = formatTimestamp(knownDate, 'America/New_York');
-    // The timezone name is passed through to the output string.
-    expect(result).toContain('America/New_York');
+    // The suffix is the zone's abbreviation, not the raw IANA id.
+    expect(result).toContain('EST');
+    expect(result).not.toContain('America/New_York');
     expect(result).toMatch(/6:20:00 pm/i);
   });
 
