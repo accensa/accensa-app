@@ -12,7 +12,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:a11y": "playwright test --config playwright.e2e.config.ts e2e/a11y.spec.ts",
+    "test:a11y": "playwright test --config playwright.e2e.config.ts e2e/a11y.spec.ts e2e/a11y-checkout.spec.ts",
     "test:visual": "playwright test",
     "test:visual:update": "playwright test --update-snapshots",
     "e2e": "playwright test --config playwright.e2e.config.ts",
