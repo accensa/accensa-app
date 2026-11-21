@@ -44,25 +44,22 @@ describe('sessionFromRequest and roleFromRequest — role parity', () => {
     ['explicit viewer', 'viewer', 'viewer', 'viewer'],
     ['unknown role "superuser"', 'superuser', 'superuser', 'admin'],
     ['null role claim', null, null, 'admin'],
-  ] as const)(
-    '%s: both helpers return "%s"',
-    async (_label, jwtRole, headerRole, expectedRole) => {
-      // Build JWT payload — omit role key entirely for the legacy case.
-      const payload: Record<string, unknown> = { publicKey: 'GABC' };
-      if (jwtRole !== undefined) payload.role = jwtRole;
+  ] as const)('%s: both helpers return "%s"', async (_label, jwtRole, headerRole, expectedRole) => {
+    // Build JWT payload — omit role key entirely for the legacy case.
+    const payload: Record<string, unknown> = { publicKey: 'GABC' };
+    if (jwtRole !== undefined) payload.role = jwtRole;
 
-      const cookie = await mintCookie(payload);
-      const sessionResult = await sessionFromRequest(requestWithCookie(cookie));
+    const cookie = await mintCookie(payload);
+    const sessionResult = await sessionFromRequest(requestWithCookie(cookie));
 
-      // sessionFromRequest resolves the role from the signed cookie.
-      expect(sessionResult?.role).toBe(expectedRole);
+    // sessionFromRequest resolves the role from the signed cookie.
+    expect(sessionResult?.role).toBe(expectedRole);
 
-      // roleFromRequest resolves the role from the proxy-set header.
-      const headerResult = roleFromRequest(requestWithRoleHeader(headerRole));
-      expect(headerResult).toBe(expectedRole);
+    // roleFromRequest resolves the role from the proxy-set header.
+    const headerResult = roleFromRequest(requestWithRoleHeader(headerRole));
+    expect(headerResult).toBe(expectedRole);
 
-      // Both helpers agree.
-      expect(sessionResult?.role).toBe(headerResult);
-    },
-  );
+    // Both helpers agree.
+    expect(sessionResult?.role).toBe(headerResult);
+  });
 });
