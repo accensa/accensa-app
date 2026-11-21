@@ -2,7 +2,7 @@
  * Proves that no endpoint can return one merchant's data to another.
  *
  * The fake database below behaves the way Postgres does once
- * migrations/003_multi_merchant.sql is applied: `payments` carries rows for
+ * migrations/004_multi_merchant.sql is applied: `payments` carries rows for
  * two merchants, and any query that does not filter on `merchant_id` gets
  * back nothing at all — that is what `FORCE ROW LEVEL SECURITY` guarantees
  * even if an application-level `WHERE` clause were ever dropped by mistake.
@@ -149,7 +149,7 @@ type ZkRow = {
 };
 
 /**
- * Mimics `zk_commitments` once migrations/005's row-level security is
+ * Mimics `zk_commitments` once migrations/009's row-level security is
  * applied, the same way `fakeQuery` mimics payments': the session's
  * `accensa.merchant_id` GUC *is* the scope, a WITH CHECK violation raises
  * Postgres' own error, and a read sees only rows in scope — no
@@ -237,7 +237,7 @@ describe('zk_commitments row-level isolation', () => {
 
     const runtimeDdl = zk.statements.join('\n');
     const migration = readFileSync(
-      new URL('../../../../../migrations/005_zk_commitments.sql', import.meta.url),
+      new URL('../../../../../migrations/009_zk_commitments.sql', import.meta.url),
       'utf8',
     );
 

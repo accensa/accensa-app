@@ -105,6 +105,30 @@ jobs:
 
           echo "All import checks passed"
 
+      - name: Verify packed engines field requires Node 22
+        run: |
+          TARBALL=$(ls /tmp/sdk-tarball/*.tgz)
+          SCRATCH=$(mktemp -d)
+          cd "$SCRATCH"
+          tar -xzf "$TARBALL" --strip-components=1 package/package.json
+          ENGINE=$(node -e "const p=require('./package.json'); process.stdout.write(p.engines && p.engines.node || '')")
+          if [ "$ENGINE" != ">=22" ]; then
+            echo "::error::packed engines.node = '$ENGINE', want '>=22'"
+            exit 1
+          fi
+          echo "engines.node = $ENGINE — OK"
+
+      - name: Run node --check over packed dist files
+        run: |
+          TARBALL=$(ls /tmp/sdk-tarball/*.tgz)
+          SCRATCH=$(mktemp -d)
+          cd "$SCRATCH"
+          tar -xzf "$TARBALL" package/dist
+          find package/dist -name '*.js' -o -name '*.mjs' | while read -r f; do
+            node --check "$f" || { echo "::error::node --check failed for $f"; exit 1; }
+          done
+          echo "node --check passed for all dist files"
+
   publish:
     name: publish to npm
     needs: verify-pack

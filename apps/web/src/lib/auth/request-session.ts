@@ -23,9 +23,11 @@ export interface SessionIdentity {
  * `accensa_session` cookie themselves with this helper, exactly as the proxy
  * would have, and treat "no valid session" as unauthorized.
  *
- * Returns `null` when the cookie is missing, malformed, expired, or signed
- * under a different key — or when the payload carries no merchant address (a
- * session with no identifiable merchant cannot be scoped to any tenant).
+ * Returns `null` when the cookie is missing, malformed, expired, lacks `exp`,
+ * or signed under a different key — or when the payload carries no merchant
+ * address (a session with no identifiable merchant cannot be scoped to any
+ * tenant). Same-name cookies are tried in order; the first identity that
+ * verifies is returned, so a stale wide-path cookie cannot shadow a live one.
  * A missing `JWT_SECRET_KEY` throws rather than falling back: a deployment
  * without the secret must fail loudly, never silently skip verification.
  */
@@ -38,16 +40,39 @@ export async function sessionFromRequest(request: Request): Promise<SessionIdent
   const cookieHeader = request.headers.get('cookie');
   if (!cookieHeader) return null;
 
-  const cookie = cookieHeader
+  const key = new TextEncoder().encode(secretKey);
+
+  // Collect every accensa_session= candidate. Same-name cookies are legal and
+  // ordered by path specificity; a stale wider-path cookie can otherwise shadow
+  // the live session. We try each in order and return the first valid identity.
+  // The exact prefix filter (with the '=') avoids matching accensa_session_old=.
+  const candidates = cookieHeader
     .split(';')
     .map((part) => part.trim())
-    .find((part) => part.startsWith('accensa_session='));
-  const token = cookie ? decodeURIComponent(cookie.slice('accensa_session='.length)) : '';
-  if (!token) return null;
+    .filter((part) => part.startsWith('accensa_session='))
+    .map((part) => part.slice('accensa_session='.length));
 
+  for (const raw of candidates) {
+    const identity = await identityFromToken(raw, key);
+    if (identity) return identity;
+  }
+
+  return null;
+}
+
+/**
+ * Decodes one raw (URL-encoded) cookie value and verifies it as a session JWT.
+ *
+ * Returns `null` on any failure — expired, missing `exp`, wrong key, malformed
+ * URI, missing `publicKey` — so the caller can move on to the next candidate.
+ */
+async function identityFromToken(raw: string, key: Uint8Array): Promise<SessionIdentity | null> {
   try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secretKey), {
+    const token = decodeURIComponent(raw);
+    if (!token) return null;
+    const { payload } = await jwtVerify(token, key, {
       algorithms: ['HS256'],
+      requiredClaims: ['exp'],
     });
     if (typeof payload.publicKey !== 'string' || !payload.publicKey) return null;
     // Legacy sessions minted before roles existed carry no role claim and
