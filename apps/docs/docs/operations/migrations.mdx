@@ -1,0 +1,54 @@
+---
+sidebar_position: 3
+title: Database Migrations and Table Ownership
+---
+
+# Database Migrations and Table Ownership
+
+This document provides a comprehensive operational reference for all database tables in Accensa, detailing each table's owning service, primary functional responsibility, and source of truth for schema provisioning.
+
+## Provisioning Architecture
+
+Accensa provisions database schemas through two complementary mechanisms:
+
+1. **SQL Migration Files (`migrations/*.sql`)**: Applied sequentially to production and test PostgreSQL instances to establish relational structure, constraints, and indexes.
+2. **In-Code Schema Guards (`apps/web/src/lib/db.ts` and domain modules)**: Idempotent `CREATE TABLE IF NOT EXISTS` clauses executed during bootstrap via `ensureSchema()` to support ephemeral testing and self-healing local developer environments.
+
+Where a table is provisioned both in a migration file and in code, the migration file defines the canonical schema, and the code mirrors it for runtime resilience.
+
+## Migration Reference Matrix
+
+| Migration File                            | Table Name                    | Owning Service / Module                                | Purpose                                                                                                          |
+| ----------------------------------------- | ----------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `001_unify_payments.sql`                  | `payments`                    | Payment Processing (`apps/web/src/lib/payments.ts`)    | Records unified merchant payments, statuses, asset types, transaction hashes, and anchored receipt leaf digests. |
+| `002_sync_state_and_challenge_nonces.sql` | `sync_state`                  | Ledger Sync Engine (`apps/web/src/lib/sync.ts`)        | Tracks processed ledger cursor sequences, cursors, and network synchronization timestamps.                       |
+| `002_sync_state_and_challenge_nonces.sql` | `challenge_nonces`            | Merchant Auth (`apps/web/src/lib/auth/`)               | Ephemeral cryptographic challenge nonces preventing replay attacks during merchant wallet authentication.        |
+| `003_multi_merchant.sql`                  | `merchants`                   | Merchant Service (`apps/web/src/lib/merchants.ts`)     | Merchant accounts, public addresses, payout configurations, webhook URLs, and display metadata.                  |
+| `003_receipt_batches.sql`                 | `receipt_batches`             | Receipt Anchor Engine (`apps/web/src/lib/anchor.ts`)   | Anchored Merkle batch records, Merkle roots, leaf counts, ledger ranges, and on-chain transaction hashes.        |
+| `003_tenant_shard_columns.sql`            | _(schema alter)_              | Shard Router (`apps/web/src/lib/shard-router.ts`)      | Adds tenant shard keys across multi-tenant tables to support database horizontal partitioning.                   |
+| `003_webhook_deliveries.sql`              | `webhook_deliveries`          | Webhook Dispatcher (`apps/web/src/lib/webhooks.ts`)    | High-level delivery logs for outgoing merchant webhook events and current status.                                |
+| `003_webhook_deliveries.sql`              | `webhook_attempts`            | Webhook Retry Worker (`apps/web/src/lib/webhooks.ts`)  | Individual HTTP delivery attempts, response status codes, latency timings, and retry backoff counters.           |
+| `004_schema_parity_and_keyset_index.sql`  | _(indexes)_                   | Query Optimizer                                        | Keyset pagination indexes on payments and ledger cursors for zero-downtime historical scans.                     |
+| `005_zk_commitments.sql`                  | `zk_commitments`              | ZK Ledger (`apps/web/src/lib/zk-ledger.ts`)            | Zero-knowledge cryptographic commitments, nullifiers, and proof metadata for confidential transactions.          |
+| `006_payments_filter_indexes.sql`         | _(indexes)_                   | Reporting Engine                                       | Specialized composite B-tree indexes for multi-attribute filtering (date range, merchant, status).               |
+| `007_role_tuples.sql`                     | `role_tuples`                 | Access Control / RBAC (`apps/web/src/lib/rbac.ts`)     | Fine-grained role permissions, merchant organization memberships, and capability tuples.                         |
+| `008_inventory_reservations.sql`          | `inventory_items`             | Inventory Management (`apps/web/src/lib/inventory.ts`) | Merchant item SKUs, stock levels, tracking units, and reservation limits.                                        |
+| `008_inventory_reservations.sql`          | `inventory_reservations`      | Checkout Service (`apps/web/src/lib/inventory.ts`)     | Temporary holds placed on inventory items during pending customer payment sessions.                              |
+| `008_inventory_reservations.sql`          | `inventory_reservation_items` | Checkout Service (`apps/web/src/lib/inventory.ts`)     | Line-item breakdown of items associated with an active reservation.                                              |
+| `009_multi_store_organizations.sql`       | `merchant_stores`             | Multi-Store Hierarchy (`apps/web/src/lib/stores.ts`)   | Physical and virtual store branches grouped under a single merchant parent entity.                               |
+| `009_multi_store_organizations.sql`       | `merchant_api_keys`           | API Security (`apps/web/src/lib/api-keys.ts`)          | Hashed API credentials, scoped capabilities, and expiration timestamps for external API callers.                 |
+| `009_multi_store_organizations.sql`       | `merchant_catalog_items`      | Catalog Service (`apps/web/src/lib/catalog.ts`)        | Store-specific catalog listings and pricing overrides.                                                           |
+
+## Application-Provisioned Tables
+
+In addition to core migrations, specialized services provision domain-specific tables directly in code with automatic creation upon service start:
+
+| Table Name                 | Provisioning Location                               | Owning Service / Module  | Purpose                                                   |
+| -------------------------- | --------------------------------------------------- | ------------------------ | --------------------------------------------------------- |
+| `settle_nonces`            | `apps/web/src/lib/db.ts:578`                        | Settlement Pipeline      | Nonce registry for settlement transaction signing.        |
+| `sync_events`              | `apps/web/src/lib/sync-history.ts:64`               | Sync History Logger      | Audit trail of sync cycles, event counts, and errors.     |
+| `notifications`            | `apps/web/src/lib/notifications.ts:92`              | Notification Hub         | User notifications and alert broadcasts.                  |
+| `merchant_chat_notifiers`  | `apps/web/src/lib/notifications/chatNotifier.ts:32` | Chat Bot Integration     | Telegram/Discord webhook configuration per merchant.      |
+| `chat_notification_outbox` | `apps/web/src/lib/notifications/chatNotifier.ts:43` | Chat Notification Worker | Outbox queue for reliable asynchronous message delivery.  |
+| `merchant_totp`            | `apps/web/src/lib/auth/totp.ts:234`                 | Multi-Factor Auth        | TOTP secrets and enrollment status for dashboard 2FA.     |
+| `merchant_config_events`   | `apps/web/src/lib/merchant-config.ts:43`            | Configuration Audit      | Immutable event store for merchant setting modifications. |

@@ -18,6 +18,11 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # One health request capped at 30 seconds plus one webhook POST when it
+    # fails. Nothing in this job can legitimately run for longer, so 10 minutes
+    # is slack rather than a budget — the point is that a wedged runner stops
+    # costing runner minutes in ten, not in 360.
+    timeout-minutes: 10
     steps:
       - name: Poll /api/health
         env:

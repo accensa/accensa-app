@@ -13,7 +13,7 @@ import type { Client } from 'pg';
 /**
  * Creates the `zk_commitments` ledger schema (#173).
  *
- * See migrations/005_zk_commitments.sql for the same steps as a standalone SQL
+ * See migrations/009_zk_commitments.sql for the same steps as a standalone SQL
  * file. Called defensively at the top of the proofs route, the same way
  * `ensureSchema` runs at the top of every DB-touching handler. Idempotent.
  */
@@ -35,11 +35,11 @@ export async function ensureZkCommitmentsSchema(client: Client): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_zk_commitments_merchant_verified
        ON zk_commitments (merchant_id, verified_at DESC);`,
   );
-  // Isolation, same shape as payments/sync_state (migrations/003_multi_merchant.sql),
+  // Isolation, same shape as payments/sync_state (migrations/004_multi_merchant.sql),
   // role_tuples and the merchant_* tables: FORCE binds even the table owner —
   // the role this app connects as — so a query without the merchant scope
   // reads nothing instead of every merchant's commitments. DROP POLICY first
-  // keeps this re-run safe, as migrations/009 does.
+  // keeps this re-run safe, as migrations/013 does.
   await client.query(`ALTER TABLE zk_commitments ENABLE ROW LEVEL SECURITY;`);
   await client.query(`ALTER TABLE zk_commitments FORCE ROW LEVEL SECURITY;`);
   await client.query(`DROP POLICY IF EXISTS zk_commitments_merchant_isolation ON zk_commitments;`);

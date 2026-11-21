@@ -28,6 +28,10 @@ jobs:
   vector-parity:
     name: Vector parity, cross-repo hash
     runs-on: ubuntu-latest
+    # One checkout, two local sha256sums and a single HTTPS fetch of the
+    # canonical vectors. 10 minutes is slack on top of a sub-minute job, and it
+    # still fails a stalled fetch in ten minutes rather than 360.
+    timeout-minutes: 10
     env:
       ACCENSA_CONTRACTS_REF: ${{ vars.ACCENSA_CONTRACTS_REF }}
     steps:
@@ -40,6 +44,7 @@ jobs:
           # Fork PRs do not receive repository variables, so fall back to the
           # pin committed next to the fixture. The variable still wins on main.
           REF="${ACCENSA_CONTRACTS_REF:-$(cat packages/sdk/merkle-vectors.ref)}"
+          if [ -z "$REF" ]; then
           if [ -z "$REF" ]; then
             echo "::error::No contracts ref: neither ACCENSA_CONTRACTS_REF nor packages/sdk/merkle-vectors.ref is set."
             exit 1

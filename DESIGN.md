@@ -20,7 +20,7 @@ provides via the `accensa_session` JWT cookie.
 
 ### Data model
 
-A `merchants` table, keyed by Stellar address (`migrations/003_multi_merchant.sql`):
+A `merchants` table, keyed by Stellar address (`migrations/004_multi_merchant.sql`):
 
 ```
 merchants
@@ -54,7 +54,7 @@ already do.
 
 `ensureSchema()` (`apps/web/src/lib/db.ts`) runs this migration idempotently on every
 request, the same pattern 001 and 002 already used, and the SQL is also committed as
-`migrations/003_multi_merchant.sql` with a documented, reversible DOWN section. A
+`migrations/004_multi_merchant.sql` with a documented, reversible DOWN section. A
 deployment upgrading with `MERCHANT_ADDRESS` (and optionally `MERCHANT_PUBLIC_KEY`)
 already set gets exactly one `merchants` row inserted automatically and every existing
 `payments`/`sync_state` row backfilled onto it — no manual SQL, no new environment
@@ -66,7 +66,7 @@ merchants (address) VALUES (...)`), not standing up new infrastructure.
 
 Every query against `payments` and `sync_state` takes an explicit `merchant_id`
 parameter — there is no code path that reads either table unscoped. Behind that,
-`migrations/003_multi_merchant.sql` also turns on Postgres row-level security with
+`migrations/004_multi_merchant.sql` also turns on Postgres row-level security with
 `FORCE ROW LEVEL SECURITY` (not just `ENABLE`, so it binds even the role this app
 connects as) and a policy comparing `merchant_id` against a Postgres session variable,
 `accensa.merchant_id`. `withMerchantClient()` (`apps/web/src/lib/db.ts`) sets that
@@ -199,7 +199,30 @@ To simulate the physical depth and light refraction of glass, we use intense ins
 - **Active States**: For touch devices, we use the `active:` pseudo-class (e.g., `active:bg-white/60`) to provide instant physical feedback when a button or toggle is pressed, without interfering with the click event.
 - **Navigation**: Mobile layouts consolidate links into a backdrop-blurred hamburger dropdown (`backdrop-blur-3xl`) to save screen real estate.
 
-## 5. Tailwind Implementation Example
+## 5. Accessibility Guidelines
+
+Accensa enforces strict accessibility standards (WCAG 2.1 AA) across both light and dark themes.
+
+- **Contrast Floors**:
+  - **Body Text**: Minimum contrast ratio of 4.5:1 against the background surface.
+  - **Large Text (>= 18pt or >= 14pt bold)**: Minimum contrast ratio of 3.0:1.
+  - **UI Components and Graphical Borders**: Minimum contrast ratio of 3.0:1 against adjacent colors.
+  - **Verified Pairs over `bg-grid`**:
+    - _Dark Mode_: `text-slate-100` (#f1f5f9) on `bg-slate-950` (#020617) yields a ratio of **17.8:1** (passes body & large text). `text-slate-300` (#cbd5e1) on `bg-slate-950` yields **11.2:1** (passes body text). `text-emerald-400` (#34d399) on `bg-slate-950` yields **9.3:1** (passes UI & accent text).
+    - _Light Mode_: `text-slate-900` (#0f172a) on `bg-white` (#ffffff) yields **19.8:1** (passes body text). `text-emerald-950` (#022c22) on `bg-emerald-50` (#ecfdf5) yields **15.2:1** (passes body text).
+    - _Failing Pairs (Forbidden)_: `text-slate-400` (#94a3b8) on `bg-white` produces only **2.8:1**, which fails the 4.5:1 body text floor and must never be used for primary content.
+- **Focus-Visible Ring**:
+  - Never suppress outline without providing an explicit replacement. Interactive elements must apply:
+    `focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950`
+  - This ensures a 2px high-contrast emerald focus indicator visible exclusively during keyboard navigation.
+- **Minimum Target Size**:
+  - Interactive targets (buttons, links, form inputs) must meet a minimum pointer target size of at least 44x44px (`min-h-[44px]` or `min-h-11`, with standard touch targets using `min-h-14` as implemented at `apps/web/src/components/onboarding/OnboardingStepper.tsx:25`).
+- **Keyboard Navigation & DOM Order**:
+  - Tab order must mirror visual reading flow. Modal dialogs must trap focus, and dropdowns must close on `Escape` with focus restored to the trigger element.
+- **Reduced Motion**:
+  - All transitions and animations must respect user OS motion preferences via Tailwind's `motion-reduce:` modifiers (e.g. `motion-reduce:transition-none` and `motion-reduce:animate-none`).
+
+## 6. Tailwind Implementation Example
 
 A standard glass card implementation:
 

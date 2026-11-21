@@ -15,14 +15,40 @@ function normalizeLedger(ledger) {
   return Number(ledger);
 }
 
+/**
+ * Canonical decimal form for an amount: `'10.50'` and `'10.5000000'` both
+ * become `'10.5'`. Works on the digit strings rather than going through
+ * `parseFloat`, so large values keep their full precision.
+ *
+ * The chain rebuild always emits 7 fixed decimals (`stroopsToAmount`), while
+ * Postgres numeric columns and fixtures may trim trailing zeros. Comparing the
+ * raw strings would report those as mismatches (see issue #815).
+ */
+function normalizeAmount(amount) {
+  if (amount === null || amount === undefined || amount === '') return null;
+  const text = String(amount).trim();
+  const match = /^([+-]?)(\d*)(?:\.(\d*))?$/.exec(text);
+  if (!match) return text;
+
+  const negative = match[1] === '-';
+  const whole = match[2].replace(/^0+(?=\d)/, '') || '0';
+  const fraction = (match[3] ?? '').replace(/0+$/, '');
+  const magnitude = fraction ? `${whole}.${fraction}` : whole;
+  return negative && magnitude !== '0' ? `-${magnitude}` : magnitude;
+}
+
+/** Every comparison goes through the same normalization so the report agrees with `columnsEqual`. */
+function normalizeColumn(column, value) {
+  if (column === 'ledger') return normalizeLedger(value);
+  if (column === 'amount') return normalizeAmount(value);
+  if (column === 'ts') return normalizeTs(value);
+  return value;
+}
+
 /** Compares only the ledger-derived columns; the reconciliation's contract never touches the rest. */
 function columnsEqual(a, b) {
-  return (
-    normalizeLedger(a.ledger) === normalizeLedger(b.ledger) &&
-    a.payer === b.payer &&
-    a.amount === b.amount &&
-    a.asset === b.asset &&
-    normalizeTs(a.ts) === normalizeTs(b.ts)
+  return RECONSTRUCTED_COLUMNS.every(
+    (column) => normalizeColumn(column, a[column]) === normalizeColumn(column, b[column]),
   );
 }
 
@@ -78,13 +104,7 @@ export function diffPayments(rebuilt, production) {
       } else {
         const columns = {};
         for (const col of RECONSTRUCTED_COLUMNS) {
-          const chainVal = col === 'ts' ? normalizeTs(chainRow[col]) : chainRow[col];
-          const dbVal = col === 'ts' ? normalizeTs(dbRow[col]) : dbRow[col];
-          const norm =
-            col === 'ledger'
-              ? [normalizeLedger(chainRow[col]), normalizeLedger(dbRow[col])]
-              : [chainVal, dbVal];
-          if (norm[0] !== norm[1]) {
+          if (normalizeColumn(col, chainRow[col]) !== normalizeColumn(col, dbRow[col])) {
             columns[col] = { chain: chainRow[col], db: dbRow[col] };
           }
         }

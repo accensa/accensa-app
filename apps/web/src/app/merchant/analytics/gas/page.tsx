@@ -13,7 +13,6 @@ import {
   gasCsvExport,
   gasCsvFilename,
   parseGasFeeLogEntry,
-  STELLAR_BASE_FEE_STROOPS,
   stroopsToXlm,
   traditionalCardFeeForVolume,
   type GasFeeLogEntry,
@@ -28,15 +27,14 @@ import {
  * per-day chart shows fee fluctuations (congestion pushes the base fee),
  * and the export gives the raw log to a spreadsheet.
  *
- * The per-transaction fee is currently the Stellar base fee (100 stroops per
- * operation); each settled payment maps to one fee entry. When the indexer
- * captures `fee_charged` from transaction receipts, the same parser picks
- * it up without this page changing.
+ * Only fees the indexer observed from Horizon are counted. A payment without
+ * a resolvable `fee_charged` is excluded from the totals and reported as
+ * unpriced — the base fee would be a guess, not a measurement.
  */
 
 type LoadState =
   | { status: 'loading'; loaded: number }
-  | { status: 'ready'; entries: GasFeeLogEntry[]; truncated: boolean }
+  | { status: 'ready'; entries: GasFeeLogEntry[]; unpriced: number; truncated: boolean }
   | { status: 'error'; message: string };
 
 export default function GasAnalyticsPage() {
@@ -59,25 +57,28 @@ export default function GasAnalyticsPage() {
           },
         });
         if (controller.signal.aborted) return;
-        // One fee entry per settled payment, at the Stellar base fee.
         const entries: GasFeeLogEntry[] = [];
+        let unpriced = 0;
         for (const payment of payments) {
+          if (payment.fee_stroops === null || payment.fee_stroops === undefined) {
+            unpriced++;
+            continue;
+          }
           try {
             entries.push(
               parseGasFeeLogEntry({
                 txHash: payment.tx_hash,
                 ledger: payment.ledger,
-                fee: STELLAR_BASE_FEE_STROOPS,
+                fee: payment.fee_stroops,
                 timestamp: payment.ts,
                 amount: payment.amount,
               }),
             );
           } catch {
-            // A malformed payment row is skipped rather than allowed to
-            // deflate the totals with a zero-fee entry.
+            unpriced++;
           }
         }
-        setState({ status: 'ready', entries, truncated });
+        setState({ status: 'ready', entries, unpriced, truncated });
       } catch (error) {
         if (!controller.signal.aborted && !isAbortError(error)) {
           setState({ status: 'error', message: describeFailure(error, navigator.onLine) });
@@ -167,6 +168,12 @@ export default function GasAnalyticsPage() {
           </p>
         )}
 
+        {state.status === 'ready' && (
+          <p className="text-xs text-slate-500 dark:text-slate-400" aria-live="polite">
+            {state.entries.length} priced payments · {state.unpriced} unpriced payments excluded
+          </p>
+        )}
+
         {aggregate && (
           <>
             <section className="grid sm:grid-cols-3 gap-6">
@@ -182,7 +189,7 @@ export default function GasAnalyticsPage() {
                     ? '—'
                     : `${aggregate.averageStroopsPerTx.toString()} stroops`
                 }
-                note="Base fee per operation, per settlement"
+                note="Observed network fee per priced settlement"
               />
               <Stat
                 label="Fee to volume ratio"

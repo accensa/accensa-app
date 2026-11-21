@@ -60,7 +60,7 @@ export async function withTenantClient<T>(
  * Opens a connection scoped to one merchant for the lifetime of the request.
  *
  * `accensa.merchant_id` backs the row-level security policies on `payments`
- * and `sync_state` (see migrations/003_multi_merchant.sql) — it is the second
+ * and `sync_state` (see migrations/004_multi_merchant.sql) — it is the second
  * line of defence behind the application's own `WHERE merchant_id = $1`
  * clauses, so a query that forgets that clause returns nothing instead of
  * every merchant's data. Set once per connection, not per statement, since
@@ -122,6 +122,7 @@ export async function ensureSchema(client: Client): Promise<void> {
     ['method', 'VARCHAR(10)'],
     ['request_id', 'VARCHAR(64)'],
     ['hook_reported_at', 'TIMESTAMPTZ'],
+    ['fee_stroops', 'BIGINT'],
   ]) {
     await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS ${col} ${type};`);
   }
@@ -162,7 +163,7 @@ export async function ensureSchema(client: Client): Promise<void> {
   );
 
   // Tenant identifier for multi-tenant sharding (#171) — the code-side copy
-  // of migrations/003_tenant_shard_columns.sql, kept here so a fresh database
+  // of migrations/006_tenant_shard_columns.sql, kept here so a fresh database
   // needs no manual migration step, the same pattern as 001/002. The DEFAULT
   // is the whole compatibility story: every existing row keeps meaning what
   // it meant, and every INSERT that omits the column still succeeds.
@@ -174,7 +175,7 @@ export async function ensureSchema(client: Client): Promise<void> {
   );
 
   await ensureMultiMerchantSchema(client);
-  // Keep code-provisioned databases in sync with migrations/004 and /006.
+  // Keep code-provisioned databases in sync with migrations/008 and /010.
   // These are create-only so requests never remove indexes from an existing DB.
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_payments_hook_reported
@@ -425,7 +426,7 @@ async function ensureAnchorAndWebhookSchema(client: Client): Promise<void> {
 /**
  * Migrates the schema from single-merchant-by-env-var to multi-merchant-by-row.
  *
- * See migrations/003_multi_merchant.sql for the same steps as a standalone
+ * See migrations/004_multi_merchant.sql for the same steps as a standalone
  * SQL file, and DESIGN.md for the reasoning. This is the copy that actually
  * runs — `ensureSchema` is invoked defensively at the top of nearly every
  * DB-touching handler, the same pattern 001 and 002 already used.

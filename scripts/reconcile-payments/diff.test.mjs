@@ -75,6 +75,48 @@ test('ledger compared numerically regardless of string/number type from Postgres
   assert.equal(result.mismatched.length, 0);
 });
 
+test('amounts differing only by trailing fractional zeros are not mismatches', () => {
+  const cases = [
+    ['5.0000000', '5'],
+    ['10.5000000', '10.5'],
+    ['10.5000000', '10.50'],
+    ['0.0000000', '0.0'],
+    ['0.0000000', '0'],
+    ['-2.2500000', '-2.25'],
+    ['123456789012345.1000000', '123456789012345.1'],
+  ];
+
+  for (const [chainAmount, dbAmount] of cases) {
+    const txHash = 'b1'.padEnd(64, '0');
+    const chain = new Map([[txHash, row({ tx_hash: txHash, amount: chainAmount })]]);
+    const production = new Map([[txHash, row({ tx_hash: txHash, amount: dbAmount })]]);
+    const result = diffPayments(chain, production);
+    assert.equal(result.matched, 1, `${chainAmount} should match ${dbAmount}`);
+    assert.equal(result.mismatched.length, 0);
+    assert.equal(result.ok, true);
+  }
+});
+
+test('genuinely different amounts are still flagged despite zero padding', () => {
+  const txHash = 'b2'.padEnd(64, '0');
+  const chain = new Map([[txHash, row({ tx_hash: txHash, amount: '10.5000000' })]]);
+  const production = new Map([[txHash, row({ tx_hash: txHash, amount: '10.51' })]]);
+  const result = diffPayments(chain, production);
+  assert.equal(result.matched, 0);
+  assert.equal(result.mismatched.length, 1);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.mismatched[0].columns.amount, { chain: '10.5000000', db: '10.51' });
+});
+
+test('a mismatch in another column does not also report an equivalent amount', () => {
+  const txHash = 'b3'.padEnd(64, '0');
+  const chain = new Map([[txHash, row({ tx_hash: txHash, amount: '10.5000000' })]]);
+  const production = new Map([[txHash, row({ tx_hash: txHash, amount: '10.5', payer: 'GOTHER' })]]);
+  const result = diffPayments(chain, production);
+  assert.equal(result.mismatched.length, 1);
+  assert.deepEqual(Object.keys(result.mismatched[0].columns), ['payer']);
+});
+
 test('ts compared by instant, tolerant of formatting differences', () => {
   const txHash = 'a1'.padEnd(64, '0');
   const chain = new Map([[txHash, row({ tx_hash: txHash, ts: '2026-01-01T00:00:00.000Z' })]]);
