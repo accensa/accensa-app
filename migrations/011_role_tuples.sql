@@ -1,4 +1,4 @@
--- 007_role_tuples.sql
+-- 011_role_tuples.sql
 --
 -- Persists the Zanzibar relationship tuples (#180) so the in-process store is
 -- no longer memory-only: role grants survive deploys and are visible to every

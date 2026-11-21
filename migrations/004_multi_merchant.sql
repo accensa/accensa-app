@@ -1,4 +1,4 @@
--- 003_multi_merchant.sql
+-- 004_multi_merchant.sql
 --
 -- Turns this deployment from single-merchant-by-environment-variable into
 -- multi-merchant-by-row. See DESIGN.md "Multi-merchant support" for the full

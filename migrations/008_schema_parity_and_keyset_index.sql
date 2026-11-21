@@ -1,4 +1,4 @@
--- 004_schema_parity_and_keyset_index.sql
+-- 008_schema_parity_and_keyset_index.sql
 --
 -- Two fixes that belong in the single source of truth (issue #91, #93):
 --

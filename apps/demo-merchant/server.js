@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
   paymentMiddlewareFromHTTPServer,
   x402ResourceServer,
@@ -10,6 +9,7 @@ import { HTTPFacilitatorClient } from '@x402/core/server';
 import { ExactStellarScheme } from '@x402/stellar/exact/server';
 import { Keypair } from '@stellar/stellar-sdk';
 import { boot, loadServerEnv } from './lib/env.js';
+import { verifyWebhookSignature } from './lib/webhook-signature.js';
 
 const app = express();
 
@@ -53,29 +53,10 @@ function routeFromResourceUrl(url) {
 // Webhook signature verification
 // ---------------------------------------------------------------------------
 
-/**
- * Verify the HMAC-SHA256 signature that the Accensa indexer attaches to
- * outbound webhooks. Returns true when:
- *   - WEBHOOK_SECRET is configured, and the signature matches, OR
- *   - WEBHOOK_SECRET is not configured (permissive mode for local dev).
- *
- * Timing-safe comparison prevents side-channel leakage of the expected MAC.
- */
-function verifyWebhookSignature(rawBody, signatureHeader) {
-  if (!WEBHOOK_SECRET) return true;
-  if (!signatureHeader) return false;
-
-  const expected = createHmac('sha256', WEBHOOK_SECRET).update(rawBody).digest('hex');
-
-  try {
-    const a = Buffer.from(expected, 'hex');
-    const b = Buffer.from(signatureHeader, 'hex');
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
-}
+// verifyWebhookSignature is imported from ./lib/webhook-signature.js (issue #769).
+// It operates on the raw request bytes captured by the express.json({ verify })
+// option on the /api/webhooks mount, so the HMAC is computed over the original
+// wire bytes rather than a re-serialized JSON string.
 
 // ---------------------------------------------------------------------------
 // SSE (Server-Sent Events) — real-time push to the frontend
@@ -225,9 +206,17 @@ const httpServer = new x402HTTPResourceServer(resourceServer, routesConfig);
 // 4. Apply the x402 payment middleware
 app.use(paymentMiddlewareFromHTTPServer(httpServer));
 
-// Parse JSON bodies for the webhook endpoint (skip for x402 payment handshake
-// paths which have their own content type).
-app.use('/api/webhooks', express.json());
+// Parse JSON bodies for the webhook endpoint and capture the raw wire bytes so
+// the HMAC-SHA256 signature can be verified over them (issue #769). The verify
+// callback runs before JSON.parse so req.rawBody holds the original bytes.
+app.use(
+  '/api/webhooks',
+  express.json({
+    verify(req, _res, buf) {
+      req.rawBody = buf;
+    },
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // 5. Routes — payment-gated
@@ -257,10 +246,15 @@ app.get('/api/hello', (_req, res) => {
  * frontend can update in real time.
  */
 app.post('/api/webhooks/accensa', (req, res) => {
-  const rawBody = JSON.stringify(req.body);
+  const rawBody = req.rawBody;
   const signature = req.headers['x-webhook-signature'];
 
-  if (!verifyWebhookSignature(rawBody, signature)) {
+  if (!rawBody && WEBHOOK_SECRET) {
+    console.warn('⚠️  Webhook received without raw body — rejecting');
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  if (!verifyWebhookSignature(rawBody, signature, WEBHOOK_SECRET)) {
     console.warn('⚠️  Webhook signature verification failed — rejecting');
     return res.status(401).json({ error: 'Invalid signature' });
   }

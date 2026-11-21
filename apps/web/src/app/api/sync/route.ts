@@ -32,6 +32,7 @@ import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 import { logSyncFailure, notifySyncFailure, type SyncFailureContext } from '@/lib/sync-logger';
 import { createHmac } from 'node:crypto';
 import { enqueueChatNotifications } from '@/lib/notifications/chatNotifier';
+import { createHorizonFeeFetcher, resolveTransactionFees } from '@/lib/transaction-fees';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -184,6 +185,7 @@ async function insertPaymentRows(
  * than that.
  */
 async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
+  const fetchFee = createHorizonFeeFetcher();
   return withMerchantClient(merchant.id, async (client) => {
     await ensureSchema(client);
 
@@ -312,11 +314,20 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
 
             if (rows.length === 0) return;
 
+            const { fees } = await resolveTransactionFees(
+              rows.map((row) => row.txHash),
+              fetchFee,
+            );
+            const pricedRows = rows.map((row) => ({
+              ...row,
+              feeStroops: fees.get(row.txHash.toLowerCase()) ?? null,
+            }));
+
             // Batch-insert the window's rows in one transaction. Since the sweep
             // only reports whole completed windows (sweptThrough), the cursor is
             // advanced separately below after the sweep resolves — never past a
             // window that may have been only partially drained.
-            const payments = await insertPaymentRows(client, merchant.id, rows);
+            const payments = await insertPaymentRows(client, merchant.id, pricedRows);
             inserted += payments.length;
 
             try {
