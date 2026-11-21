@@ -1,13 +1,13 @@
--- 002_sync_state_and_challenge_nonces.sql
+-- 003_sync_state_and_challenge_nonces.sql
 --
 -- Creates the two tables that existed only in ensureSchema() (apps/web/src/lib/db.ts)
 -- but were never part of the versioned migration set: sync_state (the indexer
 -- cursor) and challenge_nonces (single-use /api/auth/challenge nonces).
 --
--- 003_multi_merchant.sql ALTERs both tables (adds merchant_id, drops the
+-- 004_multi_merchant.sql ALTERs both tables (adds merchant_id, drops the
 -- sync_state singleton CHECK, enables row-level security on sync_state), so a
 -- database built from this directory alone failed at that point. This file is
--- ordered before 003_multi_merchant.sql and gives them the exact pre-003 shape
+-- ordered before 004_multi_merchant.sql and gives them the exact pre-004 shape
 -- ensureSchema creates, including the sync_state_singleton CHECK that 003 later
 -- drops. Every statement is idempotent, so applying it to a database that
 -- ensureSchema already built is a no-op.
@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
 -- Single-use nonces for /api/auth/challenge, consumed by /api/auth/verify so an
 -- unrelated signed transaction cannot be replayed as a login.
+-- Rows are pruned by sweepExpiredNonces with a ten-minute window.
 CREATE TABLE IF NOT EXISTS challenge_nonces (
     nonce VARCHAR(64) PRIMARY KEY,
     issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),

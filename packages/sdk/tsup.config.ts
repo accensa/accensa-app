@@ -23,8 +23,8 @@ const baseOptions: Options = {
   splitting: false,
   // Disable sourcemaps to keep the package size minimal in production.
   sourcemap: false,
-  // Target Node.js 18 environment for compatibility with the project's runtime requirements.
-  target: 'node18',
+  // Target Node.js 22 environment (issue #766: drop Node 18 and 20 support).
+  target: 'node22',
   // Enable tree-shaking to eliminate dead code and reduce bundle size.
   treeshake: true,
   // Minify the output code for smaller file size.

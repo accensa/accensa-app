@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -8,13 +9,13 @@ import { assetLabel, formatAmount } from '@/lib/money';
 
 export const dynamic = 'force-dynamic';
 
-async function loadReceipt(txHash: string) {
+const loadReceipt = cache(async (txHash: string) => {
   if (!process.env.DATABASE_URL || !isHash32(txHash)) return null;
   return withClient(async (client) => {
     await ensureSchema(client);
     return getPublicReceiptShare(client, txHash.toLowerCase());
   });
-}
+});
 
 export async function generateMetadata({
   params,

@@ -27,12 +27,31 @@
  * @param timezone    IANA timezone name. Defaults to `'UTC'`.
  * @returns           e.g. `"3 Apr 2026, 11:20:00 PM UTC"`
  */
+/**
+ * Resolves an IANA zone once, falling back to `'UTC'` when `Intl` rejects it.
+ *
+ * `Intl.DateTimeFormat` throws `RangeError` for an unknown or empty zone, and this
+ * module's callers include server rendering, so the fallback belongs here rather than
+ * in every caller. The resolved value is used for both the formatter and the suffix,
+ * so the digits and the label can never disagree.
+ */
+function resolveTimezone(timezone: string): string {
+  const candidate = timezone || 'UTC';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate });
+    return candidate;
+  } catch {
+    return 'UTC';
+  }
+}
+
 export function formatTimestamp(input: Date | string | number, timezone = 'UTC'): string {
   const date = input instanceof Date ? input : new Date(input);
   if (Number.isNaN(date.getTime())) return '—';
+  const zone = resolveTimezone(timezone);
 
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: timezone,
+    timeZone: zone,
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -46,7 +65,7 @@ export function formatTimestamp(input: Date | string | number, timezone = 'UTC')
     parts.find((p) => p.type === type)?.value ?? '';
 
   // en-GB gives "3" for day (no leading zero), "Apr" for month, etc.
-  return `${get('day')} ${get('month')} ${get('year')}, ${get('hour')}:${get('minute')}:${get('second')} ${get('dayPeriod')} ${timezone}`;
+  return `${get('day')} ${get('month')} ${get('year')}, ${get('hour')}:${get('minute')}:${get('second')} ${get('dayPeriod')} ${getTimezoneAbbr(zone, date)}`;
 }
 
 /**
@@ -67,12 +86,12 @@ export function toISO8601(input: Date | string | number): string {
  * This is a best-effort extraction from the Intl API; some timezones
  * return UTC offsets rather than abbreviations.
  */
-export function getTimezoneAbbr(timezone = 'UTC'): string {
+export function getTimezoneAbbr(timezone = 'UTC', at: Date = new Date()): string {
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       timeZoneName: 'short',
-    }).formatToParts(new Date());
+    }).formatToParts(at);
     return parts.find((p) => p.type === 'timeZoneName')?.value ?? timezone;
   } catch {
     return timezone;

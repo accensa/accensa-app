@@ -28,7 +28,7 @@ today.
   existing `withClient(fn)`, but opens its connection to whichever shard
   `shard-router` resolves for `tenantId`, instead of always connecting to
   `DATABASE_URL`.
-- **`migrations/003_tenant_shard_columns.sql`** — adds
+- **`migrations/006_tenant_shard_columns.sql`** — adds
   `payments.workspace_id` (`NOT NULL DEFAULT 'default'`) and an index on it.
   Also applied idempotently in code by `ensureSchema`, matching the existing
   pattern for `001`/`002`.
@@ -68,25 +68,86 @@ addition, not a rewrite.
 
 ## Configuration
 
-`DATABASE_SHARDS` — optional. Unset (the default, and the state of every
-deployment today) means `shardsFromEnv()` returns a single shard, id
-`"default"`, backed by `DATABASE_URL` — the same database `withClient`
-already uses. `withTenantClient` is therefore a no-op change in behavior
-until this is actually set.
+## Configuration and Topology Contracts
 
-When set, it's a JSON array:
+`DATABASE_SHARDS` — optional environment variable parsed by `shardsFromEnv` in `apps/web/src/lib/shard-router.ts:80`.
+
+### Parsing Contract (`shard-router.ts:80`)
+
+1. **Unset or Empty String**: When `DATABASE_SHARDS` is absent or whitespace-only, `shardsFromEnv()` falls back directly to `DATABASE_URL` with a single shard `{ id: "default", connectionString: process.env.DATABASE_URL }`. If neither is configured, it throws an explicit error: `"Neither DATABASE_SHARDS nor DATABASE_URL is configured"`.
+2. **JSON Structure**: When present, `DATABASE_SHARDS` must be a valid, non-empty JSON array of objects. Any syntax error throws `"DATABASE_SHARDS is not valid JSON: <details>"`. An empty array `[]` throws `"DATABASE_SHARDS must be a non-empty JSON array of {\"id\", \"connectionString\"}"`.
+3. **Element Validation**: Each entry must contain a non-empty string `id` and a non-empty string `connectionString`. Any missing or non-string property immediately throws `"DATABASE_SHARDS[i] must be an object with non-empty string \"id\" and \"connectionString\""`.
+
+### Concrete Environment Configuration Examples
+
+#### Single-line Environment String (Production / Vercel / Railway)
+
+```bash
+DATABASE_SHARDS='[{"id":"shard-us-east-1","connectionString":"postgres://postgres.abc:[password]@aws-0-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require"},{"id":"shard-eu-west-1","connectionString":"postgres://postgres.xyz:[password]@aws-0-eu-west-1.pooler.supabase.com:5432/postgres?sslmode=require"}]'
+```
+
+#### Formatted Shard Topology Schema (Multi-Region / High-Availability)
 
 ```json
 [
-  { "id": "shard-0", "connectionString": "postgres://.../shard_0" },
-  { "id": "shard-1", "connectionString": "postgres://.../shard_1" }
+  {
+    "id": "shard-primary-01",
+    "connectionString": "postgres://accensa_app:secret@db-p01.internal:5432/accensa_shard_01?sslmode=verify-full&sslrootcert=/etc/ssl/certs/pg.crt"
+  },
+  {
+    "id": "shard-primary-02",
+    "connectionString": "postgres://accensa_app:secret@db-p02.internal:5432/accensa_shard_02?sslmode=verify-full&sslrootcert=/etc/ssl/certs/pg.crt"
+  }
 ]
 ```
 
-Each `connectionString` follows the same rules as `DATABASE_URL` today —
-notably, the Supabase _session pooler_ host in production, since Vercel
-Functions have no IPv6 route to Supabase's direct (IPv6-only) connections.
-See the comment on `connectionString()` in `db.ts`.
+Each `connectionString` follows the same rules as `DATABASE_URL` today — notably, the Supabase _session pooler_ host in production (port 5432 or 6543), since Vercel serverless functions have no IPv6 route to Supabase direct (IPv6-only) connections.
+
+## Health Check Probes and Shard Monitoring
+
+Operating multiple database shards requires continuous health telemetry to detect degraded nodes before requests fail:
+
+1. **Liveness Probe**: Monitored endpoints execute `SELECT 1;` across all configured shards in parallel:
+   ```sql
+   SELECT 1;
+   ```
+2. **Transaction & Readiness Check**: Verifies that the tenant connection can set the RLS session variable and read the sync cursor:
+   ```sql
+   SET LOCAL accensa.merchant_id = 'health_check';
+   SELECT cursor FROM sync_state LIMIT 1;
+   ```
+3. **Latency Thresholds**: Shard connection timeout should be set to 3000ms. If a shard fails 3 consecutive health probes, the routing layer or upstream load balancer triggers failover alerts.
+
+## Failover Procedures
+
+Because Rendezvous Hashing (HRW) determines shard ownership deterministically without a central coordinator, shard failover requires deliberate operational steps:
+
+### 1. Read-Replica Promotion (Primary Failure)
+
+When a physical shard primary fails:
+
+1. Promote the shard's read replica to primary at the database hosting layer (e.g., Supabase / RDS Multi-AZ automatic failover).
+2. The shard `id` in `DATABASE_SHARDS` remains identical, while the connection string updates to the promoted primary endpoint if endpoints are not DNS-managed.
+3. No tenant re-hashing occurs because shard IDs did not change.
+
+### 2. Shard Replacement and Tenant Evacuation
+
+If a physical database is permanently lost or must be decommissioned:
+
+1. **Planned Maintenance / Decommissioning**:
+   - To evacuate a shard (e.g., `shard-old`), remove `{"id": "shard-old", ...}` from `DATABASE_SHARDS`.
+   - By Rendezvous Hashing mathematical invariants, only tenants whose highest weight was `shard-old` will migrate to their second-highest weight shard. Tenants on all other shards remain unaffected.
+   - Run the data export/import script to copy tenant rows from the snapshot of `shard-old` to each tenant's newly assigned destination shard.
+2. **Emergency Failover**:
+   - Update the failing shard's `connectionString` in `DATABASE_SHARDS` to point to a hot standby or restored point-in-time recovery (PITR) instance.
+   - Keep the `id` unchanged to prevent tenant reassignment.
+
+## Read-Replica vs. Primary Routing
+
+In high-throughput multi-tenant deployments:
+
+- **Write Operations (Mutations)**: Payments (`/api/payments`), sync ingestion (`/api/sync`), settlements, and inventory reservations must strictly route through the primary connection pooler (`withTenantClient` to primary `connectionString`).
+- **Read-Only Operations**: Analytics, public catalog queries, and dashboard reporting can leverage read-replica connection strings (`replicaConnectionString`) where transient replication lag is tolerable, leaving primary IOPS reserved for state transitions.
 
 ## Using it
 

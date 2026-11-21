@@ -12,8 +12,13 @@
  *   parseAssetCode('EURC-GDXE...');               // "EURC"
  */
 
+import { toStroops } from './price-formatter';
+
 /** Default decimal precision for Stellar native asset (XLM). */
 export const XLM_DECIMALS = 7;
+
+/** Stroop threshold above which float arithmetic loses precision (2^53). */
+const DOUBLE_SAFE_STROOPS = 9_007_199_254_740_992n;
 
 /**
  * Format a decimal string amount with the given number of decimal places.
@@ -33,6 +38,40 @@ export function formatPrice(
   const num = parseFloat(amount);
   if (Number.isNaN(num)) return amount;
 
+  // For amounts whose stroop value is at or above 2^53, parseFloat collapses
+  // adjacent stroop values to the same IEEE 754 double. Use bigint arithmetic.
+  const stroops = toStroops(amount);
+  if (stroops !== null) {
+    const absStroops = stroops < 0n ? -stroops : stroops;
+    if (absStroops >= DOUBLE_SAFE_STROOPS) {
+      const SCALE = 10_000_000n;
+      const negative = stroops < 0n;
+
+      // Round to `decimals` fraction digits using half-up rounding on the bigint.
+      let adj = absStroops;
+      if (decimals < XLM_DECIMALS) {
+        const trim = 10n ** BigInt(XLM_DECIMALS - decimals);
+        adj = ((absStroops + trim / 2n) / trim) * trim;
+      }
+
+      const intPart = adj / SCALE;
+      const fracPart = adj % SCALE;
+      const fracFull = fracPart.toString().padStart(XLM_DECIMALS, '0').slice(0, decimals);
+      const fracStr = fracFull.replace(/0+$/, '');
+
+      const intNum = Number(intPart);
+      const intFormatted =
+        typeof Intl !== 'undefined' && typeof Intl.NumberFormat === 'function'
+          ? new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(intNum)
+          : intNum.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+      return fracStr
+        ? `${negative ? '-' : ''}${intFormatted}.${fracStr}`
+        : `${negative ? '-' : ''}${intFormatted}`;
+    }
+  }
+
+  // Float path — exact for amounts below 2^53 stroops.
   // Intl is available in modern browsers and Node 12+
   if (typeof Intl !== 'undefined' && typeof Intl.NumberFormat === 'function') {
     return new Intl.NumberFormat(locale, {
