@@ -1,4 +1,4 @@
--- 006_payments_filter_indexes.sql
+-- 010_payments_filter_indexes.sql
 --
 -- Indexes backing the /api/payments filter parameters (#167).
 --

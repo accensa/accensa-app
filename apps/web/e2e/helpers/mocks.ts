@@ -115,3 +115,72 @@ export async function mockDashboardApiEmpty(page: Page) {
     });
   });
 }
+
+/**
+ * The shape `/api/verify` returns (`apps/web/src/app/api/verify/route.ts`,
+ * `VerifyResponse`). `batch` stays optional because a reply without anchored
+ * metadata is still a verdict, and the route omits it on failure paths.
+ */
+export interface MockVerifyResponse {
+  local: { ok: boolean | null; error?: string };
+  onchain: { ok: boolean | null; error?: string };
+  verified: boolean;
+  disagreement: boolean;
+  contract?: string;
+  batch?: { id: number; root: string; count: number; periodStart: number; periodEnd: number };
+}
+
+// A 32-byte hex root and a two-hash proof are all the page needs to render a
+// verdict; the proof itself is never recomputed in the browser against these
+// fixtures, only sent to the intercepted route.
+export const MOCK_VERIFY_BATCH = {
+  id: 1,
+  root: 'a'.repeat(64),
+  count: 3,
+  periodStart: 1_785_000_000,
+  periodEnd: 1_785_086_400,
+};
+
+/** Both independent checks pass, so the receipt is verified. */
+export const MOCK_VERIFY_VALID: MockVerifyResponse = {
+  local: { ok: true },
+  onchain: { ok: true },
+  verified: true,
+  disagreement: false,
+  contract: 'C'.padEnd(56, 'A'),
+  batch: MOCK_VERIFY_BATCH,
+};
+
+/** The forged leaf: both checks reject it. */
+export const MOCK_VERIFY_FORGED: MockVerifyResponse = {
+  local: { ok: false },
+  onchain: { ok: false },
+  verified: false,
+  disagreement: false,
+  contract: 'C'.padEnd(56, 'A'),
+  batch: MOCK_VERIFY_BATCH,
+};
+
+/** The local recomputation passes while the contract rejects it. */
+export const MOCK_VERIFY_DISAGREEMENT: MockVerifyResponse = {
+  local: { ok: true },
+  onchain: { ok: false },
+  verified: false,
+  disagreement: true,
+  contract: 'C'.padEnd(56, 'A'),
+  batch: MOCK_VERIFY_BATCH,
+};
+
+/**
+ * Answers `POST /api/verify` from a fixture instead of the route, so the spec
+ * needs no database, no Soroban RPC and no rate-limit backend.
+ */
+export async function mockVerifyApi(page: Page, response: MockVerifyResponse = MOCK_VERIFY_VALID) {
+  await page.route('**/api/verify', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response),
+    });
+  });
+}

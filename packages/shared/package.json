@@ -17,6 +17,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./components": "./src/components/index.ts",
+    "./tokens": "./src/tokens/index.ts",
     "./utils": "./src/utils/index.ts",
     "./types": "./src/types/index.ts"
   },
