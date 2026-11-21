@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
 -- Single-use nonces for /api/auth/challenge, consumed by /api/auth/verify so an
 -- unrelated signed transaction cannot be replayed as a login.
+-- Rows are pruned by sweepExpiredNonces with a ten-minute window.
 CREATE TABLE IF NOT EXISTS challenge_nonces (
     nonce VARCHAR(64) PRIMARY KEY,
     issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
