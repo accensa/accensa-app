@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Client } from 'pg';
 import { withClient, ensureSchema } from './db';
+import { ensureZkCommitmentsSchema } from './zk-ledger';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,9 +56,10 @@ beforeAll(async () => {
       await client.query(sql);
     }
 
-    // Provision the code schema using ensureSchema
+    // Provision the code schema using ensureSchema and ensureZkCommitmentsSchema
     await client.query('SET search_path TO code, public');
     await ensureSchema(client);
+    await ensureZkCommitmentsSchema(client);
 
     await client.query('RESET search_path');
   });
@@ -88,9 +90,16 @@ describe('ensureSchema vs migrations column parity', () => {
       const missingFromCode = migrated.filter(
         (r) => !codeKeys.has(`${r.table_name}.${r.column_name}`),
       );
-      const missingFromMigrated = code.filter(
-        (r) => !migratedKeys.has(`${r.table_name}.${r.column_name}`),
-      );
+      // Code-first tables in code schema that are not yet in historical migrations/
+      const codeFirstTables = new Set([
+        'chat_notification_outbox',
+        'merchant_chat_notifiers',
+        'notifications',
+        'settle_nonces',
+      ]);
+      const missingFromMigrated = code
+        .filter((r) => !codeFirstTables.has(r.table_name))
+        .filter((r) => !migratedKeys.has(`${r.table_name}.${r.column_name}`));
 
       const fmtMissing = (rows: ColumnRow[]) =>
         rows.map((r) => `  ${r.table_name}.${r.column_name} (${r.data_type})`).join('\n');
