@@ -21,6 +21,14 @@ const EXPLORER_SEGMENT: Record<StellarNetwork, string> = {
 export const STELLAR_EXPERT_ORIGIN = 'https://stellar.expert';
 
 let warnedAboutUnsetNetwork = false;
+let cachedDeploymentNetwork: StellarNetwork | undefined;
+
+function getDeploymentNetwork(): StellarNetwork {
+  if (cachedDeploymentNetwork === undefined) {
+    cachedDeploymentNetwork = resolveStellarNetwork();
+  }
+  return cachedDeploymentNetwork;
+}
 
 /**
  * Resolves the Stellar network the app is pointed at.
@@ -66,7 +74,7 @@ function explorerBase(network: StellarNetwork): string {
 /** Link to a transaction on the block explorer. */
 export function explorerTxUrl(
   txHash: string,
-  network: StellarNetwork = resolveStellarNetwork(),
+  network: StellarNetwork = getDeploymentNetwork(),
 ): string {
   return `${explorerBase(network)}/tx/${txHash}`;
 }
@@ -74,7 +82,7 @@ export function explorerTxUrl(
 /** Link to a contract on the block explorer. */
 export function explorerContractUrl(
   contractId: string,
-  network: StellarNetwork = resolveStellarNetwork(),
+  network: StellarNetwork = getDeploymentNetwork(),
 ): string {
   return `${explorerBase(network)}/contract/${contractId}`;
 }
