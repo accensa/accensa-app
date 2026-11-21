@@ -39,22 +39,35 @@ The documentation site in `apps/docs` is **not** deployed on Vercel or GitHub Pa
 > link in the org still pointed at it. The project was deleted on 2026-08-14;
 > `accensa-docs.vercel.app` now returns 404 and nothing should link to it.
 
-## Indexing cadence — read this before trusting `vercel.json`
+## Indexing cadence — read this before trusting the cron
 
-`apps/web/vercel.json` declares a **daily** cron. That is not the real cadence,
-and it is not a design choice:
+The repo root has no `vercel.json`. The only manifest is `apps/web/vercel.json`,
+whose `crons` entry (`apps/web/vercel.json:3-7`) declares a **daily** run at
+`0 0 * * *`. That is not the real cadence, and it is not a design choice:
 
 > On the Vercel Hobby plan, declaring more than one cron run per day is a **hard
 > deploy failure**, not a silent clamp. The deploy is rejected.
 
-So the schedule that matters lives in `.github/workflows/sync.yml`, which hits
-`/api/sync` every 5 minutes. GitHub throttles high-frequency scheduled workflows,
-so in practice it lands **every one to three hours**. `apps/web/src/lib/sync-status.ts`
-sets its staleness thresholds from that observed behaviour rather than from the
-declared schedule, so a normal gap is not reported to the merchant as a fault.
+So the schedule that matters lives in `.github/workflows/sync.yml`. It is not a
+five-minute GitHub schedule — GitHub drops high-frequency triggers on shared
+runners (`sync.yml:3-6`). Instead the workflow is triggered **hourly**
+(`cron: '0 * * * *'`, `sync.yml:14-15`) and loops internally: for 55 minutes
+(`END_TIME`, `sync.yml:58`) it calls `/api/sync` and then sleeps 5 minutes
+(`sleep 300`, `sync.yml:104`). The effective cadence is therefore one sync every
+5 minutes while a run is alive, plus at most the gap until the next hourly run
+starts — longer when GitHub delays that schedule.
 
-If you move off Hobby, raise the `vercel.json` cron and retire the Actions
-workflow — do not run both, or the cursor gets contention from two writers.
+`apps/web/src/lib/sync-status.ts` sets its staleness thresholds from that
+behaviour rather than from the declared schedule: `LIVE_WITHIN_MS` is 15 minutes
+and `LAGGING_WITHIN_MS` is 3 hours (`sync-status.ts:26-27`), so a normal gap is
+not reported to the merchant as a fault.
+
+No cadence change is made here. If you move off Hobby, raise the `crons` schedule
+in `apps/web/vercel.json` and retire `.github/workflows/sync.yml` — do not run
+both, or the cursor gets contention from two writers.
+
+Every schedule (and which source wins) is tabulated in
+[docs/indexing-schedule.md](docs/indexing-schedule.md).
 
 **The cadence is not cosmetic.** Soroban RPC serves `getEvents` for roughly the
 last 121,000 ledgers, about a week of testnet. If the cursor stops advancing for
@@ -231,7 +244,7 @@ relations (`owner`, `editor`, `viewer`) that map to permissions
 can aggregate many users per role.
 
 **Data model.** Tuples persist in Postgres table `role_tuples`
-(`migrations/007_role_tuples.sql`, also created by `ensureSchema`). It is
+(`migrations/011_role_tuples.sql`, also created by `ensureSchema`). It is
 FORCE-RLS-scoped to `accensa.merchant_id` like every other tenant table, so a
 merchant can only ever read or write its own role grants — the tuples cannot
 leak across tenants even via a broken query.
