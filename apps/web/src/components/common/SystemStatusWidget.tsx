@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { fetchSystemHealth, overallHealth, type ServiceHealth } from '@/lib/status/healthChecker';
+import { focusRestorer, getFocusable, wrapTabTarget } from '@/lib/dialog-focus';
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -22,6 +23,9 @@ const COLORS: Record<ServiceHealth, string> = {
 
 export function SystemStatusWidget() {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const restoreFocusRef = useRef<(() => void) | null>(null);
   const { data, error } = useSWR('/api/status', fetchSystemHealth, {
     refreshInterval: POLL_INTERVAL_MS,
     revalidateOnFocus: true,
@@ -36,11 +40,60 @@ export function SystemStatusWidget() {
           ? 'Service Status Unavailable'
           : 'Checking System Status';
 
+  const openDialog = useCallback(() => {
+    // Capture the trigger before the dialog takes focus, so closing it can hand
+    // focus back to the control a keyboard user opened it from.
+    const active = document.activeElement;
+    restoreFocusRef.current = focusRestorer(
+      active && active !== document.body ? (active as HTMLElement) : triggerRef.current,
+    );
+    setOpen(true);
+  }, []);
+
+  const closeDialog = useCallback(() => {
+    setOpen(false);
+    const restore = restoreFocusRef.current;
+    restoreFocusRef.current = null;
+    restore?.();
+  }, []);
+
+  // Escape dismisses the dialog and Tab wraps inside it, per WCAG modal rules.
+  useEffect(() => {
+    if (!open) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    (getFocusable(dialog)[0] ?? dialog).focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeDialog();
+        return;
+      }
+      if (event.key === 'Tab') {
+        const target = wrapTabTarget(
+          getFocusable(dialog),
+          document.activeElement as HTMLElement | null,
+          event.shiftKey,
+        );
+        if (target) {
+          event.preventDefault();
+          target.focus();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, closeDialog]);
+
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openDialog}
         aria-haspopup="dialog"
         className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
       >
@@ -48,12 +101,14 @@ export function SystemStatusWidget() {
         {overallLabel}
       </button>
       {open && (
-        <div className="fixed inset-0 z-[80] bg-black/40" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-[80] bg-black/40" onClick={closeDialog}>
           <section
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="system-status-title"
-            className="absolute inset-y-0 right-0 w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-xl dark:border-white/10 dark:bg-[#0c131d]"
+            tabIndex={-1}
+            className="absolute inset-y-0 right-0 w-full max-w-md overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-xl outline-none dark:border-white/10 dark:bg-[#0c131d]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-200 pb-4 dark:border-white/10">
@@ -65,7 +120,7 @@ export function SystemStatusWidget() {
               </h2>
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={closeDialog}
                 aria-label="Close system status"
                 className="p-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
               >
