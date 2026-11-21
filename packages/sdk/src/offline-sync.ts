@@ -47,6 +47,13 @@ interface SyncEngineConfig {
   syncIntervalMs?: number;
 }
 
+/** Minimal Storage-like interface covering the three call sites used. */
+interface StoreAdapter {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
 /**
  * Offline-First Sync Engine using Last-Writer-Wins CRDT.
  */
@@ -56,7 +63,23 @@ export class OfflineSyncEngine {
   private pendingOps: SyncOperation[] = [];
   private nodeId: string;
   private vectorClock: Record<string, number> = {};
-  private online: boolean = navigator.onLine;
+  private online: boolean =
+    typeof navigator !== 'undefined' && 'onLine' in navigator ? navigator.onLine : true;
+  private memStore: Map<string, string> = new Map();
+
+  private getStore(): StoreAdapter {
+    if (typeof localStorage !== 'undefined') return localStorage;
+    const m = this.memStore;
+    return {
+      getItem: (key) => m.get(key) ?? null,
+      setItem: (key, value) => {
+        m.set(key, value);
+      },
+      removeItem: (key) => {
+        m.delete(key);
+      },
+    };
+  }
 
   constructor(config: SyncEngineConfig) {
     this.config = { maxPending: 500, syncIntervalMs: 30_000, ...config };
@@ -68,7 +91,7 @@ export class OfflineSyncEngine {
    */
   async init(): Promise<void> {
     try {
-      const raw = localStorage.getItem(this.config.storageKey);
+      const raw = this.getStore().getItem(this.config.storageKey);
       if (raw) {
         const state = JSON.parse(raw);
         this.documents = new Map(Object.entries(state.documents || {}));
@@ -79,14 +102,16 @@ export class OfflineSyncEngine {
       // Fresh start
     }
 
-    // Listen for online/offline events
-    window.addEventListener('online', () => {
-      this.online = true;
-      this.sync();
-    });
-    window.addEventListener('offline', () => {
-      this.online = false;
-    });
+    // Listen for online/offline events — guard for hosts without window
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('online', () => {
+        this.online = true;
+        this.sync();
+      });
+      window.addEventListener('offline', () => {
+        this.online = false;
+      });
+    }
 
     // Auto-sync interval
     if (this.config.syncIntervalMs && this.config.syncIntervalMs > 0) {
@@ -205,7 +230,11 @@ export class OfflineSyncEngine {
       pendingOps: this.pendingOps,
       vectorClock: this.vectorClock,
     };
-    localStorage.setItem(this.config.storageKey, JSON.stringify(state));
+    try {
+      this.getStore().setItem(this.config.storageKey, JSON.stringify(state));
+    } catch {
+      // Safari private mode and quota exhaustion throw on setItem — absorb.
+    }
   }
 
   /**
@@ -222,6 +251,10 @@ export class OfflineSyncEngine {
     this.documents.clear();
     this.pendingOps = [];
     this.vectorClock = {};
-    localStorage.removeItem(this.config.storageKey);
+    try {
+      this.getStore().removeItem(this.config.storageKey);
+    } catch {
+      // absorb
+    }
   }
 }
