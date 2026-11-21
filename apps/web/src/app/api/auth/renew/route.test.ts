@@ -34,7 +34,7 @@ describe('/api/auth/renew POST', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.JWT_SECRET_KEY = 'test-secret-key-for-renew-route';
+    process.env.JWT_SECRET_KEY = 'test-secret-key-for-renew-route-32';
     cookieStore.get.mockReturnValue(undefined);
   });
 
