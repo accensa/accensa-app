@@ -45,7 +45,6 @@ jobs:
           # pin committed next to the fixture. The variable still wins on main.
           REF="${ACCENSA_CONTRACTS_REF:-$(cat packages/sdk/merkle-vectors.ref)}"
           if [ -z "$REF" ]; then
-          if [ -z "$REF" ]; then
             echo "::error::No contracts ref: neither ACCENSA_CONTRACTS_REF nor packages/sdk/merkle-vectors.ref is set."
             exit 1
           fi
