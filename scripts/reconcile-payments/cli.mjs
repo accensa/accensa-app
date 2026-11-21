@@ -14,102 +14,45 @@
 // db.mjs stay plain, unit-testable functions.
 
 import { writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { rebuildFromChain } from './rebuild.mjs';
 import { fetchProductionPayments } from './db.mjs';
 import { diffPayments } from './diff.mjs';
 import { renderTrustBoundary, EXCLUDED_COLUMNS } from './trust-boundary.mjs';
+import {
+  parseArgs,
+  usage,
+  resolveConfig,
+  DEFAULT_RPC_URL,
+  DEFAULT_ASSET_CONTRACT_IDS,
+  DEFAULT_LOOKBACK_LEDGERS,
+} from './args.mjs';
 
-const DEFAULT_RPC_URL = 'https://soroban-testnet.stellar.org';
-const DEFAULT_ASSET_CONTRACT_IDS = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC';
-/** Matches MAX_LOOKBACK in apps/web/src/app/api/sync/route.ts: the RPC's retention window. */
-const DEFAULT_LOOKBACK_LEDGERS = 100_000;
+export {
+  parseArgs,
+  usage,
+  resolveConfig,
+  DEFAULT_RPC_URL,
+  DEFAULT_ASSET_CONTRACT_IDS,
+  DEFAULT_LOOKBACK_LEDGERS,
+};
 
-function parseArgs(argv) {
-  const args = { format: 'text' };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    const next = () => argv[++i];
-    switch (arg) {
-      case '--merchant':
-        args.merchant = next();
-        break;
-      case '--rpc-url':
-        args.rpcUrl = next();
-        break;
-      case '--asset-contract-ids':
-        args.assetContractIds = next();
-        break;
-      case '--from-ledger':
-        args.fromLedger = Number(next());
-        break;
-      case '--to-ledger':
-        args.toLedger = Number(next());
-        break;
-      case '--database-url':
-        args.databaseUrl = next();
-        break;
-      case '--out':
-        args.out = next();
-        break;
-      case '--format':
-        args.format = next();
-        break;
-      case '--help':
-      case '-h':
-        args.help = true;
-        break;
-      default:
-        throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-  return args;
-}
-
-function usage() {
-  return `Usage: node cli.mjs --merchant G... [options]
-
-  --merchant <G...>            Merchant Stellar account address. Required. Also read
-                                from MERCHANT_ADDRESS.
-  --rpc-url <url>               Soroban RPC endpoint. Default: ${DEFAULT_RPC_URL}
-                                 (or STELLAR_RPC_URL)
-  --asset-contract-ids <ids>    Comma-separated SAC contract IDs. Default matches
-                                 apps/web's default (or ASSET_CONTRACT_IDS)
-  --from-ledger <n>             First ledger to scan. Default: latest - ${DEFAULT_LOOKBACK_LEDGERS}
-  --to-ledger <n>                Last ledger to scan. Default: latest
-  --database-url <url>          Postgres connection string for production \`payments\`.
-                                 When omitted, this runs in rebuild-only mode: no
-                                 database is contacted and no diff is produced - this
-                                 is the mode a third party runs with no access to our
-                                 infrastructure. (or DATABASE_URL)
-  --out <path>                  Write the full JSON report to this file.
-  --format <text|json>          Report format on stdout. Default: text.
-`;
-}
-
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+export async function main(argv = process.argv.slice(2), env = process.env) {
+  const args = parseArgs(argv);
   if (args.help) {
     console.log(usage());
     return 0;
   }
 
-  const merchant = args.merchant ?? process.env.MERCHANT_ADDRESS;
+  const config = resolveConfig(args, env);
+  const { merchant, rpcUrl, assetContractIds, databaseUrl } = config;
+
   if (!merchant) {
     console.error('Error: --merchant (or MERCHANT_ADDRESS) is required.\n');
     console.error(usage());
     return 2;
   }
-
-  const rpcUrl = args.rpcUrl ?? process.env.STELLAR_RPC_URL ?? DEFAULT_RPC_URL;
-  const assetContractIds = (
-    args.assetContractIds ??
-    process.env.ASSET_CONTRACT_IDS ??
-    DEFAULT_ASSET_CONTRACT_IDS
-  )
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const databaseUrl = args.databaseUrl ?? process.env.DATABASE_URL;
 
   console.error(`Rebuilding payments for ${merchant} from ${rpcUrl}...`);
   const latestGuess = args.toLedger;
@@ -219,9 +162,14 @@ function printReport(report, args) {
   console.log(ok ? 'RESULT: reconciled - no discrepancy.' : 'RESULT: DISCREPANCY FOUND.');
 }
 
-main()
-  .then((code) => process.exit(code))
-  .catch((error) => {
-    console.error('Reconciliation failed:', error);
-    process.exit(2);
-  });
+const isDirectExecution =
+  process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+
+if (isDirectExecution) {
+  main()
+    .then((code) => process.exit(code))
+    .catch((error) => {
+      console.error('Reconciliation failed:', error);
+      process.exit(2);
+    });
+}
