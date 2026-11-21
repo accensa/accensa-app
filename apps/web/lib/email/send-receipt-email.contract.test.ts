@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import type { ReceiptEmailProps } from '../../emails/ReceiptEmail';
-import { sendReceiptEmail } from './index';
+import { sendReceiptEmail, type SendReceiptResult } from './index';
 
 // The receipt-email adapter is a stub today, but callers already depend on the
 // shape it returns and on the arguments it takes (#409 left both unpinned).
@@ -27,16 +27,16 @@ afterEach(() => {
 });
 
 describe('sendReceiptEmail', () => {
-  it('returns exactly { success: true }', async () => {
+  it('returns exactly { status: "not-configured" }', async () => {
     // The stub logs; silence it so the test output stays readable. Nothing
     // below asserts on it.
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     const result = await sendReceiptEmail('merchant@example.com', props());
 
-    expect(result).toEqual({ success: true });
-    expect(Object.keys(result)).toEqual(['success']);
-    expect(typeof result.success).toBe('boolean');
+    expect(result).toEqual({ status: 'not-configured' });
+    expect(Object.keys(result)).toEqual(['status']);
+    expect(typeof result.status).toBe('string');
   });
 
   it('returns a distinct result for each call and mutates neither props object', async () => {
@@ -53,16 +53,16 @@ describe('sendReceiptEmail', () => {
     // Distinct objects: a shared singleton would let one caller's mutation
     // reach the next caller's result.
     expect(firstResult).not.toBe(secondResult);
-    expect(firstResult).toEqual({ success: true });
-    expect(secondResult).toEqual({ success: true });
+    expect(firstResult).toEqual({ status: 'not-configured' });
+    expect(secondResult).toEqual({ status: 'not-configured' });
 
     // The adapter reads the props; it must not write them.
     expect(first).toEqual(firstBefore);
     expect(second).toEqual(secondBefore);
   });
 
-  it('has a typed two-argument signature and a Promise<{ success: boolean }> result', () => {
+  it('has a typed two-argument signature and a Promise<SendReceiptResult> result', () => {
     expectTypeOf(sendReceiptEmail).parameters.toEqualTypeOf<[string, ReceiptEmailProps]>();
-    expectTypeOf(sendReceiptEmail).returns.resolves.toEqualTypeOf<{ success: boolean }>();
+    expectTypeOf(sendReceiptEmail).returns.resolves.toEqualTypeOf<SendReceiptResult>();
   });
 });

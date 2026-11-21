@@ -26,6 +26,10 @@ jobs:
   vector-parity:
     name: Vector parity, cross-repo hash
     runs-on: ubuntu-latest
+    # One checkout, two local sha256sums and a single HTTPS fetch of the
+    # canonical vectors. 10 minutes is slack on top of a sub-minute job, and it
+    # still fails a stalled fetch in ten minutes rather than 360.
+    timeout-minutes: 10
     env:
       ACCENSA_CONTRACTS_REF: ${{ vars.ACCENSA_CONTRACTS_REF }}
     steps:
