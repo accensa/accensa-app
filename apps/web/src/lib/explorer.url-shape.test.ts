@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { STELLAR_EXPERT_ORIGIN, explorerContractUrl, explorerTxUrl } from './explorer';
+import {
+  STELLAR_EXPERT_ORIGIN,
+  _resetDeploymentNetworkForTesting,
+  explorerContractUrl,
+  explorerTxUrl,
+} from './explorer';
 
 const TX_HASH = 'AB'.repeat(32);
 const CONTRACT_ID = 'C' + 'A'.repeat(55);
@@ -8,6 +13,7 @@ describe('explorer URL shapes', () => {
   const originalNetwork = process.env.NEXT_PUBLIC_STELLAR_NETWORK;
 
   afterEach(() => {
+    _resetDeploymentNetworkForTesting();
     if (originalNetwork === undefined) delete process.env.NEXT_PUBLIC_STELLAR_NETWORK;
     else process.env.NEXT_PUBLIC_STELLAR_NETWORK = originalNetwork;
   });
@@ -33,11 +39,13 @@ describe('explorer URL shapes', () => {
   });
 
   it('follows NEXT_PUBLIC_STELLAR_NETWORK when the network argument is omitted', () => {
+    _resetDeploymentNetworkForTesting();
     process.env.NEXT_PUBLIC_STELLAR_NETWORK = 'mainnet';
     expect(explorerContractUrl(CONTRACT_ID)).toBe(
       `${STELLAR_EXPERT_ORIGIN}/explorer/public/contract/${CONTRACT_ID}`,
     );
 
+    _resetDeploymentNetworkForTesting();
     process.env.NEXT_PUBLIC_STELLAR_NETWORK = 'testnet';
     expect(explorerContractUrl(CONTRACT_ID)).toBe(
       `${STELLAR_EXPERT_ORIGIN}/explorer/testnet/contract/${CONTRACT_ID}`,
