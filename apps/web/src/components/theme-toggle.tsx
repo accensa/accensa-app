@@ -41,15 +41,17 @@ function ThemeIcon({ theme }: { theme: Theme }) {
   }
 }
 
+const SYSTEM_THEME_INDEX = THEME_ORDER.indexOf('system');
+
 function getInitialThemeIndex(): number {
-  if (typeof window === 'undefined') return 2; // default to 'system'
+  if (typeof window === 'undefined') return SYSTEM_THEME_INDEX;
   try {
     const stored = localStorage.getItem('theme') as Theme | null;
     const current = stored ?? 'system';
     const idx = THEME_ORDER.indexOf(current);
-    return idx >= 0 ? idx : 2;
+    return idx >= 0 ? idx : SYSTEM_THEME_INDEX;
   } catch {
-    return 2;
+    return SYSTEM_THEME_INDEX;
   }
 }
 
