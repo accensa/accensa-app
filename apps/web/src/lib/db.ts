@@ -2,6 +2,7 @@ import { Client } from 'pg';
 import { ensureNotificationSchema } from './notifications';
 import { ensureChatNotifierSchema } from './notifications/chatNotifier';
 import { resolveShard } from './shard-router';
+import { ensureZkCommitmentsSchema } from './zk-ledger';
 
 /** Alias used by the indexer and sync trigger code that reaches into the DB. */
 export type PostgresClient = Client;
@@ -207,6 +208,7 @@ export async function ensureSchema(client: Client): Promise<void> {
   await ensureAnchorAndWebhookSchema(client);
   await ensureNotificationSchema(client);
   await ensureChatNotifierSchema(client);
+  await ensureZkCommitmentsSchema(client);
 }
 
 async function ensureRoleTupleSchema(client: Client): Promise<void> {
