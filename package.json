@@ -1,6 +1,11 @@
 {
   "name": "accensa-app-root",
   "private": true,
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11.28.5"
+  },
+  "packageManager": "pnpm@11.28.5",
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
