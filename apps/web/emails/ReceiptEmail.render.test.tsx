@@ -6,7 +6,8 @@ import React from 'react';
 // environment. Stub it with plain HTML so renderToStaticMarkup produces
 // inspectable output without requiring the full package.
 vi.mock('@react-email/components', () => ({
-  Html: ({ children }: { children: React.ReactNode }) => React.createElement('html', null, children),
+  Html: ({ children }: { children: React.ReactNode }) =>
+    React.createElement('html', null, children),
   Head: () => React.createElement('head', null),
   Preview: ({ children }: { children: React.ReactNode }) =>
     React.createElement('div', { 'data-testid': 'preview' }, children),

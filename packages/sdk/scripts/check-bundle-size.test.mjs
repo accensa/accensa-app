@@ -18,7 +18,11 @@ describe('checkBundleSize', () => {
 
   afterEach(() => {
     while (tmps.length) {
-      try { unlinkSync(tmps.pop()); } catch { /* already removed */ }
+      try {
+        unlinkSync(tmps.pop());
+      } catch {
+        /* already removed */
+      }
     }
   });
 

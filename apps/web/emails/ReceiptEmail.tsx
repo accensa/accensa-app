@@ -21,7 +21,9 @@ export const ReceiptEmail: React.FC<ReceiptEmailProps> = ({
   return (
     <Html>
       <Head />
-      <Preview>Your receipt from {merchantName} · {amount}</Preview>
+      <Preview>
+        Your receipt from {merchantName} · {amount}
+      </Preview>
       <Body style={{ backgroundColor: '#ffffff', fontFamily: 'sans-serif' }}>
         <Container>
           <Section>
