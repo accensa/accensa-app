@@ -59,6 +59,13 @@ const MOBILE_ALLOWLIST: Allowlist = [
       'The full-screen mobile menu overlay sits outside header/main landmarks, ' +
       'causing axe to report its content as uncontained at mobile viewports.',
   },
+  {
+    rule: 'scrollable-region-focusable',
+    element: 'routes table horizontal overflow container (.overflow-x-auto)',
+    issue: 'https://github.com/accensa/accensa-app/issues/792',
+    reason:
+      'The routes table wrapper scrolls horizontally on narrow mobile screens but lacks tabindex="0".',
+  },
 ];
 
 /**
