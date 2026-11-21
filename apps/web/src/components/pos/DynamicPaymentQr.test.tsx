@@ -15,6 +15,7 @@ describe('DynamicPaymentQr', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0.1);
   });
 
   afterEach(() => {
