@@ -8,64 +8,56 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { gzipSync } from 'zlib';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MAX_SIZE_GZIP = 45 * 1024; // 45kB in bytes
 const WIDGET_ENTRY = 'dist/widget.mjs';
 
-function getFileSize(filePath) {
-  try {
-    const stats = fs.statSync(filePath);
-    return stats.size;
-  } catch (error) {
-    console.error(`Error reading file ${filePath}:`, error.message);
-    return null;
-  }
-}
-
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-}
-
-// Simple gzip size estimation (actual gzip would require zlib)
-function estimateGzipSize(uncompressedSize) {
-  // Typical compression ratio for JS is ~60-70%
-  return Math.floor(uncompressedSize * 0.65);
+/**
+ * Measures actual gzip size (level 9) of the file at filePath.
+ * Returns { rawBytes, gzippedBytes, limit, passed }.
+ */
+export function checkBundleSize(filePath) {
+  const buf = fs.readFileSync(filePath);
+  const rawBytes = buf.length;
+  const gzippedBytes = gzipSync(buf, { level: 9 }).length;
+  const limit = MAX_SIZE_GZIP;
+  const passed = gzippedBytes <= limit;
+  return { rawBytes, gzippedBytes, limit, passed };
 }
 
 function main() {
   const widgetPath = path.join(__dirname, '..', WIDGET_ENTRY);
-  const fileSize = getFileSize(widgetPath);
 
-  if (fileSize === null) {
-    console.error('❌ Could not determine widget file size');
+  let result;
+  try {
+    result = checkBundleSize(widgetPath);
+  } catch (error) {
+    console.error(`❌ Could not read widget file: ${error.message}`);
     process.exit(1);
   }
 
-  const estimatedGzipSize = estimateGzipSize(fileSize);
+  const { rawBytes, gzippedBytes, limit } = result;
 
   console.log('📦 Bundle Size Check');
   console.log('==================');
-  console.log(`Uncompressed: ${formatBytes(fileSize)}`);
-  console.log(`Estimated gzip: ${formatBytes(estimatedGzipSize)}`);
-  console.log(`Limit: ${formatBytes(MAX_SIZE_GZIP)} (gzip)`);
+  console.log(`Raw:     ${rawBytes} bytes`);
+  console.log(`Gzipped: ${gzippedBytes} bytes`);
+  console.log(`Limit:   ${limit} bytes`);
 
-  if (estimatedGzipSize > MAX_SIZE_GZIP) {
+  if (!result.passed) {
     console.error(`\n❌ Bundle size exceeds limit!`);
-    console.error(`   Current: ${formatBytes(estimatedGzipSize)}`);
-    console.error(`   Limit: ${formatBytes(MAX_SIZE_GZIP)}`);
-    console.error(`   Excess: ${formatBytes(estimatedGzipSize - MAX_SIZE_GZIP)}`);
+    console.error(`   Gzipped: ${gzippedBytes} bytes`);
+    console.error(`   Limit:   ${limit} bytes`);
+    console.error(`   Excess:  ${gzippedBytes - limit} bytes`);
     process.exit(1);
   }
 
-  console.log(
-    `\n✅ Bundle size within limits (${formatBytes(estimatedGzipSize)} / ${formatBytes(MAX_SIZE_GZIP)})`,
-  );
+  console.log(`\n✅ Bundle size within limits (${gzippedBytes} / ${limit} bytes gzip)`);
   process.exit(0);
 }
 
-main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}
