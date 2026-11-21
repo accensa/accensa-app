@@ -30,10 +30,15 @@ export async function encrypt(payload: Record<string, unknown>) {
 }
 
 export async function decrypt(input: string): Promise<Record<string, unknown> | undefined> {
-  const { payload } = await jwtVerify(input, signingKey(), {
-    algorithms: ['HS256'],
-  });
-  return payload;
+  const key = signingKey();
+  try {
+    const { payload } = await jwtVerify(input, key, {
+      algorithms: ['HS256'],
+    });
+    return payload;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function createSession(publicKey: string, role: 'admin' | 'viewer' = 'admin') {
