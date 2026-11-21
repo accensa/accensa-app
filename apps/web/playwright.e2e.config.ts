@@ -72,9 +72,9 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
-      JWT_SECRET_KEY: 'playwright-e2e-secret-key',
+      JWT_SECRET_KEY: 'playwright-e2e-secret-key-32-bytes',
       MERCHANT_ADDRESS: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
-      DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/accensa_e2e_none',
+      DATABASE_URL: 'postgres://postgres:password@localhost:5432/accensa_test',
       NEXT_PUBLIC_STELLAR_NETWORK: 'testnet',
     },
   },
