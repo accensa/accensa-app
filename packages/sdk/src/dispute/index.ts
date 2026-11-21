@@ -202,7 +202,7 @@ export function validateDisputeRequest(
  * @param opts - Dispute options
  * @returns Estimated fee in stroops (1 stroop = 0.0000001 XLM)
  */
-export function estimateDisputeFee(): number {
+export function estimateDisputeFee(_opts?: DisputeOptions): number {
   // Base fee for Stellar transaction (100 stroops)
   const baseFee = 100;
 
