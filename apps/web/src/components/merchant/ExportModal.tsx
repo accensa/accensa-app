@@ -12,13 +12,29 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [status, setStatus] = useState('all');
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleExport = () => {
+    const from = dateFrom ? new Date(dateFrom) : null;
+    const to = dateTo ? new Date(dateTo) : null;
+
+    if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+      setError('Enter a valid date for both the From and To fields.');
+      return;
+    }
+
+    if (from && to && from.getTime() > to.getTime()) {
+      setError('The From Date must be on or before the To Date.');
+      return;
+    }
+
+    setError(null);
+
     const params = new URLSearchParams();
-    if (dateFrom) params.set('date_from', new Date(dateFrom).toISOString());
-    if (dateTo) params.set('date_to', new Date(dateTo).toISOString());
+    if (from) params.set('date_from', from.toISOString());
+    if (to) params.set('date_to', to.toISOString());
     if (status !== 'all') {
       // Add status filter if applicable (e.g. refunded etc)
     }
@@ -54,7 +70,10 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
               type="date"
               className="w-full border rounded p-2"
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setError(null);
+              }}
             />
           </div>
           <div>
@@ -63,10 +82,19 @@ export function ExportModal({ isOpen, onClose }: ExportModalProps) {
               type="date"
               className="w-full border rounded p-2"
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setError(null);
+              }}
             />
           </div>
         </div>
+
+        {error && (
+          <p role="alert" className="mb-4 text-sm text-red-600">
+            {error}
+          </p>
+        )}
 
         <div className="mb-6">
           <label className="block text-sm font-medium mb-1">Transaction Status</label>

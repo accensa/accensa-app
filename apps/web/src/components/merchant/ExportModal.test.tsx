@@ -55,6 +55,61 @@ describe('ExportModal', () => {
     expect(params.has('status')).toBe(false);
   });
 
+  it('does not throw or export when a date string is invalid', () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const onClose = vi.fn();
+
+    const { container } = render(<ExportModal isOpen onClose={onClose} />);
+    const dateInputs = container.querySelectorAll('input[type="date"]');
+
+    // jsdom sanitises `type="date"` values, so shadow the property to model a
+    // malformed value reaching state (as a paste or programmatic write can).
+    Object.defineProperty(dateInputs[0], 'value', {
+      value: 'not-a-date',
+      configurable: true,
+    });
+    fireEvent.change(dateInputs[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+
+    expect(screen.getByRole('alert').textContent).toContain('valid date');
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('halts export and shows an error when dateFrom is after dateTo', () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const onClose = vi.fn();
+
+    const { container } = render(<ExportModal isOpen onClose={onClose} />);
+    const dateInputs = container.querySelectorAll('input[type="date"]');
+
+    fireEvent.change(dateInputs[0], { target: { value: '2026-02-01' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2026-01-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+
+    expect(screen.getByRole('alert').textContent).toContain('on or before');
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('clears a validation error when the dates are corrected', () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+
+    const { container } = render(<ExportModal isOpen onClose={vi.fn()} />);
+    const dateInputs = container.querySelectorAll('input[type="date"]');
+
+    fireEvent.change(dateInputs[0], { target: { value: '2026-02-01' } });
+    fireEvent.change(dateInputs[1], { target: { value: '2026-01-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    expect(screen.queryByRole('alert')).not.toBeNull();
+
+    fireEvent.change(dateInputs[1], { target: { value: '2026-03-01' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+    expect(openSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('closing without exporting opens no window', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     const onClose = vi.fn();

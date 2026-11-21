@@ -11,7 +11,9 @@ const {
   mockMarkAllAsRead,
   mockMarkAsRead,
   mockDismiss,
+  mockParseCategory,
 } = vi.hoisted(() => {
+  const categories = ['transactions', 'disputes', 'security', 'system'];
   const merchant = { id: 1, address: 'GABC' };
   return {
     MERCHANT: merchant,
@@ -26,6 +28,9 @@ const {
     mockMarkAllAsRead: vi.fn().mockResolvedValue({ updated: 2 }),
     mockMarkAsRead: vi.fn().mockResolvedValue(true),
     mockDismiss: vi.fn().mockResolvedValue(true),
+    mockParseCategory: vi.fn((value: unknown) =>
+      typeof value === 'string' && categories.includes(value) ? value : null,
+    ),
   };
 });
 
@@ -45,6 +50,8 @@ vi.mock('@/lib/notifications', () => ({
   markAllNotificationsAsRead: mockMarkAllAsRead,
   markNotificationAsRead: mockMarkAsRead,
   dismissNotification: mockDismiss,
+  parseNotificationCategory: mockParseCategory,
+  NOTIFICATION_CATEGORIES: ['transactions', 'disputes', 'security', 'system'],
 }));
 
 const NOTIFICATION = {
@@ -84,6 +91,36 @@ describe('/api/notifications GET', () => {
     const data = await res.json();
     expect(data.notifications).toEqual([NOTIFICATION]);
     expect(data.unreadCount).toBe(1);
+  });
+
+  test('filters by a valid category query parameter', async () => {
+    const res = await GET(mockRequest('http://localhost/api/notifications?category=security'));
+    expect(res.status).toBe(200);
+    expect(mockListNotifications).toHaveBeenCalledWith(
+      expect.anything(),
+      MERCHANT.id,
+      50,
+      'security',
+    );
+  });
+
+  test('rejects an unknown category with 400 and a descriptive error', async () => {
+    const res = await GET(mockRequest('http://localhost/api/notifications?category=invalid'));
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain('transactions');
+    expect(mockListNotifications).not.toHaveBeenCalled();
+  });
+
+  test('returns every category when no category is supplied', async () => {
+    const res = await GET(mockRequest('http://localhost/api/notifications'));
+    expect(res.status).toBe(200);
+    expect(mockListNotifications).toHaveBeenCalledWith(
+      expect.anything(),
+      MERCHANT.id,
+      50,
+      undefined,
+    );
   });
 
   test('sends no-store cache headers so the badge is never stale', async () => {
