@@ -72,8 +72,7 @@ const BRANDING_ALLOWLIST: Allowlist = [
     rule: 'color-contrast',
     element: 'live checkout preview header in light mode',
     issue: 'https://github.com/accensa/accensa-app/issues/791',
-    reason:
-      'The light mode preview container has text contrast below 4.5:1 on styled elements.',
+    reason: 'The light mode preview container has text contrast below 4.5:1 on styled elements.',
   },
 ];
 
