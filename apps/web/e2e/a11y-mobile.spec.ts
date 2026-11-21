@@ -51,6 +51,14 @@ const MOBILE_ALLOWLIST: Allowlist = [
       'field captions are text-slate-400 on a white card (~2.6:1). Same defect the desktop ' +
       'gate carries under #190, not a mobile-only finding.',
   },
+  {
+    rule: 'region',
+    element: 'mobile navigation overlay in nav.tsx (.pt-2, .my-auto)',
+    issue: 'https://github.com/accensa/accensa-app/issues/792',
+    reason:
+      'The full-screen mobile menu overlay sits outside header/main landmarks, ' +
+      'causing axe to report its content as uncontained at mobile viewports.',
+  },
 ];
 
 /**

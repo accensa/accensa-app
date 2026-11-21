@@ -66,7 +66,16 @@ const PAGES_ROUTER_ALLOWLIST: Allowlist = [
 ];
 
 /** The branding editor: structurally sound, but still Pages Router and landmark-free. */
-const BRANDING_ALLOWLIST: Allowlist = [...PAGES_ROUTER_ALLOWLIST];
+const BRANDING_ALLOWLIST: Allowlist = [
+  ...PAGES_ROUTER_ALLOWLIST,
+  {
+    rule: 'color-contrast',
+    element: 'live checkout preview header in light mode',
+    issue: 'https://github.com/accensa/accensa-app/issues/791',
+    reason:
+      'The light mode preview container has text contrast below 4.5:1 on styled elements.',
+  },
+];
 
 /**
  * The POS terminal. `/merchant/pos` has a `<title>` and a set of named buttons,
