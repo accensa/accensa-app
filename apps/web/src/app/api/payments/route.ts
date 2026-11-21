@@ -37,6 +37,7 @@ export interface PaymentsResponse {
   total_count?: number;
   /** Echoes the filters applied to this query (#167). */
   filter_info?: {
+    tx_hash?: string;
     route?: string;
     payer?: string;
     asset?: string;
@@ -107,6 +108,7 @@ export async function GET(request: Request) {
     'limit',
     'page',
     'cursor',
+    'tx_hash',
     'route',
     'payer',
     'asset',
@@ -119,7 +121,14 @@ export async function GET(request: Request) {
     }
   }
 
-  // Filter parameters (#167): ?route=&payer=&asset=&date_from=&date_to=
+  // Filter parameters (#167, #821): ?tx_hash=&route=&payer=&asset=&date_from=&date_to=
+  const filterTxHash = searchParams.get('tx_hash');
+  if (filterTxHash !== null && !isHash32(filterTxHash)) {
+    return NextResponse.json(
+      { error: 'tx_hash must be a 64-character hexadecimal string' },
+      { status: 400 },
+    );
+  }
   const filterRoute = searchParams.get('route');
   const filterPayer = searchParams.get('payer');
   const filterAsset = searchParams.get('asset');
@@ -161,6 +170,13 @@ export async function GET(request: Request) {
         // query, so the header totals always cover the filtered set (#167).
         const predicates: string[] = [];
         const params: (string | number)[] = [merchant.id];
+        if (filterTxHash) {
+          // `isHash32` ignores surrounding whitespace, so bind the trimmed
+          // value - otherwise `" <hash> "` would be a valid check but a
+          // non-matching predicate.
+          predicates.push(`tx_hash = $${params.length + 1}`);
+          params.push(filterTxHash.trim());
+        }
         if (filterRoute) {
           predicates.push(`route = $${params.length + 1}`);
           params.push(filterRoute);
@@ -268,9 +284,15 @@ export async function GET(request: Request) {
       total_asset: totalAsset,
       total_pages: totalPages,
       total_count: total,
-      ...(filterRoute || filterPayer || filterAsset || filterDateFrom || filterDateTo
+      ...(filterTxHash ||
+      filterRoute ||
+      filterPayer ||
+      filterAsset ||
+      filterDateFrom ||
+      filterDateTo
         ? {
             filter_info: {
+              tx_hash: filterTxHash?.trim() ?? undefined,
               route: filterRoute ?? undefined,
               payer: filterPayer ?? undefined,
               asset: filterAsset ?? undefined,
