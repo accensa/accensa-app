@@ -16,6 +16,7 @@ export interface PaymentRow {
   ts: string;
   route: string | null;
   method: string | null;
+  fee_stroops: string | null;
 }
 
 export interface PaymentsResponse {
@@ -186,7 +187,8 @@ export async function GET(request: Request) {
         // query below, never from the page: a page past the end has no rows to
         // read them off, and a cursor page's rows exclude everything before
         // the cursor.
-        let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method
+        let query = `SELECT tx_hash, ledger, payer, amount::text AS amount, asset, ts, route, method,
+                    fee_stroops::text AS fee_stroops
                     FROM payments WHERE merchant_id = $1 AND ts IS NOT NULL${filterSql}`;
 
         if (parsedCursor) {
@@ -254,6 +256,10 @@ export async function GET(request: Request) {
         ts: row.ts instanceof Date ? row.ts.toISOString() : String(row.ts),
         route: row.route,
         method: row.method,
+        fee_stroops:
+          row.fee_stroops === null || row.fee_stroops === undefined
+            ? null
+            : String(row.fee_stroops),
       })),
       sync,
       next_cursor,

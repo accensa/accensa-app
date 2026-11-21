@@ -1,4 +1,4 @@
--- 005_zk_commitments.sql
+-- 009_zk_commitments.sql
 --
 -- Commitment ledger for zero-knowledge-verified state transitions (#173).
 --

@@ -182,6 +182,10 @@ export function validateDisputeRequest(
   const now = new Date();
   const daysSinceTx = (now.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24);
 
+  if (isNaN(daysSinceTx)) {
+    return { valid: false, error: 'Invalid transaction date' };
+  }
+
   if (daysSinceTx > disputeWindowDays) {
     return {
       valid: false,

@@ -71,9 +71,9 @@ describe('chunkRows', () => {
 });
 
 describe('buildBatchInsertSql', () => {
-  it('builds one multi-row statement with 7 bind parameters per row', () => {
+  it('builds one multi-row statement with 8 bind parameters per row', () => {
     const sql = buildBatchInsertSql(3);
-    expect(sql.match(/\$\d+/g)).toHaveLength(21);
+    expect(sql.match(/\$\d+/g)).toHaveLength(24);
     // Three tuples, one per row (each carries one ::numeric cast).
     expect(sql.match(/\$\d+::numeric/g)).toHaveLength(3);
   });
@@ -86,6 +86,7 @@ describe('buildBatchInsertSql', () => {
     expect(sql).toContain('amount = EXCLUDED.amount');
     expect(sql).toContain('asset = EXCLUDED.asset');
     expect(sql).toContain('ts = EXCLUDED.ts');
+    expect(sql).toContain('fee_stroops = EXCLUDED.fee_stroops');
     expect(sql).toContain('WHERE payments.ledger IS NULL');
     expect(sql).toContain('RETURNING *');
   });
@@ -107,7 +108,9 @@ describe('buildBatchInsertSql', () => {
       r.amount,
       r.asset,
       r.ts,
+      null,
     ]);
+    expect(flattenRows([row({ feeStroops: '5000' })])).toContain('5000');
   });
 });
 
@@ -168,9 +171,9 @@ describe('insertPaymentsInTransaction', () => {
     // 250 rows at 100 per batch -> 3 INSERT statements (100/100/50).
     const inserts = queries.filter((q) => /^INSERT INTO payments/m.test(q));
     expect(inserts).toHaveLength(3);
-    expect(inserts[0].match(/\$\d+/g)).toHaveLength(700);
-    expect(inserts[1].match(/\$\d+/g)).toHaveLength(700);
-    expect(inserts[2].match(/\$\d+/g)).toHaveLength(350);
+    expect(inserts[0].match(/\$\d+/g)).toHaveLength(800);
+    expect(inserts[1].match(/\$\d+/g)).toHaveLength(800);
+    expect(inserts[2].match(/\$\d+/g)).toHaveLength(400);
     expect(result.inserted).toBe(250);
     expect(result.payments).toHaveLength(250);
 
