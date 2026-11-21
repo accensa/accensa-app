@@ -16,7 +16,11 @@ const STALE_WORKFLOW = fs.readFileSync(
 );
 
 function oneMatch(source, pattern, description) {
-  const matches = [...source.matchAll(pattern)];
+  const regex =
+    pattern instanceof RegExp && !pattern.global
+      ? new RegExp(pattern.source, `${pattern.flags}g`)
+      : pattern;
+  const matches = [...source.matchAll(regex)];
   assert.equal(matches.length, 1, `expected exactly one ${description}, found ${matches.length}`);
   return matches[0];
 }

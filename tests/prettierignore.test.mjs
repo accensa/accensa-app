@@ -110,7 +110,10 @@ describe('.prettierignore entries', () => {
       const target = pattern.replace(/^\/|\/$/g, '');
       const exists = tracked.includes(target) || fs.existsSync(path.join(ROOT, target));
       const generatedTarget = GENERATED_PATHS.some(
-        (candidate) => candidate === target || candidate.startsWith(`${target}/`),
+        (candidate) =>
+          candidate === target ||
+          candidate.startsWith(`${target}/`) ||
+          (!target.includes('/') && candidate.split('/').includes(target)),
       );
       assert.ok(
         exists || generatedTarget,
