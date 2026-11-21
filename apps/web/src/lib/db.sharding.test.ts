@@ -121,7 +121,7 @@ describe('ensureSchema tenant shard column', () => {
     // succeeding, and it is the same clause the standalone migration applies:
     // a restored database and an app-initialised one agree.
     const migration = readFileSync(
-      new URL('../../../../migrations/003_tenant_shard_columns.sql', import.meta.url),
+      new URL('../../../../migrations/006_tenant_shard_columns.sql', import.meta.url),
       'utf8',
     );
     expect(migration).toContain(
