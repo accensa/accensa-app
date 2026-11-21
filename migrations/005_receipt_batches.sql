@@ -1,6 +1,8 @@
 -- Mapping from an on-chain ReceiptAnchor batch to the payments that formed it.
 -- Applied automatically by ensureSchema(); this file is the readable form.
 
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS receipt_batches (
   selection_hash VARCHAR(64) PRIMARY KEY,
   batch_id BIGINT UNIQUE,
@@ -21,3 +23,5 @@ ALTER TABLE payments ADD COLUMN IF NOT EXISTS batch_id BIGINT;
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_leaf VARCHAR(64);
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_proof JSONB;
 CREATE INDEX IF NOT EXISTS idx_payments_batch_id ON payments(batch_id);
+
+COMMIT;

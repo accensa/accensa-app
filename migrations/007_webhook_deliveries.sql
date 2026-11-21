@@ -2,6 +2,8 @@
 -- insert and delivered by GET /api/webhooks/deliver. Applied automatically
 -- by ensureSchema(); this file is the readable form.
 
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS webhook_deliveries (
   id BIGSERIAL PRIMARY KEY,
   payment_tx_hash VARCHAR(64) NOT NULL,
@@ -33,3 +35,5 @@ ALTER TABLE webhook_attempts ADD COLUMN IF NOT EXISTS duration_ms INT NOT NULL D
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
   ON webhook_deliveries (next_retry_at) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries (status);
+
+COMMIT;

@@ -10,6 +10,7 @@ import { ExactStellarScheme } from '@x402/stellar/exact/server';
 import { Keypair } from '@stellar/stellar-sdk';
 import { boot, loadServerEnv } from './lib/env.js';
 import { verifyWebhookSignature } from './lib/webhook-signature.js';
+import { startHeartbeat } from './lib/sse-heartbeat.js';
 
 const app = express();
 
@@ -291,9 +292,11 @@ app.post('/api/webhooks/accensa', (req, res) => {
  */
 app.get('/api/events', (req, res) => {
   const removeClient = addSseClient(res);
+  const stopHeartbeat = startHeartbeat(res, 15000);
   console.log(`📡 SSE client connected (${sseClients.size} total)`);
 
   req.on('close', () => {
+    stopHeartbeat();
     removeClient();
     console.log(`📡 SSE client disconnected (${sseClients.size} total)`);
   });
