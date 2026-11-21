@@ -12,7 +12,7 @@ import { SignJWT } from 'jose';
  * passes `visual-regression-test-secret`. Preferring the env var keeps the
  * helper consistent with whichever config launched the run.
  */
-const E2E_JWT_SECRET = process.env.JWT_SECRET_KEY ?? 'playwright-e2e-secret-key';
+const E2E_JWT_SECRET = process.env.JWT_SECRET_KEY ?? 'playwright-e2e-secret-key-32-bytes';
 
 const signingKey = new TextEncoder().encode(E2E_JWT_SECRET);
 
