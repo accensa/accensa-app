@@ -122,21 +122,34 @@ export function formatPriceCompact(stroopsOrDecimal: string): string {
 }
 
 /**
+ * Extracts the asset code from an asset identifier.
+ *
+ * SEP-11 uses colons (`USDC:GA...`), while Horizon and the indexer use hyphens
+ * (`USDC-GA...`). Both forms must yield `USDC` rather than the full identifier.
+ */
+function parseAssetCode(asset: string): string {
+  return asset.split(/[:-]/)[0]!;
+}
+
+/**
  * Returns the human-readable symbol for a SEP-11 asset identifier.
+ *
+ * Accepts colon-separated and hyphen-separated identifiers.
  *
  * ```ts
  * assetSymbol('native')            // "XLM"
  * assetSymbol('USDC:GA...')        // "USDC"
+ * assetSymbol('USDC-GA...')        // "USDC"
  * assetSymbol(null)                // "XLM"
  * ```
  */
 export function assetSymbol(asset: string | null): string {
   if (!asset || asset === 'native') return 'XLM';
-  return asset.split(':')[0];
+  return parseAssetCode(asset);
 }
 
 function resolveToken(asset: string): TokenMeta {
   if (!asset || asset === 'native') return TOKENS.native;
-  const code = asset.split(':')[0];
+  const code = parseAssetCode(asset);
   return TOKENS[code] ?? { asset, symbol: code, decimals: SCALE };
 }
