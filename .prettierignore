@@ -8,7 +8,7 @@ dist
 apps/web/test-results/
 pnpm-lock.yaml
 *.min.js
-.merkle-vectors.json
+/.merkle-vectors.json
 packages/sdk/merkle-vectors.json
 packages/sdk/vectors.rs
 apps/web/next-env.d.ts
