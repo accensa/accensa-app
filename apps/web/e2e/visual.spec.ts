@@ -1,3 +1,17 @@
+/**
+ * Visual coverage matrix: `docs/e2e-coverage.md`. Six projects, five baselines
+ * (30 committed files under `__screenshots__/<project>/`):
+ *
+ * | Route                       | Baseline               |
+ * | --------------------------- | ---------------------- |
+ * | /dashboard                  | dashboard-empty.png    |
+ * | /dashboard                  | dashboard-payments.png |
+ * | /merchant/settings/branding | checkout-modal.png      |
+ * | /merchant/disputes          | dispute-flow.png       |
+ * | /merchant/pos               | pos-terminal.png       |
+ *
+ * Orphaned root PNGs are recorded there, not deleted.
+ */
 import { test, expect } from '@playwright/test';
 import { SignJWT } from 'jose';
 

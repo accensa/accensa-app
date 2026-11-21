@@ -1,5 +1,7 @@
 # Indexer runbook
 
+Triage card: [`runbook-triage-card.md`](runbook-triage-card.md) — one entry per trigger, first command included.
+
 Alerts fired by `.github/workflows/stale-check.yml` polling `GET /api/health`
 at minute 17 every two hours (issue #90). Owner: **the on-call
 merchant-platform engineer**. For security-related escalation, contact

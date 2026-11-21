@@ -1,5 +1,7 @@
 name: CI
 
+# What a red run blocks, and how this differs from the scheduled workflows:
+# docs/ci-gates.md.
 on:
   push:
     branches: ['main']
