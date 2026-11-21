@@ -6,7 +6,7 @@ This directory contains versioned SQL migrations applied sequentially to maintai
 
 Historically, several migrations shared colliding numerical prefixes: two files were named `002_` and four files were named `003_`. When running a glob like `psql -f migrations/*.sql`, execution order was determined by characters after the underscore rather than deliberate sequence numbering.
 
-To make migration order unambiguous, deterministic, and self-documenting, the files have been renumbered to unique, contiguous three-digit prefixes (`001` through `013`). The new numbering preserves the exact historical lexicographical execution sequence byte-for-byte.
+To make migration order unambiguous, deterministic, and self-documenting, the files have been renumbered to unique, contiguous three-digit prefixes (`001` through `014`). The new numbering preserves the exact historical lexicographical execution sequence byte-for-byte.
 
 ## Old-to-New Filename Map
 
@@ -25,6 +25,7 @@ To make migration order unambiguous, deterministic, and self-documenting, the fi
 | `007_role_tuples.sql`                     | `011_role_tuples.sql`                     | Creates `role_tuples` table for Zanzibar-style relationship permissions.           |
 | `008_inventory_reservations.sql`          | `012_inventory_reservations.sql`          | Creates `inventory_items`, `inventory_reservations`, and line-item tables.         |
 | `009_multi_store_organizations.sql`       | `013_multi_store_organizations.sql`       | Creates `merchant_stores`, `merchant_api_keys`, and `merchant_catalog_items`.      |
+| —                                         | `014_payment_fee_stroops.sql`             | Adds nullable `fee_stroops` to `payments` for observed network fees.               |
 
 ## Invariant Enforcement
 
