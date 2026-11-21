@@ -6,9 +6,11 @@ name: Vector parity
 # vendors a byte-identical copy at `packages/sdk/merkle-vectors.json`, and this
 # job fails the build the moment the two hashes disagree.
 #
-# Requires the repository variable ACCENSA_CONTRACTS_REF, pinned to a
-# contracts commit SHA or tag. Pinning is deliberate: vectors changes are rolled
-# out on both sides together, not picked up silently from `main`.
+# The pin lives in `packages/sdk/merkle-vectors.ref` so the job also runs on
+# pull_request events from forks, where repository variables are not exposed.
+# The ACCENSA_CONTRACTS_REF repository variable, when set, overrides it. Pinning
+# is deliberate: vectors changes are rolled out on both sides together, not
+# picked up silently from `main`.
 
 on:
   push:
@@ -39,10 +41,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          REF="${ACCENSA_CONTRACTS_REF}"
+          # Fork PRs do not receive repository variables, so fall back to the
+          # pin committed next to the fixture. The variable still wins on main.
+          REF="${ACCENSA_CONTRACTS_REF:-$(cat packages/sdk/merkle-vectors.ref)}"
           if [ -z "$REF" ]; then
-            echo "::warning::Repository variable ACCENSA_CONTRACTS_REF is absent or empty; skipping the cross-repo vector parity check."
-            exit 0
+            echo "::error::No contracts ref: neither ACCENSA_CONTRACTS_REF nor packages/sdk/merkle-vectors.ref is set."
+            exit 1
           fi
           echo "Canonical source: accensa-contracts@${REF}"
 
