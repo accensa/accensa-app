@@ -122,6 +122,7 @@ export async function ensureSchema(client: Client): Promise<void> {
     ['method', 'VARCHAR(10)'],
     ['request_id', 'VARCHAR(64)'],
     ['hook_reported_at', 'TIMESTAMPTZ'],
+    ['fee_stroops', 'BIGINT'],
   ]) {
     await client.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS ${col} ${type};`);
   }
