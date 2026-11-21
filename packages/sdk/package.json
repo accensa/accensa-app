@@ -81,6 +81,9 @@
     "README.md",
     "CHANGELOG.md"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "sideEffects": false,
   "scripts": {
     "build": "tsup",

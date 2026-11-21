@@ -3,8 +3,10 @@
 Triage card: [`runbook-triage-card.md`](runbook-triage-card.md) — one entry per trigger, first command included.
 
 Alerts fired by `.github/workflows/stale-check.yml` polling `GET /api/health`
-(issue #90). Owner: **the on-call merchant-platform engineer** (set the real
-name/rotation here).
+at minute 17 every two hours (issue #90). Owner: **the on-call
+merchant-platform engineer**. For security-related escalation, contact
+[security@accensa.dev](mailto:security@accensa.dev) or use the direct-message
+route in [SECURITY.md](../SECURITY.md#reporting-a-vulnerability).
 
 `/api/health` returns `{ status, head, merchants: [{ lagLedgers, ageMs, status,
 reasons }] }` and a `503` when any merchant is `critical`.
@@ -55,7 +57,7 @@ Secrets expired? Vercel project paused?
 
 **Do:** re-enable / re-dispatch `sync.yml`; renew secrets; if scheduling is
 chronically unreliable, migrate to an external scheduler (see
-`DEPLOYMENT.md` → "Indexer scheduling").
+[DEPLOYMENT.md's indexer-scheduling section](../DEPLOYMENT.md#indexer-scheduling--the-options-weighed)).
 
 ## Persistent `drained: false`
 

@@ -1,12 +1,13 @@
 import React from 'react';
 // @ts-expect-error: @react-email/components lacks type definitions
 import { Html, Head, Preview, Body, Container, Section, Text, Link } from '@react-email/components';
+import { formatTimestamp } from '../src/lib/format-timestamp';
 
 export interface ReceiptEmailProps {
   txHash: string;
   merchantName: string;
   amount: string;
-  date: string;
+  date: Date | string | number;
 }
 
 export const ReceiptEmail: React.FC<ReceiptEmailProps> = ({
@@ -20,7 +21,9 @@ export const ReceiptEmail: React.FC<ReceiptEmailProps> = ({
   return (
     <Html>
       <Head />
-      <Preview>Your receipt from {merchantName}</Preview>
+      <Preview>
+        Your receipt from {merchantName} · {amount}
+      </Preview>
       <Body style={{ backgroundColor: '#ffffff', fontFamily: 'sans-serif' }}>
         <Container>
           <Section>
@@ -28,7 +31,7 @@ export const ReceiptEmail: React.FC<ReceiptEmailProps> = ({
               Receipt from {merchantName}
             </Text>
             <Text>Amount: {amount}</Text>
-            <Text>Date: {date}</Text>
+            <Text>Date: {formatTimestamp(date)}</Text>
             <Text>Transaction Hash: {txHash}</Text>
             <Link href={explorerUrl}>View on Stellar Explorer</Link>
           </Section>

@@ -17,12 +17,14 @@
   "exports": {
     ".": "./src/index.ts",
     "./components": "./src/components/index.ts",
+    "./tokens": "./src/tokens/index.ts",
     "./utils": "./src/utils/index.ts",
     "./types": "./src/types/index.ts"
   },
   "scripts": {
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0",
@@ -32,6 +34,7 @@
   "devDependencies": {
     "@types/react": "^19.2.0",
     "typescript": "~5.9.3",
+    "vitest": "^4.1.12",
     "react": "^19.2.4",
     "next": "16.4.6"
   }

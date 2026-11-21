@@ -1,59 +1,97 @@
-import { expect, test, vi, describe, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { decrypt, encrypt } from '@/lib/auth';
 import { POST } from './route';
 
-const MERCHANT_ADDRESS = 'GCALKSGAZRJLSUEJT3M5W6LN4R7XQOLIRCOS6ZA6EDZVTZDBIIPPFKJ6';
-
-const { mockCreateSession } = vi.hoisted(() => ({
-  mockCreateSession: vi.fn().mockResolvedValue(undefined),
+const { cookieStore } = vi.hoisted(() => ({
+  cookieStore: { get: vi.fn(), set: vi.fn(), delete: vi.fn() },
 }));
 
-vi.mock('@/lib/auth', () => ({
-  createSession: mockCreateSession,
-}));
+vi.mock('next/headers', () => ({ cookies: vi.fn(async () => cookieStore) }));
 
-function renewRequest(headers: Record<string, string> = {}) {
+const MERCHANT = 'G' + 'A'.repeat(55);
+const OTHER = 'G' + 'B'.repeat(55);
+
+function request(merchantHeader?: string) {
   return new Request('http://localhost/api/auth/renew', {
     method: 'POST',
-    headers,
+    headers: merchantHeader ? { 'x-accensa-merchant': merchantHeader } : {},
   });
 }
 
+async function tokenFor(publicKey: string, role?: string) {
+  return encrypt({ publicKey, ...(role === undefined ? {} : { role }) });
+}
+
+async function renewedSession(): Promise<Record<string, unknown> | undefined> {
+  expect(cookieStore.set).toHaveBeenCalledTimes(1);
+  const [name, value] = cookieStore.set.mock.calls[0];
+  expect(name).toBe('accensa_session');
+  return decrypt(String(value));
+}
+
 describe('/api/auth/renew POST', () => {
+  const originalSecret = process.env.JWT_SECRET_KEY;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.JWT_SECRET_KEY = 'test-secret-key-for-renew-route-32';
+    cookieStore.get.mockReturnValue(undefined);
   });
 
-  test('returns 401 when x-accensa-merchant is absent', async () => {
-    const res = await POST(renewRequest());
-
-    expect(res.status).toBe(401);
-    await expect(res.json()).resolves.toEqual({ error: 'Unauthorized' });
-    expect(mockCreateSession).not.toHaveBeenCalled();
+  afterEach(() => {
+    if (originalSecret === undefined) delete process.env.JWT_SECRET_KEY;
+    else process.env.JWT_SECRET_KEY = originalSecret;
   });
 
-  test('treats an empty x-accensa-merchant as absent', async () => {
-    const res = await POST(renewRequest({ 'x-accensa-merchant': '' }));
+  it('renews a viewer session as a viewer in Set-Cookie', async () => {
+    cookieStore.get.mockReturnValue({ value: await tokenFor(MERCHANT, 'viewer') });
 
-    expect(res.status).toBe(401);
-    await expect(res.json()).resolves.toEqual({ error: 'Unauthorized' });
-    expect(mockCreateSession).not.toHaveBeenCalled();
-  });
+    const res = await POST(request());
 
-  test('creates a session for the header merchant and returns success', async () => {
-    const res = await POST(renewRequest({ 'x-accensa-merchant': MERCHANT_ADDRESS }));
-
-    expect(mockCreateSession).toHaveBeenCalledTimes(1);
-    expect(mockCreateSession).toHaveBeenCalledWith(MERCHANT_ADDRESS);
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ success: true });
+    expect(await renewedSession()).toMatchObject({ publicKey: MERCHANT, role: 'viewer' });
   });
 
-  test('does not report success when session creation fails', async () => {
-    mockCreateSession.mockRejectedValueOnce(new Error('JWT_SECRET_KEY is not set'));
+  it('keeps an admin session admin', async () => {
+    cookieStore.get.mockReturnValue({ value: await tokenFor(MERCHANT, 'admin') });
 
-    await expect(POST(renewRequest({ 'x-accensa-merchant': MERCHANT_ADDRESS }))).rejects.toThrow(
-      'JWT_SECRET_KEY is not set',
-    );
-    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    const res = await POST(request());
+
+    expect(res.status).toBe(200);
+    expect(await renewedSession()).toMatchObject({ publicKey: MERCHANT, role: 'admin' });
+  });
+
+  it('treats a legacy session without a role as the least privileged role', async () => {
+    cookieStore.get.mockReturnValue({ value: await tokenFor(MERCHANT) });
+
+    const res = await POST(request());
+
+    expect(res.status).toBe(200);
+    expect(await renewedSession()).toMatchObject({ publicKey: MERCHANT, role: 'viewer' });
+  });
+
+  it('rejects a request with no cookie and sets none', async () => {
+    const res = await POST(request());
+
+    expect(res.status).toBe(401);
+    expect(cookieStore.set).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid cookie and sets none', async () => {
+    cookieStore.get.mockReturnValue({ value: 'not-a-valid-jwt' });
+
+    const res = await POST(request());
+
+    expect(res.status).toBe(401);
+    expect(cookieStore.set).not.toHaveBeenCalled();
+  });
+
+  it('ignores an x-accensa-merchant header that names another merchant', async () => {
+    cookieStore.get.mockReturnValue({ value: await tokenFor(MERCHANT, 'viewer') });
+
+    const res = await POST(request(OTHER));
+
+    expect(res.status).toBe(200);
+    expect(await renewedSession()).toMatchObject({ publicKey: MERCHANT, role: 'viewer' });
   });
 });

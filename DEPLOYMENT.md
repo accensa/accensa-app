@@ -39,22 +39,35 @@ The documentation site in `apps/docs` is **not** deployed on Vercel or GitHub Pa
 > link in the org still pointed at it. The project was deleted on 2026-08-14;
 > `accensa-docs.vercel.app` now returns 404 and nothing should link to it.
 
-## Indexing cadence — read this before trusting `vercel.json`
+## Indexing cadence — read this before trusting the cron
 
-`apps/web/vercel.json` declares a **daily** cron. That is not the real cadence,
-and it is not a design choice:
+The repo root has no `vercel.json`. The only manifest is `apps/web/vercel.json`,
+whose `crons` entry (`apps/web/vercel.json:3-7`) declares a **daily** run at
+`0 0 * * *`. That is not the real cadence, and it is not a design choice:
 
 > On the Vercel Hobby plan, declaring more than one cron run per day is a **hard
 > deploy failure**, not a silent clamp. The deploy is rejected.
 
-So the schedule that matters lives in `.github/workflows/sync.yml`, which hits
-`/api/sync` every 5 minutes. GitHub throttles high-frequency scheduled workflows,
-so in practice it lands **every one to three hours**. `apps/web/src/lib/sync-status.ts`
-sets its staleness thresholds from that observed behaviour rather than from the
-declared schedule, so a normal gap is not reported to the merchant as a fault.
+So the schedule that matters lives in `.github/workflows/sync.yml`. It is not a
+five-minute GitHub schedule — GitHub drops high-frequency triggers on shared
+runners (`sync.yml:3-6`). Instead the workflow is triggered **hourly**
+(`cron: '0 * * * *'`, `sync.yml:14-15`) and loops internally: for 55 minutes
+(`END_TIME`, `sync.yml:58`) it calls `/api/sync` and then sleeps 5 minutes
+(`sleep 300`, `sync.yml:104`). The effective cadence is therefore one sync every
+5 minutes while a run is alive, plus at most the gap until the next hourly run
+starts — longer when GitHub delays that schedule.
 
-If you move off Hobby, raise the `vercel.json` cron and retire the Actions
-workflow — do not run both, or the cursor gets contention from two writers.
+`apps/web/src/lib/sync-status.ts` sets its staleness thresholds from that
+behaviour rather than from the declared schedule: `LIVE_WITHIN_MS` is 15 minutes
+and `LAGGING_WITHIN_MS` is 3 hours (`sync-status.ts:26-27`), so a normal gap is
+not reported to the merchant as a fault.
+
+No cadence change is made here. If you move off Hobby, raise the `crons` schedule
+in `apps/web/vercel.json` and retire `.github/workflows/sync.yml` — do not run
+both, or the cursor gets contention from two writers.
+
+Every schedule (and which source wins) is tabulated in
+[docs/indexing-schedule.md](docs/indexing-schedule.md).
 
 **The cadence is not cosmetic.** Soroban RPC serves `getEvents` for roughly the
 last 121,000 ledgers, about a week of testnet. If the cursor stops advancing for
@@ -163,16 +176,15 @@ The pooler host looks like `aws-1-<region>.pooler.supabase.com`.
 
 ## Environment variables
 
-| Variable                      | Where                          | What it does                                                                                                                                                                                                                                                                                                                          |
-| ----------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                | Vercel (`web`)                 | Supabase **session pooler** connection string.                                                                                                                                                                                                                                                                                        |
-| `ACCENSA_PRIVATE_KEY_HEX`     | Merchant server                | **Required** for settlement attribution signing (Ed25519 hex seed).                                                                                                                                                                                                                                                                   |
-| `JWT_SECRET_KEY`              | Vercel (`web`)                 | **Required** — signs and verifies every merchant session. Read at `apps/web/src/lib/auth.ts`, `apps/web/src/lib/auth/totp.ts` and `apps/web/src/lib/auth/totp-challenge.ts`. No fallback: missing it throws `JWT_SECRET_KEY is not set; refusing to sign or verify a session` on first sign-in. Generate with `openssl rand -hex 32`. |
-| `CRON_SECRET`                 | Vercel (`web`) + GitHub secret | Shared by `/api/sync` and `sync.yml`. Anonymous callers get `{"error":"Unauthorized"}`.                                                                                                                                                                                                                                               |
-| `SYNC_URL`                    | GitHub secret                  | The `/api/sync` endpoint the workflow posts to.                                                                                                                                                                                                                                                                                       |
-| `ACCENSA_PRIVATE_KEY_HEX`     | Vercel (`web`)                 | Gates `/api/hook/settle`. **Absent means the endpoint fails closed**, not open.                                                                                                                                                                                                                                                       |
-| `NEXT_PUBLIC_REFUND_VAULT_ID` | Vercel (`web`), optional       | Overrides the built-in RefundVault contract id.                                                                                                                                                                                                                                                                                       |
-| `STELLAR_NETWORK_PASSPHRASE`  | Vercel (`web`), optional       | Stellar network passphrase for auth challenges and RPC calls. Defaults to `Test SDF Network ; September 2015`. Set to `Public Global Stellar Network ; September 2015` for pubnet.                                                                                                                                                    |
+| Variable                      | Where                            | What it does                                                                                                                                                                                                                                                                                                                          |
+| ----------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                | Vercel (`web`)                   | Supabase **session pooler** connection string.                                                                                                                                                                                                                                                                                        |
+| `ACCENSA_PRIVATE_KEY_HEX`     | Merchant server + Vercel (`web`) | **Required** — set the same Ed25519 hex seed on the merchant server and in Vercel's `web` environment: it signs settlement attribution and gates `/api/hook/settle`. **Absent from Vercel, the endpoint fails closed.**                                                                                                               |
+| `JWT_SECRET_KEY`              | Vercel (`web`)                   | **Required** — signs and verifies every merchant session. Read at `apps/web/src/lib/auth.ts`, `apps/web/src/lib/auth/totp.ts` and `apps/web/src/lib/auth/totp-challenge.ts`. No fallback: missing it throws `JWT_SECRET_KEY is not set; refusing to sign or verify a session` on first sign-in. Generate with `openssl rand -hex 32`. |
+| `CRON_SECRET`                 | Vercel (`web`) + GitHub secret   | Shared by `/api/sync` and `sync.yml`. Anonymous callers get `{"error":"Unauthorized"}`.                                                                                                                                                                                                                                               |
+| `SYNC_URL`                    | GitHub secret                    | The `/api/sync` endpoint the workflow posts to.                                                                                                                                                                                                                                                                                       |
+| `NEXT_PUBLIC_REFUND_VAULT_ID` | Vercel (`web`), optional         | Overrides the built-in RefundVault contract id.                                                                                                                                                                                                                                                                                       |
+| `STELLAR_NETWORK_PASSPHRASE`  | Vercel (`web`), optional         | Stellar network passphrase for auth challenges and RPC calls. Defaults to `Test SDF Network ; September 2015`. Set to `Public Global Stellar Network ; September 2015` for pubnet.                                                                                                                                                    |
 
 Set them per environment (`production`, `preview`, `development`) — Vercel does
 not share values across them.
@@ -232,7 +244,7 @@ relations (`owner`, `editor`, `viewer`) that map to permissions
 can aggregate many users per role.
 
 **Data model.** Tuples persist in Postgres table `role_tuples`
-(`migrations/007_role_tuples.sql`, also created by `ensureSchema`). It is
+(`migrations/011_role_tuples.sql`, also created by `ensureSchema`). It is
 FORCE-RLS-scoped to `accensa.merchant_id` like every other tenant table, so a
 merchant can only ever read or write its own role grants — the tuples cannot
 leak across tenants even via a broken query.
@@ -303,6 +315,13 @@ curl -s https://accensa-dashboard.vercel.app/api/sync                           
 
 The `/batches/999` 404 and the `/api/sync` rejection are the two that catch a
 half-configured deploy — a 200 from either means something is wrong.
+
+## Rolling back
+
+If either failure signal above appears, roll the production alias back to the
+previous deployment, pause sync, verify the alias, then resume sync.
+Use [`docs/rollback.md`](docs/rollback.md) for the ordered procedure, partial
+rollback cases, and when rollback is not appropriate.
 
 ## Rotating the database password
 

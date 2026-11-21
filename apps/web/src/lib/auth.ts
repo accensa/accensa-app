@@ -13,12 +13,22 @@ import { cookies } from 'next/headers';
  * would mint session tokens anyone could forge. Throwing is the correct failure: it is
  * loud, it happens on the first signing attempt, and it cannot be mistaken for working.
  */
+/** HS256 needs a key with real entropy: 32 bytes is the shortest length this app accepts. */
+const MIN_SECRET_BYTES = 32;
+
 function signingKey(): Uint8Array {
   const secretKey = process.env.JWT_SECRET_KEY;
   if (!secretKey) {
     throw new Error('JWT_SECRET_KEY is not set; refusing to sign or verify a session');
   }
-  return new TextEncoder().encode(secretKey);
+  const key = new TextEncoder().encode(secretKey);
+  if (key.byteLength < MIN_SECRET_BYTES) {
+    throw new Error(
+      `JWT_SECRET_KEY must be at least ${MIN_SECRET_BYTES} bytes (UTF-8); got ${key.byteLength}. ` +
+        'Generate one with `openssl rand -hex 32`.',
+    );
+  }
+  return key;
 }
 
 export async function encrypt(payload: Record<string, unknown>) {
@@ -30,10 +40,15 @@ export async function encrypt(payload: Record<string, unknown>) {
 }
 
 export async function decrypt(input: string): Promise<Record<string, unknown> | undefined> {
-  const { payload } = await jwtVerify(input, signingKey(), {
-    algorithms: ['HS256'],
-  });
-  return payload;
+  const key = signingKey();
+  try {
+    const { payload } = await jwtVerify(input, key, {
+      algorithms: ['HS256'],
+    });
+    return payload;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function createSession(publicKey: string, role: 'admin' | 'viewer' = 'admin') {

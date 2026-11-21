@@ -1,0 +1,119 @@
+---
+sidebar_position: 2
+title: Offline Sync Engine
+---
+
+# Offline Sync Storage Contract
+
+The Accensa SDK provides an offline-first sync engine (`OfflineSyncEngine` in `packages/sdk/src/offline-sync.ts`) based on conflict-free replicated data types (CRDTs). It allows merchants to view and mutate data while offline, caching updates locally and automatically synchronizing with the server upon reconnection using Last-Writer-Wins (LWW) resolution and vector clocks.
+
+## Storage Configuration
+
+The engine persists all local state in the browser's `localStorage`:
+
+```ts
+import { OfflineSyncEngine } from '@accensa/sdk/offline-sync';
+
+const engine = new OfflineSyncEngine({
+  storageKey: 'accensa-sync', // Default localStorage key
+  maxPending: 100, // Maximum queued mutations before forced sync
+  syncIntervalMs: 30000, // Background sync polling interval (0 = manual only)
+});
+
+await engine.init();
+```
+
+## Persisted State Schema
+
+The persisted value under `localStorage.getItem(storageKey)` is a serialized JSON object containing three top-level fields:
+
+```ts
+interface PersistedState {
+  documents: Record<string, OfflineDocument>;
+  pendingOps: SyncOperation[];
+  vectorClock: Record<string, number>;
+}
+```
+
+### 1. `documents`
+
+A dictionary mapping document keys (such as `orders:ord_123` or IDs) to cached records:
+
+- `id` (`string`): Unique document identifier.
+- `data` (`Record<string, unknown>`): The document's payload attributes.
+- `localVersion` (`number`): Monotonically increasing local edit counter.
+- `serverVersion` (`number | null`): Last confirmed server version, or `null` if created offline and not yet acknowledged.
+- `pendingOps` (`SyncOperation[]`): Array of unmerged operations awaiting server reconciliation.
+
+### 2. `pendingOps`
+
+Queue of outgoing mutations:
+
+- `id` (`string`): Unique UUID for the sync operation.
+- `type` (`"create" | "update" | "delete"`): Mutation action.
+- `collection` (`string`): Target entity collection (e.g., `"orders"`).
+- `documentId` (`string`): Identifier of the document being modified.
+- `data` (`Record<string, unknown>`): Attributes updated in this operation.
+- `timestamp` (`number`): Milliseconds epoch timestamp of when the action occurred.
+- `vectorClock` (`Record<string, number>`): Vector clock capture mapping participant node IDs to sequence numbers for causal dependency tracking.
+- `synced` (`boolean`): Boolean flag indicating whether the operation has been successfully transmitted and acknowledged.
+
+### 3. `vectorClock`
+
+A dictionary of `{ [nodeId: string]: number }` tracking the highest known causal sequence for each distributed participant.
+
+## Concrete `localStorage` Example
+
+Below is a verified example of an actual serialized state in `localStorage`:
+
+```json
+{
+  "documents": {
+    "ord_8849102": {
+      "id": "ord_8849102",
+      "data": {
+        "status": "refunded",
+        "amount": "45.00",
+        "asset": "USDC",
+        "customer": "GBZX...44Q"
+      },
+      "localVersion": 2,
+      "serverVersion": 1,
+      "pendingOps": [
+        {
+          "id": "op_981a-28bf-4c8d",
+          "type": "update",
+          "collection": "orders",
+          "documentId": "ord_8849102",
+          "data": { "status": "refunded" },
+          "timestamp": 1732075200000,
+          "vectorClock": { "node_client_desktop_1": 2 },
+          "synced": false
+        }
+      ]
+    }
+  },
+  "pendingOps": [
+    {
+      "id": "op_981a-28bf-4c8d",
+      "type": "update",
+      "collection": "orders",
+      "documentId": "ord_8849102",
+      "data": { "status": "refunded" },
+      "timestamp": 1732075200000,
+      "vectorClock": { "node_client_desktop_1": 2 },
+      "synced": false
+    }
+  ],
+  "vectorClock": {
+    "node_client_desktop_1": 2
+  }
+}
+```
+
+## Lifecycle and Conflict Resolution
+
+1. **Initialization (`init()`)**: Loads existing state from `localStorage.getItem(storageKey)`, attaches `online` and `offline` event listeners to `window`, and starts the periodic timer if `syncIntervalMs > 0`.
+2. **Offline Mutation (`queueUpdate()`)**: Increments the local vector clock, applies the edit to the cached document, appends a new `SyncOperation` to `pendingOps`, and calls `persist()` to serialize state back to `localStorage`.
+3. **Synchronization (`sync()`)**: When online, flushes un-synced operations to the server endpoint. If concurrent server modifications are detected, the conflict is resolved via Last-Writer-Wins using operation timestamps and vector clocks.
+4. **Purging (`clear()`)**: Evicts all documents, queues, and vector clocks, removing the key from `localStorage`.

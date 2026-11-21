@@ -5,7 +5,7 @@ import { decodeTransferEvent, type RawEvent } from './stellar-events';
 /**
  * Rows per INSERT statement.
  *
- * Each row binds 7 parameters, so a batch of 100 binds 700 — two orders of
+ * Each row binds 8 parameters, so a batch of 100 binds 800 — two orders of
  * magnitude below Postgres's 65,535-parameter ceiling per statement. The
  * statement stays small enough for any pooler or proxy to handle comfortably,
  * and a 10,000-event catch-up goes from 10,000 round trips to 100.
@@ -45,6 +45,7 @@ export function eventsToPaymentRows(
       amount: transferEvent.amount, // string - never a float
       asset: transferEvent.asset,
       ts: transferEvent.ledgerClosedAt,
+      feeStroops: null,
     });
   }
   return { rows, decoded };
@@ -60,6 +61,7 @@ export interface PaymentRow {
   asset: string;
   /** ISO 8601 ledger close time. */
   ts: string;
+  feeStroops?: string | null;
 }
 
 /** Splits rows into `size`-sized chunks; the last chunk may be smaller. */
@@ -85,19 +87,20 @@ export function chunkRows<T>(rows: T[], size: number): T[][] {
 export function buildBatchInsertSql(rowCount: number): string {
   const tuples: string[] = [];
   for (let i = 0; i < rowCount; i++) {
-    const base = i * 7;
+    const base = i * 8;
     tuples.push(
-      `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::numeric, $${base + 6}, $${base + 7}::timestamptz)`,
+      `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}::numeric, $${base + 6}, $${base + 7}::timestamptz, $${base + 8}::bigint)`,
     );
   }
-  return `INSERT INTO payments (merchant_id, tx_hash, ledger, payer, amount, asset, ts)
+  return `INSERT INTO payments (merchant_id, tx_hash, ledger, payer, amount, asset, ts, fee_stroops)
   VALUES ${tuples.join(', ')}
   ON CONFLICT (merchant_id, tx_hash) DO UPDATE
   SET ledger = EXCLUDED.ledger,
   payer = EXCLUDED.payer,
   amount = EXCLUDED.amount,
   asset = EXCLUDED.asset,
-  ts = EXCLUDED.ts
+  ts = EXCLUDED.ts,
+  fee_stroops = EXCLUDED.fee_stroops
   WHERE payments.ledger IS NULL RETURNING *`;
 }
 
@@ -105,7 +108,16 @@ export function buildBatchInsertSql(rowCount: number): string {
 export function flattenRows(rows: PaymentRow[]): unknown[] {
   const params: unknown[] = [];
   for (const r of rows) {
-    params.push(r.merchantId, r.txHash, r.ledger, r.payer, r.amount, r.asset, r.ts);
+    params.push(
+      r.merchantId,
+      r.txHash,
+      r.ledger,
+      r.payer,
+      r.amount,
+      r.asset,
+      r.ts,
+      r.feeStroops ?? null,
+    );
   }
   return params;
 }

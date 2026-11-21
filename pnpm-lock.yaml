@@ -336,6 +336,9 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^4.1.12
+        version: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@20.19.43)(jsdom@30.1.1(@noble/hashes@2.2.0))(vite@8.3.8(@types/node@20.19.43)(esbuild@0.27.7)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))
 
   scripts/reconcile-payments:
     dependencies:
