@@ -70,4 +70,3 @@ test('assert every env var the demo merchant reads is documented in .env.example
     `Environment variables in .env.example that are no longer read in env.js: ${deadInExample.join(', ')}`,
   );
 });
-

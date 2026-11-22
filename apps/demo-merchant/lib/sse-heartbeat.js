@@ -27,4 +27,3 @@ export function startHeartbeat(res, intervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS) 
     }
   };
 }
-

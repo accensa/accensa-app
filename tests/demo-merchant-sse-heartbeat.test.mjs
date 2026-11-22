@@ -87,4 +87,3 @@ test('startHeartbeat uses DEFAULT_HEARTBEAT_INTERVAL_MS when interval is omitted
 
   stop();
 });
-
