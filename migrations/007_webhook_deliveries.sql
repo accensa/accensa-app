@@ -1,6 +1,9 @@
+-- 007_webhook_deliveries.sql (formerly 003_webhook_deliveries.sql, renumbered in PR #852)
 -- Outbound payment webhooks, queued in the same transaction as the payment
 -- insert and delivered by GET /api/webhooks/deliver. Applied automatically
 -- by ensureSchema(); this file is the readable form.
+
+BEGIN;
 
 CREATE TABLE IF NOT EXISTS webhook_deliveries (
   id BIGSERIAL PRIMARY KEY,
@@ -33,3 +36,5 @@ ALTER TABLE webhook_attempts ADD COLUMN IF NOT EXISTS duration_ms INT NOT NULL D
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_due
   ON webhook_deliveries (next_retry_at) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries (status);
+
+COMMIT;

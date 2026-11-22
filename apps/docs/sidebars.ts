@@ -94,7 +94,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'General Guides',
-      items: ['developer', 'contributing', 'troubleshooting', 'faq'],
+      items: ['developer', 'contributing', 'troubleshooting', 'faq', 'sdk/playground'],
     },
   ],
 };

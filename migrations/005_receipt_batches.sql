@@ -1,5 +1,8 @@
+-- 005_receipt_batches.sql (formerly 003_receipt_batches.sql, renumbered in PR #852)
 -- Mapping from an on-chain ReceiptAnchor batch to the payments that formed it.
 -- Applied automatically by ensureSchema(); this file is the readable form.
+
+BEGIN;
 
 CREATE TABLE IF NOT EXISTS receipt_batches (
   selection_hash VARCHAR(64) PRIMARY KEY,
@@ -21,3 +24,5 @@ ALTER TABLE payments ADD COLUMN IF NOT EXISTS batch_id BIGINT;
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_leaf VARCHAR(64);
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_proof JSONB;
 CREATE INDEX IF NOT EXISTS idx_payments_batch_id ON payments(batch_id);
+
+COMMIT;
