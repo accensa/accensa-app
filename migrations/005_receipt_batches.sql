@@ -1,3 +1,4 @@
+-- 005_receipt_batches.sql (formerly 003_receipt_batches.sql, renumbered in PR #852)
 -- Mapping from an on-chain ReceiptAnchor batch to the payments that formed it.
 -- Applied automatically by ensureSchema(); this file is the readable form.
 

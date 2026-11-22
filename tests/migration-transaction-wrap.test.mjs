@@ -10,6 +10,18 @@ const REPO_ROOT = join(__dirname, '..');
 const MIGRATIONS_DIR = join(REPO_ROOT, 'migrations');
 
 /**
+ * Historical filename mapping from issue #777 to renumbered filenames (PR #852).
+ * Colliding 003_ prefixes were renumbered to unique contiguous prefixes as documented
+ * in migrations/README.md:
+ * - 003_receipt_batches.sql -> 005_receipt_batches.sql
+ * - 003_webhook_deliveries.sql -> 007_webhook_deliveries.sql
+ */
+export const HISTORICAL_MIGRATION_MAP = {
+  '003_receipt_batches.sql': '005_receipt_batches.sql',
+  '003_webhook_deliveries.sql': '007_webhook_deliveries.sql',
+};
+
+/**
  * Named exemptions for migrations that cannot run in a transaction
  * (for example, CREATE INDEX CONCURRENTLY or database creation).
  * Each entry must explain why transaction wrapping is not possible.
@@ -89,24 +101,46 @@ test('every migration file is wrapped in BEGIN; and COMMIT; (#777)', () => {
   assert.deepEqual(failures, [], `Migrations not wrapped in transactions:\n${failures.join('\n')}`);
 });
 
-test('validateMigrationTransactionWrap detects missing COMMIT', () => {
+test('003_receipt_batches.sql (005_receipt_batches.sql) opens with BEGIN; and closes with COMMIT; (#777)', () => {
+  const resolvedFile = HISTORICAL_MIGRATION_MAP['003_receipt_batches.sql'];
+  const content = readFileSync(join(MIGRATIONS_DIR, resolvedFile), 'utf-8');
+  const result = validateMigrationTransactionWrap('003_receipt_batches.sql', content);
+  assert.equal(
+    result.valid,
+    true,
+    `003_receipt_batches.sql (${resolvedFile}) must be wrapped in BEGIN; and COMMIT;`,
+  );
+});
+
+test('003_webhook_deliveries.sql (007_webhook_deliveries.sql) opens with BEGIN; and closes with COMMIT; (#777)', () => {
+  const resolvedFile = HISTORICAL_MIGRATION_MAP['003_webhook_deliveries.sql'];
+  const content = readFileSync(join(MIGRATIONS_DIR, resolvedFile), 'utf-8');
+  const result = validateMigrationTransactionWrap('003_webhook_deliveries.sql', content);
+  assert.equal(
+    result.valid,
+    true,
+    `003_webhook_deliveries.sql (${resolvedFile}) must be wrapped in BEGIN; and COMMIT;`,
+  );
+});
+
+test('validateMigrationTransactionWrap detects missing COMMIT in 003_receipt_batches.sql', () => {
   const mockSql = `
-    -- Header comment
+    -- Mapping from an on-chain ReceiptAnchor batch to the payments that formed it.
     BEGIN;
-    CREATE TABLE test (id int);
+    CREATE TABLE IF NOT EXISTS receipt_batches (selection_hash VARCHAR(64) PRIMARY KEY);
   `;
-  const result = validateMigrationTransactionWrap('mock.sql', mockSql);
+  const result = validateMigrationTransactionWrap('003_receipt_batches.sql', mockSql);
   assert.equal(result.valid, false);
   assert.ok(result.error.includes('Missing COMMIT; at end'));
 });
 
-test('validateMigrationTransactionWrap detects missing BEGIN', () => {
+test('validateMigrationTransactionWrap detects missing BEGIN in 003_webhook_deliveries.sql', () => {
   const mockSql = `
-    -- Header comment
-    CREATE TABLE test (id int);
+    -- Outbound payment webhooks
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (id BIGSERIAL PRIMARY KEY);
     COMMIT;
   `;
-  const result = validateMigrationTransactionWrap('mock.sql', mockSql);
+  const result = validateMigrationTransactionWrap('003_webhook_deliveries.sql', mockSql);
   assert.equal(result.valid, false);
   assert.ok(result.error.includes('Missing BEGIN; at start'));
 });
