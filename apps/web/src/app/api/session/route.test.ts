@@ -3,7 +3,7 @@ import { GET } from './route';
 
 /** A request as the gateway proxy forwards it, with an optional role header. */
 function request(role?: string): Request {
-  return new Request('http://localhost/api/session', {
+  return new Request('http://test/api/session', {
     headers: role === undefined ? undefined : { 'x-accensa-role': role },
   });
 }
