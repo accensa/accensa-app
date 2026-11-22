@@ -1,6 +1,7 @@
 'use client';
 
 import { useOnline } from '@/components/network-status';
+import { IndexerLagPanel } from '@/components/merchant/IndexerLagPanel';
 import { formatAmount, assetLabel } from '@/lib/money';
 import useSWR from 'swr';
 
@@ -51,6 +52,8 @@ export default function MerchantDashboard() {
             </div>
           </div>
         </header>
+
+        <IndexerLagPanel />
 
         <section className="border-y border-slate-200 py-6 dark:border-white/10">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
