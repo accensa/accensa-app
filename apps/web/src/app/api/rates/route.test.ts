@@ -41,13 +41,16 @@ describe('GET /api/rates', () => {
   });
 
   it('responds 503 when the exchange rate service fails', async () => {
-    mockedGetExchangeRates.mockRejectedValue(new Error('all providers down'));
+    const internalFailureMessage = 'all providers down: secret internal failure details';
+    mockedGetExchangeRates.mockRejectedValue(new Error(internalFailureMessage));
 
     const response = await GET();
 
     expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toEqual({
+    const body = await response.json();
+    expect(body).toEqual({
       error: 'Exchange rates are temporarily unavailable',
     });
+    expect(JSON.stringify(body)).not.toContain(internalFailureMessage);
   });
 });
