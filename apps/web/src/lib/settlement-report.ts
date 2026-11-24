@@ -107,18 +107,20 @@ export function parseSettlementReport(body: unknown): ParseResult {
     // inside the signed bytes, so it is the one timestamp a replay cannot
     // refresh: a captured body grows older by the second and leaves this
     // window permanently. `HOOK_MAX_AGE_MS` overrides the age bound for a
-    // deployment with genuinely skewed clocks; a non-numeric or non-positive
-    // value must not silently disable the window (Number('x') is NaN, and
-    // `age > NaN` is never true).
+    // deployment with genuinely skewed clocks; `HOOK_MAX_FUTURE_MS` overrides
+    // the future tolerance and falls back to `maxAgeMs`. A non-numeric or
+    // non-positive value must not silently disable the window (Number('x') is
+    // NaN, and `age > NaN` is never true).
     const envMaxAge = Number(process.env.HOOK_MAX_AGE_MS);
     const maxAgeMs = Number.isFinite(envMaxAge) && envMaxAge > 0 ? envMaxAge : 300000;
+    const envMaxFuture = Number(process.env.HOOK_MAX_FUTURE_MS);
+    const maxFutureMs = Number.isFinite(envMaxFuture) && envMaxFuture > 0 ? envMaxFuture : maxAgeMs;
     const now = Date.now();
     const age = now - d.getTime();
     if (age > maxAgeMs) {
       return { ok: false, error: 'report_too_old', code: 'report_too_old' };
     }
-    // 5 minutes clock skew
-    if (d.getTime() > now + 300000) {
+    if (d.getTime() > now + maxFutureMs) {
       return { ok: false, error: 'report_future_dated', code: 'report_future_dated' };
     }
     reportedAt = b.reported_at;
