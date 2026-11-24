@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { withClient, ensureSchema } from '@/lib/db';
 import { buildPreview, loadUnanchored, persistPreview, MAX_BATCH_SIZE } from '@/lib/anchor';
 import { RECEIPT_ANCHOR_ID } from '@/lib/receipt-anchor';
-import { Networks } from '@stellar/stellar-sdk';
+import { StellarNetworkConfigurationError } from '@/lib/auth/stellarAuth';
+import { getServerStellarNetworkPassphrase } from '@/lib/server-stellar-network';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,14 @@ function parseLedger(value: string | null, label: string): number | undefined {
  * signing prompt is a bug.
  */
 export async function GET(request: Request) {
+  let networkPassphrase: string;
+  try {
+    networkPassphrase = getServerStellarNetworkPassphrase();
+  } catch (error) {
+    if (!(error instanceof StellarNetworkConfigurationError)) throw error;
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
   if (!process.env.DATABASE_URL) {
     return NextResponse.json({ error: 'DATABASE_URL is not configured' }, { status: 500 });
   }
@@ -50,7 +59,7 @@ export async function GET(request: Request) {
           count: 0,
           merchant: process.env.MERCHANT_ADDRESS,
           contractId: RECEIPT_ANCHOR_ID,
-          networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET,
+          networkPassphrase,
           maxBatchSize: MAX_BATCH_SIZE,
         };
       }
@@ -59,7 +68,7 @@ export async function GET(request: Request) {
         ...preview,
         merchant: process.env.MERCHANT_ADDRESS,
         contractId: RECEIPT_ANCHOR_ID,
-        networkPassphrase: process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET,
+        networkPassphrase,
         maxBatchSize: MAX_BATCH_SIZE,
       };
     });

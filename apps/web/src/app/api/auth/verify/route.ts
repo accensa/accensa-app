@@ -1,21 +1,20 @@
 import { NextResponse } from 'next/server';
-import { Transaction, Networks, Keypair } from '@stellar/stellar-sdk';
+import { Transaction, Keypair } from '@stellar/stellar-sdk';
 import { createSession } from '@/lib/auth';
 import { withClient, ensureSchema, consumeNonce } from '@/lib/db';
 import { getMerchantByAddress } from '@/lib/merchants';
-
-function networkPassphrase(): string {
-  return process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET;
-}
+import { StellarNetworkConfigurationError } from '@/lib/auth/stellarAuth';
+import { getServerStellarNetworkPassphrase } from '@/lib/server-stellar-network';
 
 export async function POST(request: Request) {
   try {
+    const passphrase = getServerStellarNetworkPassphrase();
     const { xdr } = await request.json();
     if (!xdr) {
       return NextResponse.json({ error: 'Missing xdr' }, { status: 400 });
     }
 
-    const tx = new Transaction(xdr, networkPassphrase());
+    const tx = new Transaction(xdr, passphrase);
 
     // Validate timebounds
     const now = Math.floor(Date.now() / 1000);
@@ -79,6 +78,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
+    if (err instanceof StellarNetworkConfigurationError) {
+      return NextResponse.json({ error: err.message }, { status: 500 });
+    }
     const message = err instanceof Error ? err.message : 'Verification failed';
     return NextResponse.json({ error: message }, { status: 400 });
   }

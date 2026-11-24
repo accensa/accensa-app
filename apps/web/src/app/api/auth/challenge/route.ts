@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server';
-import { TransactionBuilder, Account, Operation, Networks } from '@stellar/stellar-sdk';
+import { TransactionBuilder, Account, Operation } from '@stellar/stellar-sdk';
 import { randomBytes } from 'crypto';
 import { withClient, ensureSchema, storeNonce, sweepExpiredNonces } from '@/lib/db';
 import { getMerchantByAddress } from '@/lib/merchants';
+import { StellarNetworkConfigurationError } from '@/lib/auth/stellarAuth';
+import { getServerStellarNetworkPassphrase } from '@/lib/server-stellar-network';
 
 export const dynamic = 'force-dynamic';
-
-function networkPassphrase(): string {
-  return process.env.STELLAR_NETWORK_PASSPHRASE ?? Networks.TESTNET;
-}
 
 /**
  * Which merchant is logging in has to be named up front: the challenge
@@ -22,6 +20,14 @@ export async function GET(request: Request) {
   const address = searchParams.get('address');
   if (!address) {
     return NextResponse.json({ error: 'address query parameter is required' }, { status: 400 });
+  }
+
+  let passphrase: string;
+  try {
+    passphrase = getServerStellarNetworkPassphrase();
+  } catch (error) {
+    if (!(error instanceof StellarNetworkConfigurationError)) throw error;
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   const merchant = await withClient(async (client) => {
@@ -38,7 +44,6 @@ export async function GET(request: Request) {
   // Create a SEP-10 style challenge transaction
   // The source account is the merchant, sequence is 0
   const now = Math.floor(Date.now() / 1000);
-  const passphrase = networkPassphrase();
   const tx = new TransactionBuilder(new Account(merchant.address, '0'), {
     fee: '100',
     networkPassphrase: passphrase,
