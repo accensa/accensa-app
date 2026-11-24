@@ -48,6 +48,8 @@ function ChartSkeleton({ className = '' }: { className?: string }) {
 }
 
 function TableSkeleton({ rows = 5, className = '' }: { rows?: number; className?: string }) {
+  const rowCount = Number.isFinite(rows) ? Math.max(0, Math.trunc(rows)) : 5;
+
   return (
     <div
       className={`bg-white/50 dark:bg-white/5 backdrop-blur-2xl overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.8)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.15)] transition-colors duration-300 ${className}`}
@@ -56,7 +58,7 @@ function TableSkeleton({ rows = 5, className = '' }: { rows?: number; className?
         <div className="h-4 w-32 bg-slate-200 dark:bg-white/10 animate-pulse" />
       </div>
       <div className="p-8 space-y-4">
-        {[...Array(rows)].map((_, i) => (
+        {[...Array(rowCount)].map((_, i) => (
           <div
             key={i}
             className="h-12 bg-slate-100 dark:bg-white/5 animate-pulse transition-colors duration-300"
