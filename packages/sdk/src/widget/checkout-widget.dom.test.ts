@@ -20,9 +20,23 @@ describe('AccensaCheckoutWidget DOM lifecycle', () => {
     const registered = add.mock.calls.find(([type]) => type === 'message')?.[1];
     expect(registered).toBeTypeOf('function');
 
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'config', payload: { amount: '25.00' } },
+      }),
+    );
+    expect(widget.shadowRoot?.textContent).toContain('25.00');
+
     widget.remove();
 
     const removed = remove.mock.calls.find(([type]) => type === 'message')?.[1];
     expect(removed).toBe(registered);
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'config', payload: { amount: '99.00' } },
+      }),
+    );
+    expect(widget.shadowRoot?.textContent).not.toContain('99.00');
   });
 });
