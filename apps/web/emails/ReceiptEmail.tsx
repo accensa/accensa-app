@@ -2,6 +2,7 @@ import React from 'react';
 // @ts-expect-error: @react-email/components lacks type definitions
 import { Html, Head, Preview, Body, Container, Section, Text, Link } from '@react-email/components';
 import { formatTimestamp } from '../src/lib/format-timestamp';
+import { receiptExplorerUrl } from './receipt-explorer-url';
 
 export interface ReceiptEmailProps {
   txHash: string;
@@ -16,7 +17,7 @@ export const ReceiptEmail: React.FC<ReceiptEmailProps> = ({
   amount,
   date,
 }) => {
-  const explorerUrl = `https://stellar.expert/explorer/testnet/tx/${txHash}`;
+  const explorerUrl = receiptExplorerUrl(txHash);
 
   return (
     <Html>
