@@ -31,10 +31,30 @@ describe('/api/anchor/preview GET', () => {
     vi.clearAllMocks();
     process.env.DATABASE_URL = 'postgres://dummy';
     process.env.MERCHANT_ADDRESS = 'GABC';
-    delete process.env.STELLAR_NETWORK_PASSPHRASE;
+    process.env.STELLAR_NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
     mockWithClient.mockImplementation(async (fn) => fn({}));
     mockLoadUnanchored.mockResolvedValue([]);
   });
+
+  test.each([undefined, '   '])(
+    'returns 500 before database work when STELLAR_NETWORK_PASSPHRASE is unset or blank (%s)',
+    async (passphrase) => {
+      if (passphrase === undefined) {
+        delete process.env.STELLAR_NETWORK_PASSPHRASE;
+      } else {
+        process.env.STELLAR_NETWORK_PASSPHRASE = passphrase;
+      }
+
+      const response = await GET(request());
+
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({
+        error: expect.stringContaining('STELLAR_NETWORK_PASSPHRASE'),
+      });
+      expect(mockWithClient).not.toHaveBeenCalled();
+      expect(mockLoadUnanchored).not.toHaveBeenCalled();
+    },
+  );
 
   test('returns 500 when DATABASE_URL is not configured', async () => {
     delete process.env.DATABASE_URL;

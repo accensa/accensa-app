@@ -55,16 +55,39 @@ describe('/api/auth/challenge GET', () => {
     expect(data.networkPassphrase).toBe('Public Global Stellar Network ; September 2015');
   });
 
-  test('defaults to Networks.TESTNET when STELLAR_NETWORK_PASSPHRASE is unset', async () => {
-    delete process.env.STELLAR_NETWORK_PASSPHRASE;
+  test.each([undefined, '   '])(
+    'returns 500 when STELLAR_NETWORK_PASSPHRASE is unset or blank (%s)',
+    async (passphrase) => {
+      if (passphrase === undefined) {
+        delete process.env.STELLAR_NETWORK_PASSPHRASE;
+      } else {
+        process.env.STELLAR_NETWORK_PASSPHRASE = passphrase;
+      }
+
+      const res = await GET(mockRequest(MERCHANT_ADDRESS));
+
+      expect(res.status).toBe(500);
+      expect(await res.json()).toMatchObject({
+        error: expect.stringContaining('STELLAR_NETWORK_PASSPHRASE'),
+      });
+      expect(mockWithClient).not.toHaveBeenCalled();
+    },
+  );
+
+  test('returns 500 for an unrecognized network passphrase', async () => {
+    process.env.STELLAR_NETWORK_PASSPHRASE = 'Unknown Stellar Network';
+
     const res = await GET(mockRequest(MERCHANT_ADDRESS));
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.networkPassphrase).toBe('Test SDF Network ; September 2015');
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining('STELLAR_NETWORK_PASSPHRASE'),
+    });
+    expect(mockWithClient).not.toHaveBeenCalled();
   });
 
   test('persists the nonce scoped to the resolved merchant', async () => {
-    delete process.env.STELLAR_NETWORK_PASSPHRASE;
+    process.env.STELLAR_NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
     const res = await GET(mockRequest(MERCHANT_ADDRESS));
     expect(res.status).toBe(200);
     expect(mockStoreNonce).toHaveBeenCalledTimes(1);
