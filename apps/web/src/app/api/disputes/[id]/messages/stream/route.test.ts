@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
 import { GET } from './route';
 
 const { mockCreateDisputeChatStream } = vi.hoisted(() => ({
@@ -26,7 +27,7 @@ describe('disputes/[id]/messages/stream route', () => {
     const mockResponse = new Response('stream');
     mockCreateDisputeChatStream.mockReturnValue(mockResponse);
 
-    const request = new Request('http://test/api/disputes/' + id + '/messages/stream');
+    const request = new NextRequest('http://test/api/disputes/' + id + '/messages/stream');
     const result = await GET(request, params(id));
 
     expect(mockCreateDisputeChatStream).toHaveBeenCalledTimes(1);
