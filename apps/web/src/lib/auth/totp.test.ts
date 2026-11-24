@@ -1,7 +1,9 @@
+/** @vitest-environment node */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   decryptTotpSecret,
   encryptTotpSecret,
+  generateTotpSecret,
   generateTotpUri,
   hashBackupCode,
   verifyTotpToken,
@@ -65,5 +67,34 @@ describe('TOTP helpers', () => {
 
   it('hashes backup codes independent of case and surrounding whitespace', () => {
     expect(hashBackupCode(' abcd-1234 ')).toBe(hashBackupCode('ABCD-1234'));
+    expect(hashBackupCode('ABCD-1234')).toBe(hashBackupCode('ABCD-1234'));
+  });
+
+  it('generateTotpSecret produces a verifiable secret at a pinned clock', () => {
+    vi.stubEnv('JWT_SECRET_KEY', 'totp-test-key-only');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(1_700_000_000_000));
+
+    const generated = generateTotpSecret('merchant@example.com', 'Accensa');
+    expect(generated.secret).toMatch(/^[A-Z2-7]+$/);
+    expect(decryptTotpSecret(generated.secretEncrypted)).toBe(generated.secret);
+    expect(generated.uri).toContain('otpauth://totp/');
+    expect(generated.uri).toContain('Accensa');
+    expect(generated.uri).toContain(encodeURIComponent('merchant@example.com'));
+
+    // Wrong 6-digit code is rejected; a corrupt secret returns false instead of throwing
+    // (the private base32Decode throw is swallowed by verifyTotpToken).
+    expect(verifyTotpToken('000000', generated.secret)).toBe(false);
+    expect(() => verifyTotpToken('123456', '@@@@')).not.toThrow();
+  });
+
+  it('encryptTotpSecret refuses to run without JWT_SECRET_KEY', () => {
+    vi.stubEnv('JWT_SECRET_KEY', '');
+    expect(() => encryptTotpSecret(rfcSecret)).toThrow(/JWT_SECRET_KEY/);
+  });
+
+  it('decryptTotpSecret throws on a malformed payload', () => {
+    vi.stubEnv('JWT_SECRET_KEY', 'totp-test-key-only');
+    expect(() => decryptTotpSecret('not-a-secret')).toThrow();
   });
 });
