@@ -13,7 +13,7 @@ export function verifyOutboundWebhookDelivery(
   signature: string,
   secret: string,
 ): boolean {
-  return verifyWebhookSignature(body, signature, secret);
+  return verifyWebhookSignature(body, signature, secret) as boolean;
 }
 
 /**
