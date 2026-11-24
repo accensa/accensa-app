@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import { DynamicPaymentQr } from './DynamicPaymentQr';
 
 describe('DynamicPaymentQr', () => {
@@ -12,11 +12,6 @@ describe('DynamicPaymentQr', () => {
     asset: 'USDC',
     validitySeconds: 5,
   };
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.spyOn(Math, 'random').mockReturnValue(0.1);
-  });
 
   afterEach(() => {
     vi.useRealTimers();
@@ -34,6 +29,7 @@ describe('DynamicPaymentQr', () => {
   });
 
   it('advancing the clock to expiry renders the expired state and a Refresh action', () => {
+    vi.useFakeTimers();
     render(<DynamicPaymentQr {...defaultProps} validitySeconds={2} />);
 
     expect(screen.getByText('Awaiting Payment')).toBeInTheDocument();
@@ -48,6 +44,7 @@ describe('DynamicPaymentQr', () => {
   });
 
   it('activates Refresh and returns the component to the pending state with a fresh expiresAt', () => {
+    vi.useFakeTimers();
     render(<DynamicPaymentQr {...defaultProps} validitySeconds={2} />);
 
     act(() => {
@@ -64,20 +61,23 @@ describe('DynamicPaymentQr', () => {
     expect(screen.getByText('Expires in')).toBeInTheDocument();
   });
 
-  it('simulates confirmed payment deterministically when Math.random returns a high value', async () => {
+  it('confirms payment when the explicit status check reports success', async () => {
     const onConfirmed = vi.fn();
-    vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    const checkPaymentStatus = vi.fn().mockResolvedValue(true);
 
-    render(<DynamicPaymentQr {...defaultProps} onPaymentConfirmed={onConfirmed} />);
+    render(
+      <DynamicPaymentQr
+        {...defaultProps}
+        onPaymentConfirmed={onConfirmed}
+        checkPaymentStatus={checkPaymentStatus}
+      />,
+    );
 
     expect(screen.getByText('Awaiting Payment')).toBeInTheDocument();
 
-    await act(async () => {
-      vi.advanceTimersByTime(1000);
-    });
-
-    expect(screen.getByText('Payment Confirmed!')).toBeInTheDocument();
+    expect(await screen.findByText('Payment Confirmed!')).toBeInTheDocument();
     expect(screen.getByText('Paid')).toBeInTheDocument();
     expect(onConfirmed).toHaveBeenCalledTimes(1);
+    expect(checkPaymentStatus).toHaveBeenCalledTimes(1);
   });
 });

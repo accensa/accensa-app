@@ -11,6 +11,7 @@ interface DynamicPaymentQrProps {
   asset: string;
   validitySeconds?: number;
   onPaymentConfirmed?: () => void;
+  checkPaymentStatus?: () => Promise<boolean>;
 }
 
 type PaymentStatus = 'pending' | 'confirmed' | 'expired';
@@ -21,6 +22,7 @@ export function DynamicPaymentQr({
   asset,
   validitySeconds = 300,
   onPaymentConfirmed,
+  checkPaymentStatus,
 }: DynamicPaymentQrProps) {
   const [status, setStatus] = useState<PaymentStatus>('pending');
   const [expiresAt, setExpiresAt] = useState<Date>(
@@ -41,22 +43,35 @@ export function DynamicPaymentQr({
     setTimeout(() => setShowSuccess(false), 3000);
   }, [onPaymentConfirmed]);
 
-  // Simulate payment detection for demo purposes
-  // In production, this would connect to a real payment listener
   useEffect(() => {
-    if (status !== 'pending') return;
+    if (status !== 'pending' || !checkPaymentStatus) return;
 
-    const checkPayment = () => {
-      // TODO: Replace with actual payment status check via API
-      // For demo, randomly confirm payment after some time
-      if (Math.random() > 0.995) {
-        handlePaymentConfirmed();
+    let active = true;
+    let checking = false;
+    const checkPayment = async () => {
+      if (checking) return;
+      checking = true;
+
+      try {
+        const confirmed = await checkPaymentStatus();
+        if (active && confirmed) {
+          active = false;
+          handlePaymentConfirmed();
+        }
+      } finally {
+        checking = false;
       }
     };
 
-    const interval = setInterval(checkPayment, 1000);
-    return () => clearInterval(interval);
-  }, [status, handlePaymentConfirmed]);
+    void checkPayment();
+    const interval = setInterval(() => {
+      void checkPayment();
+    }, 1000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [status, checkPaymentStatus, handlePaymentConfirmed]);
 
   const handleRefresh = () => {
     setStatus('pending');
