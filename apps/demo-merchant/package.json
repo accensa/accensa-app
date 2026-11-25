@@ -4,6 +4,7 @@
   "main": "server.js",
   "scripts": {
     "dev": "next dev -p 3001",
+    "prebuild": "pnpm --filter @accensa/sdk build",
     "build": "next build",
     "start": "next start",
     "agent": "node agent.js",
@@ -18,6 +19,7 @@
     "@x402/core": "^2.21.0",
     "@x402/express": "^2.21.0",
     "@x402/stellar": "^2.21.0",
+    "@accensa/sdk": "workspace:^",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "next": "16.4.6",

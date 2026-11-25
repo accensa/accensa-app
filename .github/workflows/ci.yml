@@ -118,7 +118,7 @@ jobs:
 
       # Typechecks apps/web and packages/sdk from the root.
       # apps/docs is not built or typechecked in CI (Pages claims dropped).
-      # apps/demo-merchant is plain JavaScript and has no TypeScript to check.
+      # apps/demo-merchant has a separate tsconfig and is not included in the root typecheck script.
       - name: Typecheck workspace packages
         run: pnpm typecheck
 
