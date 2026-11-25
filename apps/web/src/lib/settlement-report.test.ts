@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { SETTLE_METHODS, isSettleMethod } from '@accensa/sdk';
 import { parseSettlementReport } from './settlement-report';
 
@@ -14,6 +14,11 @@ function expectError(body: unknown, match: RegExp) {
 }
 
 describe('parseSettlementReport', () => {
+  afterEach(() => {
+    delete process.env.HOOK_MAX_AGE_MS;
+    delete process.env.HOOK_MAX_FUTURE_MS;
+  });
+
   it('accepts a minimal valid report without reported_at during transition window', () => {
     const result = parseSettlementReport(valid);
     expect(result).toEqual({
@@ -120,13 +125,40 @@ describe('parseSettlementReport', () => {
   });
 
   it('rejects a stale reported_at', () => {
-    const staleDate = new Date(Date.now() - 4000000).toISOString();
+    const staleDate = new Date(Date.now() - 400000).toISOString();
     expectError({ ...valid, reported_at: staleDate }, /report_too_old/);
   });
 
   it('rejects a future-dated reported_at', () => {
     const futureDate = new Date(Date.now() + 600000).toISOString();
     expectError({ ...valid, reported_at: futureDate }, /report_future_dated/);
+  });
+
+  it('allows future timestamps within the configured HOOK_MAX_FUTURE_MS window', () => {
+    process.env.HOOK_MAX_FUTURE_MS = '600000';
+    const futureDate = new Date(Date.now() + 450000).toISOString();
+    const result = parseSettlementReport({ ...valid, reported_at: futureDate });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.report.reportedAt).toBe(futureDate);
+  });
+
+  it('rejects future timestamps beyond the configured HOOK_MAX_FUTURE_MS window', () => {
+    process.env.HOOK_MAX_FUTURE_MS = '600000';
+    const futureDate = new Date(Date.now() + 700000).toISOString();
+    const result = parseSettlementReport({ ...valid, reported_at: futureDate });
+    expect(result).toEqual({
+      ok: false,
+      error: 'report_future_dated',
+      code: 'report_future_dated',
+    });
+  });
+
+  it('falls back to HOOK_MAX_AGE_MS when HOOK_MAX_FUTURE_MS is invalid', () => {
+    process.env.HOOK_MAX_AGE_MS = '600000';
+    process.env.HOOK_MAX_FUTURE_MS = 'nope';
+    const futureDate = new Date(Date.now() + 450000).toISOString();
+    const result = parseSettlementReport({ ...valid, reported_at: futureDate });
+    expect(result.ok).toBe(true);
   });
 });
 
