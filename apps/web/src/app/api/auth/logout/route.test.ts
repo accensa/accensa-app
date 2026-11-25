@@ -22,10 +22,19 @@ describe('/api/auth/logout POST', () => {
     await expect(res.json()).resolves.toEqual({ success: true });
   });
 
-  test('does not report success when session destruction fails', async () => {
+  test('answers a generic 500 when session destruction fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockDestroySession.mockRejectedValueOnce(new Error('cookie store unavailable'));
 
-    await expect(POST()).rejects.toThrow('cookie store unavailable');
+    const res = await POST();
+    const body = await res.text();
+
     expect(mockDestroySession).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(500);
+    expect(JSON.parse(body)).toEqual({ success: false, error: 'Logout failed' });
+    expect(body).not.toContain('cookie store unavailable');
+    expect(consoleError).toHaveBeenCalled();
+    expect(consoleError.mock.calls.flat().join(' ')).toContain('cookie store unavailable');
+    consoleError.mockRestore();
   });
 });

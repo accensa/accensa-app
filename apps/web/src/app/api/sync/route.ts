@@ -30,7 +30,7 @@ import { cooldownRemaining } from '@/lib/sync-status';
 import { broadcastSyncEvent, hasSubscribers } from '@/lib/sync-events';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 import { logSyncFailure, notifySyncFailure, type SyncFailureContext } from '@/lib/sync-logger';
-import { createHmac } from 'node:crypto';
+import { enqueueWebhookDelivery, payloadFromRow } from '@/lib/webhooks';
 import { enqueueChatNotifications } from '@/lib/notifications/chatNotifier';
 import { createHorizonFeeFetcher, resolveTransactionFees } from '@/lib/transaction-fees';
 
@@ -147,8 +147,13 @@ interface CooldownResult {
  * window, and the route advances the cursor to the sweep's final
  * `sweptThrough` afterwards. Each chunk commits atomically with the window —
  * if a chunk fails, the ROLLBACK discards the window's writes, and the cursor
- * is never moved because it is only written after the sweep. Webhooks are not
- * fired here; they run after COMMIT in the caller.
+ * is never moved because it is only written after the sweep.
+ *
+ * When a webhook URL is configured, one `webhook_deliveries` row is written per
+ * inserted payment *inside this transaction* (#506). The dispatcher at
+ * `/api/webhooks/deliver` owns the outbound HTTP traffic, so indexing never
+ * waits on a merchant's endpoint and a rollback cannot leave a delivery row
+ * pointing at a payment that was never committed.
  *
  * @returns The RETURNING rows — exactly the payments inserted this window
  *   (conflicts skipped by the `WHERE ledger IS NULL` guard are not returned).
@@ -157,6 +162,7 @@ async function insertPaymentRows(
   client: import('pg').Client,
   merchantId: number,
   rows: PaymentRow[],
+  webhookUrl: string | null,
 ): Promise<Record<string, unknown>[]> {
   await client.query('BEGIN');
   try {
@@ -168,6 +174,13 @@ async function insertPaymentRows(
       );
       payments.push(...res.rows);
     }
+
+    if (webhookUrl) {
+      for (const payment of payments) {
+        await enqueueWebhookDelivery(client, payloadFromRow(payment), webhookUrl);
+      }
+    }
+
     await client.query('COMMIT');
     return payments;
   } catch (error) {
@@ -290,6 +303,9 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
 
         const gap = latestLedger - startLedger + 1;
         const sweepFn = gap > PARALLEL_SYNC_THRESHOLD ? parallelSweepLedgerRange : sweepLedgerRange;
+        // One configured destination per merchant. The queue, not this sweep,
+        // owns outbound delivery; the URL is only recorded on each row.
+        const webhookUrl = merchant.webhookUrl ?? process.env.WEBHOOK_URL ?? null;
         let inserted = 0;
         let decoded = 0;
 
@@ -302,8 +318,6 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
           endLedger: latestLedger,
           withinBudget: () => Date.now() < deadline,
           onEvents: async (events: EventPage['events']) => {
-            const webhookUrl = merchant.webhookUrl ?? process.env.WEBHOOK_URL;
-
             // Per-event filtering lives in eventsToPaymentRows: a malformed or
             // non-transfer event is skipped, and a transfer not addressed to this
             // merchant is never recorded. Only the insert below is batched —
@@ -326,8 +340,9 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
             // Batch-insert the window's rows in one transaction. Since the sweep
             // only reports whole completed windows (sweptThrough), the cursor is
             // advanced separately below after the sweep resolves — never past a
-            // window that may have been only partially drained.
-            const payments = await insertPaymentRows(client, merchant.id, pricedRows);
+            // window that may have been only partially drained. Delivery rows are
+            // enqueued by that same transaction, so they commit with the payments.
+            const payments = await insertPaymentRows(client, merchant.id, pricedRows, webhookUrl);
             inserted += payments.length;
 
             try {
@@ -344,39 +359,6 @@ async function runSync(merchant: Merchant, opts: { cooldownMs?: number } = {}) {
               );
             } catch (error) {
               console.error('Failed to queue chat payment notifications:', error);
-            }
-
-            // Webhooks fire after COMMIT, so a slow or failing webhook can neither
-            // hold the transaction open nor roll back a committed batch. The
-            // returned rows are exactly the payments written this run.
-            if (webhookUrl) {
-              for (const payment of payments) {
-                const body = JSON.stringify(payment);
-                const webhookSecret = process.env.WEBHOOK_SECRET;
-                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-                if (webhookSecret) {
-                  headers['X-Webhook-Signature'] = createHmac('sha256', webhookSecret)
-                    .update(body)
-                    .digest('hex');
-                }
-                const timeoutMs = 2000;
-                for (let i = 0; i < 3; i++) {
-                  try {
-                    const controller = new AbortController();
-                    const id = setTimeout(() => controller.abort(), timeoutMs);
-                    const webhookRes = await fetch(webhookUrl, {
-                      method: 'POST',
-                      headers,
-                      body,
-                      signal: controller.signal,
-                    });
-                    clearTimeout(id);
-                    if (webhookRes.ok || webhookRes.status < 500) break;
-                  } catch {
-                    // A webhook the merchant cannot receive must not stall indexing.
-                  }
-                }
-              }
             }
           },
         });
